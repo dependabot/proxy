@@ -1,0 +1,86 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+      - name: Test
+        run: script/test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The `github/codeql-action/start-proxy` action uses native binaries for
+  # Linux, macOS, and Windows.
+  build-codeql:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            go build -o dependabot-proxy.exe .
+          else
+            go build -o dependabot-proxy .
+          fi
+        env:
+          CGO_ENABLED: 0
+
+      - name: Set output name
+        id: platform
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            echo "name=linux64" >> $GITHUB_OUTPUT;
+          elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            echo "name=osx64" >> $GITHUB_OUTPUT;
+          elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            echo "name=win64" >> $GITHUB_OUTPUT;
+          fi
+
+      - name: Compress binary artifact
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            tar -czvf dependabot-proxy-win64.tar.gz dependabot-proxy.exe;
+          else
+            tar -czvf dependabot-proxy-${{ steps.platform.outputs.name }}.tar.gz dependabot-proxy;
+          fi
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v5
+        with:
+          path: dependabot-proxy-${{ steps.platform.outputs.name }}.tar.gz
+          name: dependabot-proxy-${{ steps.platform.outputs.name }}

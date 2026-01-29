@@ -1,0 +1,32 @@
+#!/bin/bash
+
+set -e
+cd "$(dirname "$0")/.."
+ROOT="$(pwd)"
+source "${ROOT}/script/_common"
+
+function main() {
+  docker_build
+  push_to_ghcr
+}
+
+function push_to_ghcr() {
+  if [[ -z "$GITHUB_TOKEN" ]]; then
+    echo "Skipping GHCR publish as this isn't Actions. Set GITHUB_TOKEN= to override."
+    return
+  fi
+
+  echo "$GITHUB_TOKEN" | docker login ghcr.io -u x --password-stdin
+
+  if [ "$GITHUB_REF" == "$DEFAULT_BRANCH" ]; then
+    DATE_BASED_VERSION=v2.0.$(date +%Y%m%d%H%M%S)
+    docker tag "$PROXY_IMAGE" "$REMOTE_IMAGE:$DATE_BASED_VERSION"
+    docker tag "$PROXY_IMAGE" "$REMOTE_IMAGE:latest"
+    docker push "$REMOTE_IMAGE:$DATE_BASED_VERSION"
+    docker push "$REMOTE_IMAGE:latest"
+    git tag "$DATE_BASED_VERSION"
+    git push origin "$DATE_BASED_VERSION"
+  fi
+}
+
+main

@@ -1,0 +1,20 @@
+#!/bin/bash
+
+set -e
+
+cd "$(dirname "$0")/.."
+ROOT="$(pwd)"
+source "${ROOT}/script/_common"
+
+function main() {
+  docker_build
+  run_tests_in_docker
+}
+
+function run_tests_in_docker() {
+  # -count=2 ensures that test fixtures cleanup after themselves
+  # because any leftover state will generally cause the second run to fail.
+  docker run --rm "$TESTS_IMAGE" go test -race -shuffle=on -count=2 -v ./...
+}
+
+main

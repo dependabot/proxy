@@ -1,0 +1,22 @@
+name: Publish Docker images (GHCR)
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  publish:
+    name: Build and publish Docker images
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+      - name: Publish Docker
+        run: script/cibuild-publish-ghcr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

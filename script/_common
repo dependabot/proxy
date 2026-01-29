@@ -1,0 +1,19 @@
+export PROXY_IMAGE=dependabot/proxy
+export TESTS_IMAGE=dependabot/proxy-builder-tests
+export REMOTE_IMAGE=ghcr.io/dependabot/proxy
+export DEFAULT_BRANCH=refs/heads/main
+
+function docker_build() {
+  [[ -n "$SKIP_BUILD" ]] && return
+
+  DOCKER_BUILD_ARGS="--build-arg BUILDKIT_INLINE_CACHE=1"
+  if [ -n "${GITHUB_SHA}" ]; then
+    DOCKER_BUILD_ARGS="${DOCKER_BUILD_ARGS} --build-arg GIT_COMMIT=${GITHUB_SHA}"
+  fi
+
+  export DOCKER_BUILDKIT=1
+  set -x
+  docker build $DOCKER_BUILD_ARGS --target=builder-tests -t "$TESTS_IMAGE" .
+  docker build $DOCKER_BUILD_ARGS -t "$PROXY_IMAGE" .
+  set +x
+}

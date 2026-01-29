@@ -1,0 +1,9 @@
+#!/bin/bash
+
+set -e
+cd "$(dirname "$0")/.."
+source script/_common
+
+docker build \
+  --build-arg "GIT_COMMIT=${GITHUB_SHA}" \
+  -t "${PROXY_IMAGE}" .
