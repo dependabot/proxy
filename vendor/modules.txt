@@ -140,8 +140,8 @@ github.com/rs/dnscache
 # github.com/rubyist/circuitbreaker v2.2.1+incompatible
 ## explicit
 github.com/rubyist/circuitbreaker
-# github.com/sirupsen/logrus v1.9.3
-## explicit; go 1.13
+# github.com/sirupsen/logrus v1.9.4
+## explicit; go 1.17
 github.com/sirupsen/logrus
 # github.com/stackrox/docker-registry-client v0.2.1
 ## explicit; go 1.19
