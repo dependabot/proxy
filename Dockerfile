@@ -28,7 +28,7 @@ RUN apk add --update --no-cache gcc musl-dev upx && \
 
 # ============================================================================
 
-FROM docker.io/library/alpine:3.22.2
+FROM docker.io/library/alpine:3.23.3
 
 LABEL org.opencontainers.image.source="https://github.com/dependabot/proxy"
 
