@@ -5,6 +5,8 @@ on:
       - main
   pull_request:
 
+permissions: {}
+
 jobs:
   build:
     name: Build
@@ -15,7 +17,9 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v6
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
       - name: Test
         run: script/test
         env:
@@ -40,10 +44,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
 
       - name: Install Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
         with:
           go-version-file: go.mod
 
@@ -72,15 +78,17 @@ jobs:
 
       - name: Compress binary artifact
         shell: bash
+        env:
+          PLATFORM_NAME: ${{ steps.platform.outputs.name }}
         run: |
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             tar -czvf dependabot-proxy-win64.tar.gz dependabot-proxy.exe;
           else
-            tar -czvf dependabot-proxy-${{ steps.platform.outputs.name }}.tar.gz dependabot-proxy;
+            tar -czvf "dependabot-proxy-${PLATFORM_NAME}.tar.gz" dependabot-proxy;
           fi
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           path: dependabot-proxy-${{ steps.platform.outputs.name }}.tar.gz
           name: dependabot-proxy-${{ steps.platform.outputs.name }}

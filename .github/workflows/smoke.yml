@@ -31,20 +31,26 @@ jobs:
       matrix:
         suite: ${{ fromJSON(needs.suites.outputs.suites) }}
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      with:
+        persist-credentials: false
 
     - name: Download CLI and test
+      env:
+        SUITE: ${{ matrix.suite }}
       run: |
         gh release download --repo dependabot/cli -p "*linux-amd64.tar.gz"
         tar xzvf *.tar.gz >/dev/null 2>&1
         ./dependabot --version
-        URL=https://api.github.com/repos/dependabot/smoke-tests/contents/tests/smoke-${{ matrix.suite }}.yaml
-        curl $(gh api $URL --jq .download_url) -o smoke.yaml
+        URL="https://api.github.com/repos/dependabot/smoke-tests/contents/tests/smoke-${SUITE}.yaml"
+        curl $(gh api "$URL" --jq .download_url) -o smoke.yaml
 
     # Download the Proxy cache. The job is ideally 100% cached so no real calls are made.
     - name: Download cache
+      env:
+        SUITE: ${{ matrix.suite }}
       run: |
-        gh run download --repo dependabot/smoke-tests --name cache-${{ matrix.suite }} --dir cache
+        gh run download --repo dependabot/smoke-tests --name "cache-${SUITE}" --dir cache
 
     - name: Build proxy image
       run: docker build -t "dependabot/proxy:latest" .
