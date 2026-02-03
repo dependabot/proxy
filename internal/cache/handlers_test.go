@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -86,7 +85,7 @@ func TestCache(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBufferString(body)),
 		}
 		resp = cacher.OnResponse(resp, ctx)
-		result, _ := ioutil.ReadAll(resp.Body)
+		result, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if len(cacher.cacheDB) != 1 {
 			t.Error("cache should have 1 entry, got", len(cacher.cacheDB))
