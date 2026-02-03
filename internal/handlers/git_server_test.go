@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -393,7 +392,7 @@ func TestGitServerHandler_TokenFallbackWithPost(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var capturedTokens []string
 			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
-				body, err := ioutil.ReadAll(r.Body)
+				body, err := io.ReadAll(r.Body)
 				require.NoError(t, err, "failed to read req body")
 				assert.Equal(t, "test body", string(body), "request body mismatch")
 

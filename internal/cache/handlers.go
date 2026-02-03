@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net/http"
 	"os"
@@ -65,7 +64,7 @@ var ignoreHeaders = map[string]struct{}{
 
 // generates the key used in the DB, includes a hash of the body
 func key(r *http.Request) Key {
-	data, _ := ioutil.ReadAll(r.Body)
+	data, _ := io.ReadAll(r.Body)
 	r.Body.Close()
 	r.Body = io.NopCloser(bytes.NewBuffer(data))
 	k := Key{
