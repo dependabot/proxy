@@ -1,8 +1,6 @@
 module github.com/dependabot/proxy
 
-go 1.24.0
-
-toolchain go1.24.1
+go 1.25.0
 
 require (
 	github.com/aws/aws-sdk-go v1.55.8
