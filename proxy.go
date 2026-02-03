@@ -9,14 +9,15 @@ import (
 	"os"
 	"strings"
 
+	"github.com/elazarl/goproxy"
+	"github.com/rs/dnscache"
+
 	"github.com/dependabot/proxy/internal/apiclient"
 	"github.com/dependabot/proxy/internal/cache"
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/dialer"
 	"github.com/dependabot/proxy/internal/handlers"
 	"github.com/dependabot/proxy/internal/metrics"
-	"github.com/elazarl/goproxy"
-	"github.com/rs/dnscache"
 )
 
 type Proxy struct {

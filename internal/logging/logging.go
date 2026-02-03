@@ -2,7 +2,6 @@ package logging
 
 import (
 	"fmt"
-	"github.com/dependabot/proxy/internal/cache"
 	"log"
 	"regexp"
 	"strings"
@@ -10,6 +9,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/elazarl/goproxy"
+
+	"github.com/dependabot/proxy/internal/cache"
 )
 
 // RequestLogf builds a log entry from format and v according to the semantics

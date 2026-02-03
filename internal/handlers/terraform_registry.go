@@ -4,11 +4,12 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/elazarl/goproxy"
+
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
 	"github.com/dependabot/proxy/internal/oidc"
-	"github.com/elazarl/goproxy"
 )
 
 type TerraformRegistryHandler struct {

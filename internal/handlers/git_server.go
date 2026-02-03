@@ -3,18 +3,18 @@ package handlers
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
+
+	"github.com/elazarl/goproxy"
 
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/ctxdata"
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
 	"github.com/dependabot/proxy/internal/threadsafe"
-	"github.com/elazarl/goproxy"
-
-	"io"
-	"net/http"
-	"strings"
 )
 
 // GitServerHandler handles requests destined remote git servers such as

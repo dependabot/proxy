@@ -15,10 +15,11 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/dependabot/proxy/internal/ctxdata"
 	"github.com/elazarl/goproxy"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
+
+	"github.com/dependabot/proxy/internal/ctxdata"
 )
 
 // DB contains the metadata of the disk cache

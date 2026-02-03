@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rs/dnscache"
 	"net"
 	"syscall"
+
+	"github.com/rs/dnscache"
 )
 
 // ErrForbiddenRequest is returned when a request is made to a blocked IP.

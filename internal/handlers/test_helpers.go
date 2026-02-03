@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dependabot/proxy/internal/config"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/dependabot/proxy/internal/config"
 )
 
 func assertHasTokenAuth(t *testing.T, r *http.Request, prefix, token, msg string) {

@@ -11,9 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dependabot/proxy/internal/config"
 	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/dependabot/proxy/internal/config"
 )
 
 func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {

@@ -6,12 +6,13 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/elazarl/goproxy"
+	"github.com/sirupsen/logrus"
+
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/ctxdata"
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
-	"github.com/elazarl/goproxy"
-	"github.com/sirupsen/logrus"
 )
 
 // GitHubAPIHandler handles requests destined for the GitHub API, adding auth

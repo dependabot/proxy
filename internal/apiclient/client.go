@@ -10,13 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dependabot/proxy/internal/config"
-	"github.com/dependabot/proxy/internal/logging"
 	"github.com/elazarl/goproxy"
 	"github.com/lestrrat-go/backoff"
 	circuit "github.com/rubyist/circuitbreaker"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/semaphore"
+
+	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/logging"
 )
 
 const (

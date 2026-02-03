@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/dependabot/proxy/internal/logging"
 	"io"
 	"log"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 
 	"github.com/elazarl/goproxy"
 	"github.com/sirupsen/logrus"
+
+	"github.com/dependabot/proxy/internal/logging"
 )
 
 type requestLogger struct {

@@ -7,9 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/dependabot/proxy/internal/apiclient"
 	"github.com/dependabot/proxy/internal/config"
-	"github.com/sirupsen/logrus"
 )
 
 type CollectorClient struct {

@@ -15,8 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dependabot/proxy/internal/config"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/dependabot/proxy/internal/config"
 )
 
 var (

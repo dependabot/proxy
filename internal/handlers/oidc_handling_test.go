@@ -9,10 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dependabot/proxy/internal/config"
 	"github.com/elazarl/goproxy"
 	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/dependabot/proxy/internal/config"
 )
 
 type oidcHandler interface {

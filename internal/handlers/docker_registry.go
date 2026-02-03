@@ -13,12 +13,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ecr"
 	"github.com/aws/aws-sdk-go/service/ecr/ecriface"
+	"github.com/elazarl/goproxy"
+	"github.com/stackrox/docker-registry-client/registry"
+
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
 	"github.com/dependabot/proxy/internal/oidc"
-	"github.com/elazarl/goproxy"
-	"github.com/stackrox/docker-registry-client/registry"
 )
 
 var (

@@ -9,10 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dependabot/proxy/internal/config"
 	"github.com/elazarl/goproxy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dependabot/proxy/internal/config"
 )
 
 func TestGitHubAPIHandler_withUrlFallback(t *testing.T) {

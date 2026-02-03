@@ -9,10 +9,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ecr"
 	"github.com/aws/aws-sdk-go/service/ecr/ecriface"
-	"github.com/dependabot/proxy/internal/config"
 	"github.com/elazarl/goproxy"
 	"github.com/stackrox/docker-registry-client/registry"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/dependabot/proxy/internal/config"
 )
 
 func TestDockerRegistryHandler(t *testing.T) {
