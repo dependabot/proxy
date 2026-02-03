@@ -10,11 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dependabot/proxy/internal/config"
-	"github.com/dependabot/proxy/internal/ctxdata"
 	"github.com/elazarl/goproxy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/ctxdata"
 )
 
 func TestGitServerHandler_url(t *testing.T) {

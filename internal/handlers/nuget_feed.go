@@ -11,11 +11,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/elazarl/goproxy"
+
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
 	"github.com/dependabot/proxy/internal/oidc"
-	"github.com/elazarl/goproxy"
 )
 
 type nugetV2IndexResponse struct {

@@ -14,14 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dependabot/proxy/internal/config"
-
 	"github.com/elazarl/goproxy"
-
-	"github.com/dependabot/proxy/internal/apiclient"
 	"github.com/lestrrat-go/backoff"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dependabot/proxy/internal/apiclient"
+	"github.com/dependabot/proxy/internal/config"
 )
 
 const (

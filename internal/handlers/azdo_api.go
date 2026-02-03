@@ -4,11 +4,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dependabot/proxy/internal/helpers"
-	"github.com/dependabot/proxy/internal/logging"
+	"github.com/elazarl/goproxy"
 
 	"github.com/dependabot/proxy/internal/config"
-	"github.com/elazarl/goproxy"
+	"github.com/dependabot/proxy/internal/helpers"
+	"github.com/dependabot/proxy/internal/logging"
 )
 
 // AzureDevOpsAPIHandler handles requests destined for the Azure DevOps API, adding auth

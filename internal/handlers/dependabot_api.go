@@ -6,8 +6,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/dependabot/proxy/internal/config"
 	"github.com/elazarl/goproxy"
+
+	"github.com/dependabot/proxy/internal/config"
 )
 
 // DependabotAPIHandler injects the job token into requests to the Dependabot API

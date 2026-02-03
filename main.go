@@ -12,11 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dependabot/proxy/internal/config"
-	"github.com/dependabot/proxy/internal/version"
 	"github.com/evalphobia/logrus_sentry"
 	"github.com/getsentry/raven-go"
 	"github.com/sirupsen/logrus"
+
+	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/version"
 )
 
 var (
@@ -136,5 +137,3 @@ func (i injectJobIDHook) Fire(e *logrus.Entry) error {
 	e.Data["job_id"] = i.JobID
 	return nil
 }
-
-

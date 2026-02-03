@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dependabot/proxy/internal/ctxdata"
 	"github.com/elazarl/goproxy"
+
+	"github.com/dependabot/proxy/internal/ctxdata"
 )
 
 const (
