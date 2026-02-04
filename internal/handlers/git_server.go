@@ -327,6 +327,12 @@ func getCredentialsForRequest(r *http.Request, credentials *gitCredentialsMap, e
 	hostCreds := credentials.get(host)
 	credsForRequest := hostCreds.getCredentialsForRepo(allReposScopeIdentifier)
 
+	// GitHub release download URLs are public
+	// and do not require authentication
+	if len(credsForRequest) != 0 && isGitHubReleaseDownload(r.URL.Path) {
+		return nil
+	}
+
 	// Append any repo-scoped credentials
 	if org, repo, ok := extractor(r.URL.Path); ok {
 		nwo := fmt.Sprintf("%s/%s", org, repo)
@@ -341,6 +347,10 @@ func getCredentialsForRequest(r *http.Request, credentials *gitCredentialsMap, e
 	}
 
 	return credsForRequest
+}
+
+func isGitHubReleaseDownload(path string) bool {
+	return strings.Contains(path, "/releases/download/")
 }
 
 // HandleResponse handles retrying failed auth responses with alternate credentials
