@@ -24,6 +24,7 @@ type composerCredentials struct {
 	url      string
 	username string
 	password string
+	token    string
 }
 
 // NewComposerHandler returns a new ComposerHandler.
@@ -63,6 +64,7 @@ func NewComposerHandler(creds config.Credentials) *ComposerHandler {
 			url:      url,
 			username: cred.GetString("username"),
 			password: cred.GetString("password"),
+			token:    cred.GetString("token"),
 		}
 		handler.credentials = append(handler.credentials, composerCred)
 	}
@@ -91,8 +93,13 @@ func (h *ComposerHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx
 			continue
 		}
 
-		logging.RequestLogf(ctx, "* authenticating composer registry request (host: %s)", req.URL.Hostname())
-		req.SetBasicAuth(cred.username, cred.password)
+		if cred.token != "" {
+			logging.RequestLogf(ctx, "* authenticating composer registry request (host: %s, token auth)", req.URL.Hostname())
+			req.Header.Set("Authorization", "Bearer "+cred.token)
+		} else {
+			logging.RequestLogf(ctx, "* authenticating composer registry request (host: %s, basic auth)", req.URL.Hostname())
+			req.SetBasicAuth(cred.username, cred.password)
+		}
 
 		return req, nil
 	}
