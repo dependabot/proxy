@@ -93,10 +93,11 @@ func (h *ComposerHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx
 			continue
 		}
 
-		logging.RequestLogf(ctx, "* authenticating composer registry request (host: %s)", req.URL.Hostname())
 		if cred.token != "" {
+			logging.RequestLogf(ctx, "* authenticating composer registry request (host: %s, token auth)", req.URL.Hostname())
 			req.Header.Set("Authorization", "Bearer "+cred.token)
 		} else {
+			logging.RequestLogf(ctx, "* authenticating composer registry request (host: %s, basic auth)", req.URL.Hostname())
 			req.SetBasicAuth(cred.username, cred.password)
 		}
 
