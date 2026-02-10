@@ -179,14 +179,15 @@ func TestGitServerHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 			req := httptest.NewRequest("GET", fmt.Sprintf("https://github.com/%s", tt.repoNWO), nil)
 			req, _ = handler.HandleRequest(req, nil)
 
-			if tt.expectedCredential != nil {
+			switch {
+			case tt.expectedCredential != nil:
 				assertHasBasicAuth(t, req,
 					tt.expectedCredential.GetString("username"),
 					tt.expectedCredential.GetString("password"),
 					"valid github request")
-			} else if tt.isAuthenticated {
+			case tt.isAuthenticated:
 				assertAuthenticated(t, req, "valid github request")
-			} else {
+			default:
 				assertUnauthenticated(t, req, "valid github request")
 			}
 		})

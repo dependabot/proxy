@@ -40,12 +40,14 @@ func main() {
 
 	cfg, err := config.Parse(*configPath)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
 	sentry, err := setupSentry()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
 	envSettings := config.ProxyEnvSettings{
@@ -89,11 +91,13 @@ func main() {
 
 	log.Printf("Listening (%s)", *addr)
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
 	if err := proxy.Close(); err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 }
 

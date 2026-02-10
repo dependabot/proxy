@@ -14,6 +14,8 @@ import (
 	"github.com/dependabot/proxy/internal/oidc"
 )
 
+var simpleSuffixRe = regexp.MustCompile(`/\+?simple/?\z`)
+
 // PythonIndexHandler handles requests to Python indexes, adding auth.
 type PythonIndexHandler struct {
 	credentials     []pythonIndexCredentials
@@ -89,8 +91,7 @@ func (h *PythonIndexHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 
 	// Fall back to static credentials
 	for _, cred := range h.credentials {
-		re, _ := regexp.Compile(`/\+?simple/?\z`)
-		indexURL := re.ReplaceAllString(cred.indexURL, "/")
+		indexURL := simpleSuffixRe.ReplaceAllString(cred.indexURL, "/")
 		if !helpers.UrlMatchesRequest(req, indexURL, true) && !helpers.CheckHost(req, cred.host) {
 			continue
 		}

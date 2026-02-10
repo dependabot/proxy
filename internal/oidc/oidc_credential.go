@@ -86,12 +86,13 @@ func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
 	domain := cred.GetString("domain")
 	domainOwner := cred.GetString("domain-owner")
 
-	if tenantID != "" && clientID != "" {
+	switch {
+	case tenantID != "" && clientID != "":
 		parameters = &AzureOIDCParameters{
 			TenantID: tenantID,
 			ClientID: clientID,
 		}
-	} else if jfrogOidcProviderName != "" && feedUrl != "" {
+	case jfrogOidcProviderName != "" && feedUrl != "":
 		// jfrog domain is extracted from feed url
 		jfrogUrlParsed, err := url.Parse(feedUrl)
 		if err != nil {
@@ -105,7 +106,7 @@ func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
 			Audience:            cred.GetString("audience"),
 			IdentityMappingName: cred.GetString("identity-mapping-name"),
 		}
-	} else if awsRegion != "" && accountID != "" && roleName != "" && domain != "" && domainOwner != "" {
+	case awsRegion != "" && accountID != "" && roleName != "" && domain != "" && domainOwner != "":
 		audience := cred.GetString("audience")
 		if audience == "" {
 			audience = "sts.amazonaws.com" // defaults to this
