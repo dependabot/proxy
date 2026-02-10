@@ -91,7 +91,7 @@ func (h *PythonIndexHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 	for _, cred := range h.credentials {
 		re, _ := regexp.Compile(`/\+?simple/?\z`)
 		indexURL := re.ReplaceAllString(cred.indexURL, "/")
-		if !(helpers.UrlMatchesRequest(req, indexURL, true) || helpers.CheckHost(req, cred.host)) {
+		if !helpers.UrlMatchesRequest(req, indexURL, true) && !helpers.CheckHost(req, cred.host) {
 			continue
 		}
 

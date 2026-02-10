@@ -111,7 +111,7 @@ func TestCache(t *testing.T) {
 		resp = &http.Response{
 			StatusCode: 200,
 		}
-		resp = cacher.OnResponse(resp, ctx)
+		_ = cacher.OnResponse(resp, ctx)
 		if len(cacher.cacheDB) != 1 {
 			t.Error("cache should have 1 entry, got", len(cacher.cacheDB))
 		}

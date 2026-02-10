@@ -59,7 +59,7 @@ type control func(network, address string, conn syscall.RawConn) error
 
 func safeControl(blockedIps []net.IP) control {
 	return func(network string, address string, conn syscall.RawConn) error {
-		if !(network == "tcp4" || network == "tcp6") {
+		if network != "tcp4" && network != "tcp6" {
 			return fmt.Errorf("%s is not a safe network type", network)
 		}
 
