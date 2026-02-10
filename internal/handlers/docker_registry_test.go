@@ -65,7 +65,7 @@ func TestDockerRegistryHandler(t *testing.T) {
 	// Regular private registry
 	req := httptest.NewRequest("GET", "https://registry.hub.docker.com/my-repo", nil)
 	ctx := &goproxy.ProxyCtx{}
-	req, _ = handler.HandleRequest(req, ctx)
+	_, _ = handler.HandleRequest(req, ctx)
 	rt, ok := ctx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.True(t, ok, "request is assigned a docker registry transport")
 	trans := rt.transport.(*registry.BasicTransport)
@@ -75,7 +75,7 @@ func TestDockerRegistryHandler(t *testing.T) {
 	// Registry using URL not registry key
 	req = httptest.NewRequest("GET", "https://registry.hub.docker.com/my-repo", nil)
 	ctx = &goproxy.ProxyCtx{}
-	req, _ = handler.HandleRequest(req, ctx)
+	_, _ = handler.HandleRequest(req, ctx)
 	rt, ok = ctx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.True(t, ok, "request is assigned a docker registry transport")
 	trans = rt.transport.(*registry.BasicTransport)
@@ -85,7 +85,7 @@ func TestDockerRegistryHandler(t *testing.T) {
 	// Different private registry
 	req = httptest.NewRequest("GET", "https://docker.bigco.com/their-repo", nil)
 	ctx = &goproxy.ProxyCtx{}
-	req, _ = handler.HandleRequest(req, ctx)
+	_, _ = handler.HandleRequest(req, ctx)
 	rt, ok = ctx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.True(t, ok, "request is assigned a docker registry transport")
 	trans = rt.transport.(*registry.BasicTransport)
@@ -119,28 +119,28 @@ func TestDockerRegistryHandler(t *testing.T) {
 	// Missing repo subdomain
 	req = httptest.NewRequest("GET", "https://bigco.com/their-repo", nil)
 	ctx = &goproxy.ProxyCtx{}
-	req, _ = handler.HandleRequest(req, ctx)
+	_, _ = handler.HandleRequest(req, ctx)
 	_, ok = ctx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.False(t, ok, "different subdomain request isn't assigned a docker registry transport")
 
 	// HTTP, not HTTPS
 	req = httptest.NewRequest("GET", "http://docker.bigco.com/their-repo", nil)
 	ctx = &goproxy.ProxyCtx{}
-	req, _ = handler.HandleRequest(req, ctx)
+	_, _ = handler.HandleRequest(req, ctx)
 	_, ok = ctx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.False(t, ok, "request isn't assigned a docker registry transport")
 
 	// Not a GET request
 	req = httptest.NewRequest("POST", "https://docker.bigco.com/their-repo", nil)
 	ctx = &goproxy.ProxyCtx{}
-	req, _ = handler.HandleRequest(req, ctx)
+	_, _ = handler.HandleRequest(req, ctx)
 	_, ok = ctx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.False(t, ok, "request isn't assigned a docker registry transport")
 
 	// Nexus, BasicAuth
 	req = httptest.NewRequest("GET", "https://nexus.someco.com/a-repo", nil)
 	ctx = &goproxy.ProxyCtx{}
-	req, _ = handler.HandleRequest(req, ctx)
+	_, _ = handler.HandleRequest(req, ctx)
 	rt, ok = ctx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.True(t, ok, "request is assigned a docker registry transport")
 	trans = rt.transport.(*registry.BasicTransport)

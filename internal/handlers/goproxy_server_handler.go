@@ -82,7 +82,7 @@ func (h *GoProxyServerHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 
 	// Fall back to static credentials
 	for _, cred := range h.credentials {
-		if !(helpers.UrlMatchesRequest(req, cred.url, true) || helpers.CheckHost(req, cred.host)) {
+		if !helpers.UrlMatchesRequest(req, cred.url, true) && !helpers.CheckHost(req, cred.host) {
 			continue
 		}
 

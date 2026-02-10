@@ -292,6 +292,7 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 
 			if actual == nil {
 				t.Fatalf("expected credential, but got nil")
+				return
 			}
 
 			// check type

@@ -266,7 +266,7 @@ func (h *NugetFeedHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCt
 
 	// Fall back to static credentials
 	for _, cred := range h.credentials {
-		if (cred.token == "" && cred.password == "") || !(helpers.UrlMatchesRequest(req, cred.url, true) || helpers.CheckHost(req, cred.host)) {
+		if (cred.token == "" && cred.password == "") || (!helpers.UrlMatchesRequest(req, cred.url, true) && !helpers.CheckHost(req, cred.host)) {
 			continue
 		}
 

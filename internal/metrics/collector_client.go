@@ -165,9 +165,10 @@ func (c *CollectorClient) SendMetric(name string, metricType string, value float
 		"type":   metricType,
 		"tags":   combinedTags,
 	}
-	if metricType == "increment" {
+	switch metricType {
+	case "increment":
 		metricData["value"] = value
-	} else if metricType == "distribution" {
+	case "distribution":
 		metricData["values"] = []float64{value}
 	}
 

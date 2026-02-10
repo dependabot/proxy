@@ -58,12 +58,12 @@ func (c Credential) Host() string {
 // GetListOfStrings returns an array of strings
 func (c Credential) GetListOfStrings(key string) []string {
 	value := c[key]
-	switch value.(type) {
+	switch val := value.(type) {
 	case []string:
-		return value.([]string)
+		return val
 	case []interface{}:
-		strings := make([]string, len(value.([]interface{})))
-		for i, v := range value.([]interface{}) {
+		strings := make([]string, len(val))
+		for i, v := range val {
 			if str, ok := v.(string); ok {
 				strings[i] = str
 			}
