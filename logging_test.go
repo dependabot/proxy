@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -189,7 +190,7 @@ func TestSetupLogging(t *testing.T) {
 	logrus.Info("test [logrus]")
 	err := file.Close()
 	require.NoError(t, err)
-	text, err := os.ReadFile(logFile)
+	text, err := os.ReadFile(filepath.Clean(logFile))
 	require.NoError(t, err)
 	assert.Contains(t, string(text), "test [log]")
 	assert.Contains(t, string(text), "test [logrus]")

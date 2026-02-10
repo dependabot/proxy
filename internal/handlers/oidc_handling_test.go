@@ -1001,7 +1001,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			}
 
 			// mock GitHub OIDC token request
-			tokenUrl := "https://token.actions.example.com"
+			tokenUrl := "https://token.actions.example.com" //nolint:gosec // test URL
 			httpmock.RegisterResponder("GET", tokenUrl,
 				httpmock.NewStringResponder(200, `{
 				"count": 1,

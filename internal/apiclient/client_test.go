@@ -25,7 +25,7 @@ import (
 
 const (
 	jobID    = "1234"
-	jobToken = "hey-dependabot-api-its-me-ur-brother"
+	jobToken = "hey-dependabot-api-its-me-ur-brother" //nolint:gosec // test credential
 )
 
 func TestClient_ReportMetrics_Success(t *testing.T) {

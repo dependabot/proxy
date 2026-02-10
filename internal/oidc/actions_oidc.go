@@ -9,6 +9,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,13 +24,13 @@ const (
 	// GitHub Actions environment variables for OIDC token requests
 	// https://docs.github.com/en/actions/reference/security/oidc#methods-for-requesting-the-oidc-token
 	envActionsIDTokenRequestURL   = "ACTIONS_ID_TOKEN_REQUEST_URL"
-	envActionsIDTokenRequestToken = "ACTIONS_ID_TOKEN_REQUEST_TOKEN"
+	envActionsIDTokenRequestToken = "ACTIONS_ID_TOKEN_REQUEST_TOKEN" //nolint:gosec // env var name, not a credential
 
 	// Various strings required by AWS request signing
 	awsCodeArtifactTargetName    = "CodeArtifact_2018_09_22.GetAuthorizationToken"
 	awsCodeArtifactDateFormat    = "20060102T150405Z"
 	awsCodeArtifactSTSRequestUrl = "https://sts.amazonaws.com"
-	awsCodeArtifactTokenURLPath  = "/v1/authorization-token"
+	awsCodeArtifactTokenURLPath  = "/v1/authorization-token" //nolint:gosec // URL path, not a credential
 )
 
 // tokenResponse represents the response from GitHub's OIDC provider
@@ -350,8 +351,8 @@ func GetJFrogAccessToken(ctx context.Context, params JFrogOIDCParameters, github
 	}
 
 	expiresIn := time.Duration(24) * time.Hour // this is the default if not provided
-	if tokenResp.ExpiresIn != nil {
-		expiresIn = time.Duration(*tokenResp.ExpiresIn) * time.Second
+	if tokenResp.ExpiresIn != nil && *tokenResp.ExpiresIn <= uint(math.MaxInt64/uint(time.Second)) {
+		expiresIn = time.Duration(*tokenResp.ExpiresIn) * time.Second //nolint:gosec // overflow guarded above
 	}
 
 	return &OIDCAccessToken{

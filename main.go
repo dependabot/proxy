@@ -68,8 +68,9 @@ func main() {
 	}
 
 	server := &http.Server{
-		Addr:    *addr,
-		Handler: handler,
+		Addr:              *addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	signals := make(chan os.Signal, 1)

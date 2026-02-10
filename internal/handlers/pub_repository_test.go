@@ -14,9 +14,9 @@ func TestPubRepositoryHandler(t *testing.T) {
 	validURLWithPathBase := "https://valid-url-path.example.com"
 	validURLWithPath := validURLWithPathBase + "/path"
 	invalidURL := "asdf"
-	noTokenURL := "https://no-token.example.com"
+	noTokenURL := "https://no-token.example.com" //nolint:gosec // test URL, not a credential
 
-	token := "abc123"
+	token := "abc123" //nolint:gosec // test credential
 
 	credentials := config.Credentials{
 		config.Credential{

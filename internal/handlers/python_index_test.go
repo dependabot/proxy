@@ -9,8 +9,8 @@ import (
 )
 
 func TestPythonIndexHandler(t *testing.T) {
-	dependabotToken := "123"
-	dependabotSecToken := "dependabot:sec123"
+	dependabotToken := "123"                  //nolint:gosec // test credential
+	dependabotSecToken := "dependabot:sec123" //nolint:gosec // test credential
 	simpleSecToken := "simple:sec245"
 	deltaForceUser := "some-user"
 	deltaForcePassword := "456"
