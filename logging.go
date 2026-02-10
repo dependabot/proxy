@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/elazarl/goproxy"
@@ -85,17 +84,6 @@ func (mrc *multiReadCloser) Read(p []byte) (int, error) {
 
 func (mrc *multiReadCloser) Close() error {
 	return mrc.mc.Close()
-}
-
-func sortedHeaderKeys(h http.Header) []string {
-	keys := make([]string, len(h))
-	i := 0
-	for k := range h {
-		keys[i] = k
-		i += 1
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func newMultiReadCloser(rcs ...io.ReadCloser) io.ReadCloser {
