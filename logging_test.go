@@ -90,14 +90,23 @@ func TestRequestLogger(t *testing.T) {
 		},
 		"request": {
 			setup: func(l *requestLogger) {
-				l.logRequest(req, p)
+				_, resp := l.logRequest(req, p)
+				if resp != nil && resp.Body != nil {
+					resp.Body.Close()
+				}
 			},
 			expected: []string{"[128] GET https://github.com:443"},
 		},
 		"requests": {
 			setup: func(l *requestLogger) {
-				l.logRequest(req, p)
-				l.logRequest(req, p)
+				_, resp := l.logRequest(req, p)
+				if resp != nil && resp.Body != nil {
+					resp.Body.Close()
+				}
+				_, resp = l.logRequest(req, p)
+				if resp != nil && resp.Body != nil {
+					resp.Body.Close()
+				}
 			},
 			expected: []string{
 				"[128] GET https://github.com:443",
@@ -122,7 +131,10 @@ func TestRequestLogger(t *testing.T) {
 }`,
 					)),
 				}
-				l.logResponse(resp, p)
+				resp = l.logResponse(resp, p)
+				if resp != nil && resp.Body != nil {
+					resp.Body.Close()
+				}
 			},
 			expected: []string{
 				"[128] 401 https://github.com:443",

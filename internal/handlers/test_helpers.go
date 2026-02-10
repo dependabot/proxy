@@ -5,10 +5,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/elazarl/goproxy"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/dependabot/proxy/internal/config"
 )
+
+// handleRequestAndClose calls handler.HandleRequest and closes any response body.
+// Most handlers return nil responses, but the linter can't prove that.
+func handleRequestAndClose(handler interface {
+	HandleRequest(*http.Request, *goproxy.ProxyCtx) (*http.Request, *http.Response)
+}, req *http.Request, ctx *goproxy.ProxyCtx) *http.Request {
+	req, resp := handler.HandleRequest(req, ctx)
+	if resp != nil && resp.Body != nil {
+		resp.Body.Close()
+	}
+	return req
+}
 
 func assertHasTokenAuth(t *testing.T, r *http.Request, prefix, token, msg string) {
 	t.Run(msg, func(t *testing.T) {

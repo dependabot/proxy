@@ -44,46 +44,46 @@ func TestNPMRegistryHandler(t *testing.T) {
 	handler := NewNPMRegistryHandler(credentials)
 
 	req := httptest.NewRequest("GET", "https://registry.npmjs.org/private-package", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", npmjsOrgToken, "valid registry request")
 
 	req = httptest.NewRequest("GET", "https://registry.yarnpkg.com/private-package", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", npmjsOrgToken, "yarn registry request, given npmjs.org creds")
 
 	req = httptest.NewRequest("GET", "https://example.com/reg-path/private-package", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", privateRegToken, "valid registry request with port and path")
 
 	req = httptest.NewRequest("GET", "https://example.org/reg-path/private-package", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", privateRegToken, "valid registry request with port and path")
 
 	req = httptest.NewRequest("GET", "https://example.com/other-path/private-package", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", privateRegToken, "different path")
 
 	req = httptest.NewRequest("GET", "https://nexus.some-company.com/private-package", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, nexusUser, nexusPassword, "http basic auth")
 
 	// Different subdomain
 	req = httptest.NewRequest("GET", "https://foo.example.com/reg-path/private-package", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 
 	// HTTP, not HTTPS
 	req = httptest.NewRequest("GET", "http://example.com/reg-path/private-package", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "http, not https")
 
 	// Azure DevOps
 	req = httptest.NewRequest("GET", "https://pkgs.dev.azure.com/private-package", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, nexusUser, nexusPassword, "azure devops registry request")
 
 	// Azure DevOps case insensitive
 	req = httptest.NewRequest("GET", "https://PKGS.dev.azure.com/private-package", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, nexusUser, nexusPassword, "azure devops case insensitive registry request")
 }

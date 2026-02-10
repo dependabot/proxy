@@ -40,6 +40,7 @@ func TestCache_Disabled(t *testing.T) {
 	// If cached there will be a response.
 	_, resp := cacher.OnRequest(req, ctx)
 	if resp != nil {
+		resp.Body.Close()
 		t.Error("Cache is not disabled")
 	}
 
@@ -48,6 +49,7 @@ func TestCache_Disabled(t *testing.T) {
 	resp2 := &http.Response{Body: originalBody}
 	ctx.Resp = resp2
 	resp3 := cacher.OnResponse(resp2, ctx)
+	defer resp3.Body.Close()
 	if originalBody != resp3.Body {
 		t.Error("Cache is not disabled")
 	}
@@ -75,6 +77,7 @@ func TestCache(t *testing.T) {
 
 		_, resp := cacher.OnRequest(req, ctx)
 		if resp != nil {
+			resp.Body.Close()
 			t.Error("No cache should exist yet")
 		}
 
@@ -105,13 +108,17 @@ func TestCache(t *testing.T) {
 		_, resp := cacher.OnRequest(req, ctx)
 		if resp == nil {
 			t.Error("Request should be cached")
+		} else {
+			resp.Body.Close()
 		}
 
 		// since the response is already cached, we don't need any other fields
 		resp = &http.Response{
 			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewBufferString("")),
 		}
-		_ = cacher.OnResponse(resp, ctx)
+		resp = cacher.OnResponse(resp, ctx)
+		resp.Body.Close()
 		if len(cacher.cacheDB) != 1 {
 			t.Error("cache should have 1 entry, got", len(cacher.cacheDB))
 		}
