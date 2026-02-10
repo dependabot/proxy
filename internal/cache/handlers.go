@@ -125,7 +125,7 @@ func New(enabled bool, cacheDir string) (*DB, error) {
 	if !enabled {
 		return nil, nil
 	}
-	if err := os.Mkdir(cacheDir, 0755); err != nil && !os.IsExist(err) {
+	if err := os.Mkdir(cacheDir, 0750); err != nil && !os.IsExist(err) {
 		cacheDir = filepath.Join(os.TempDir(), "cache")
 	}
 	db := &DB{
@@ -134,7 +134,7 @@ func New(enabled bool, cacheDir string) (*DB, error) {
 	}
 
 	// attempt to load pre-existing DB
-	f, err := os.Open(filepath.Join(cacheDir, "db.yaml"))
+	f, err := os.Open(filepath.Clean(filepath.Join(cacheDir, "db.yaml")))
 	if err != nil {
 		return db, nil
 	}
@@ -225,7 +225,7 @@ func (d *DB) OnResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Respon
 	}
 
 	fileName := fmt.Sprintf("%06d-%v", d.nextNumber(), sanitize(resp.Request.Host))
-	f, err := os.Create(filepath.Join(d.cacheDir, fileName))
+	f, err := os.Create(filepath.Clean(filepath.Join(d.cacheDir, fileName)))
 	if err != nil {
 		logrus.Warnln("Failed to write to cache:", err.Error())
 		return resp
@@ -276,7 +276,7 @@ func (d *DB) WriteToDisk() error {
 	d.Lock()
 	defer d.Unlock()
 
-	f, err := os.Create(filepath.Join(d.cacheDir, "db.yaml"))
+	f, err := os.Create(filepath.Clean(filepath.Join(d.cacheDir, "db.yaml")))
 	if err != nil {
 		logrus.Errorln("Failed to create db file:", err.Error())
 		return err

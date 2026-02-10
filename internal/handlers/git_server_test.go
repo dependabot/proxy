@@ -132,7 +132,7 @@ func TestGitServerHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 	installationToken2 := "v1.token2"
 	privateRepo2Cred := testGitSourceCred("github.com", "x-access-token", installationToken2, withAccessibleRepos([]string{"github/private-repo-2"}))
 
-	userToken := "ghp_fakefakefakesuperfake1"
+	userToken := "ghp_fakefakefakesuperfake1" //nolint:gosec // test credential
 	privateRepo3Cred := testGitSourceCred("github.com", "x-access-token", userToken, withAccessibleRepos([]string{"github/private-repo-3"}))
 
 	tests := []struct {
@@ -246,8 +246,8 @@ func TestGitServerHandlerNoRetry(t *testing.T) {
 
 func TestGitServerHandler_TokenFallback(t *testing.T) {
 	installationToken := "v1.token"
-	userToken1 := "ghp_fakefakefakesuperfake1"
-	userToken2 := "ghp_fakefakefakesuperfake2"
+	userToken1 := "ghp_fakefakefakesuperfake1" //nolint:gosec // test credential
+	userToken2 := "ghp_fakefakefakesuperfake2" //nolint:gosec // test credential
 	credentials := config.Credentials{
 		testGitSourceCred("github.com", "x-access-token", installationToken),
 		testGitSourceCred("github.com", "x-access-token", userToken1),
@@ -347,7 +347,7 @@ func TestGitServerHandler_TokenFallback(t *testing.T) {
 
 func TestGitServerHandler_TokenFallbackWithPost(t *testing.T) {
 	installationToken := "v1.token"
-	userToken := "ghp_fakefakefakesuperfake"
+	userToken := "ghp_fakefakefakesuperfake" //nolint:gosec // test credential
 	credentials := config.Credentials{
 		testGitSourceCred("github.com", "x-access-token", installationToken),
 		testGitSourceCred("github.com", "x-access-token", userToken),

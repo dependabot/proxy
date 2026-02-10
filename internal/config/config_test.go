@@ -35,7 +35,7 @@ func TestParse(t *testing.T) {
 				} else {
 					configPath = path.Join(temp, fname)
 					d1 := []byte(tc.input)
-					err := os.WriteFile(configPath, d1, 0644)
+					err := os.WriteFile(configPath, d1, 0600)
 					require.NoError(t, err)
 				}
 

@@ -37,10 +37,12 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 	safeDialer := dialer.New(&resolver, blockedIps)
 
 	transport := &http.Transport{
-		Dial:            safeDialer.Dial,
-		DialContext:     safeDialer.DialContext,
-		TLSClientConfig: &tls.Config{},
-		Proxy:           http.ProxyFromEnvironment,
+		Dial:        safeDialer.Dial,
+		DialContext: safeDialer.DialContext,
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
+		Proxy: http.ProxyFromEnvironment,
 	}
 
 	apiClient := apiclient.New(envSettings.APIEndpoint, envSettings.JobToken, envSettings.JobID, apiclient.WithTransport(transport))

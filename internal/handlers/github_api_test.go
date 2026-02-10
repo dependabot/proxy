@@ -111,7 +111,7 @@ func TestGitHubAPIHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 	installationToken2 := "v1.token2"
 	privateRepo2Cred := testGitSourceCred("github.com", "x-access-token", installationToken2, withAccessibleRepos([]string{"github/private-repo-2"}))
 
-	userToken := "ghp_fakefakefakesuperfake1"
+	userToken := "ghp_fakefakefakesuperfake1" //nolint:gosec // test credential
 	privateRepo3Cred := testGitSourceCred("github.com", "x-access-token", userToken, withAccessibleRepos([]string{"github/private-repo-3"}))
 
 	tests := []struct {
@@ -312,8 +312,8 @@ func TestGitHubAPIHandler_TokenFallback(t *testing.T) {
 	installationToken1 := "v1.token1"
 	installationToken2 := "v1.token2"
 	installationToken3 := "v1.token3"
-	userToken1 := "ghp_fakefakefakesuperfake1"
-	userToken2 := "ghp_fakefakefakesuperfake2"
+	userToken1 := "ghp_fakefakefakesuperfake1" //nolint:gosec // test credential
+	userToken2 := "ghp_fakefakefakesuperfake2" //nolint:gosec // test credential
 	credentials := config.Credentials{
 		testGitSourceCred("github.com", "x-access-token", installationToken1),
 		testGitSourceCred("github.com", "x-access-token", installationToken2, withAccessibleRepos([]string{"foo/qux"})),
@@ -430,8 +430,8 @@ func TestGitHubAPIHandler_TokenFallback(t *testing.T) {
 
 func TestGitHubAPIHandler_TokenFallback_In_Proxima(t *testing.T) {
 	installationToken := "v1.token"
-	userToken1 := "ghp_fakefakefakesuperfake1"
-	userToken2 := "ghp_fakefakefakesuperfake2"
+	userToken1 := "ghp_fakefakefakesuperfake1" //nolint:gosec // test credential
+	userToken2 := "ghp_fakefakefakesuperfake2" //nolint:gosec // test credential
 	credentials := config.Credentials{
 		testGitSourceCred("foo.ghe.com", "x-access-token", installationToken),
 		testGitSourceCred("foo.ghe.com", "x-access-token", userToken1),

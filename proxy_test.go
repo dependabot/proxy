@@ -158,7 +158,9 @@ func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*ht
 	}
 
 	// Spin up a test proxy server
-	srv := &http.Server{}
+	srv := &http.Server{
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 	srv.Handler = newProxy(envSettings, testProxyConfig, blockedIPs)
 
 	lc := net.ListenConfig{}
@@ -187,7 +189,8 @@ func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*ht
 		Transport: &http.Transport{
 			Proxy: http.ProxyURL(proxyURL),
 			TLSClientConfig: &tls.Config{
-				RootCAs: rootCAs,
+				MinVersion: tls.VersionTLS12,
+				RootCAs:    rootCAs,
 			},
 		},
 	}
@@ -197,7 +200,9 @@ func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*ht
 
 func testHTTPServer(t *testing.T) (string, *http.Server) {
 	// Spin up a test HTTP server
-	srv := &http.Server{}
+	srv := &http.Server{
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 	})

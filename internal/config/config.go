@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -96,7 +97,7 @@ func Parse(path string) (*Config, error) {
 		reader = os.Stdin
 	} else {
 		var err error
-		reader, err = os.Open(path)
+		reader, err = os.Open(filepath.Clean(path))
 		if err != nil {
 			return nil, err
 		}
