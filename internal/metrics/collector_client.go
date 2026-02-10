@@ -176,7 +176,7 @@ func (c *CollectorClient) SendMetric(name string, metricType string, value float
 	data, err := json.Marshal(metricData)
 	if err != nil {
 		logrus.Info("Error marshaling metric data " + name)
-		return fmt.Errorf("error marshaling metric data: %v", err)
+		return fmt.Errorf("error marshaling metric data: %w", err)
 	}
 	estimatedSize := len(data)
 
