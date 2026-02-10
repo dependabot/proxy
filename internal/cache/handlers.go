@@ -81,7 +81,7 @@ func key(r *http.Request) Key {
 	}
 	// Go randomizes map iteration order, so sort the header keys to get a consistent hash
 	sort.Strings(headers)
-	var sortedHeaders []string
+	sortedHeaders := make([]string, 0, len(headers))
 	for _, headerKey := range headers {
 		// sort the values to get a consistent hash, in case a bump in a package-manager changes the order
 		headerValues := append([]string{}, r.Header[headerKey]...)
