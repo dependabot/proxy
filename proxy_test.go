@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -131,7 +132,7 @@ func TestMetadataAPIRestriction(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.url, func(t *testing.T) {
-			req, err := http.NewRequest("GET", tc.url, nil)
+			req, err := http.NewRequestWithContext(context.Background(), "GET", tc.url, nil)
 			if err != nil {
 				t.Errorf("initializing new request: %v", err)
 			}
@@ -160,7 +161,8 @@ func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*ht
 	srv := &http.Server{}
 	srv.Handler = newProxy(envSettings, testProxyConfig, blockedIPs)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Errorf("net.Listen: %v", err)
 	}
@@ -200,7 +202,8 @@ func testHTTPServer(t *testing.T) (string, *http.Server) {
 		w.WriteHeader(200)
 	})
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Errorf("net.Listen: %v", err)
 	}

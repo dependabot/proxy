@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -318,7 +319,7 @@ func TestGitServerHandler_TokenFallback(t *testing.T) {
 				return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader("world"))}, nil
 			})
 
-			req, err := http.NewRequest("GET", "https://github.com/github/dependabot-action/info/refs?service=git-upload-pack", nil)
+			req, err := http.NewRequestWithContext(context.Background(), "GET", "https://github.com/github/dependabot-action/info/refs?service=git-upload-pack", nil)
 			require.NoError(t, err, "failed to create request")
 			ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: tt.respCode, Body: io.NopCloser(strings.NewReader("hello"))}
@@ -406,7 +407,7 @@ func TestGitServerHandler_TokenFallbackWithPost(t *testing.T) {
 				return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(""))}, nil
 			})
 
-			req, err := http.NewRequest("POST", tt.url, io.NopCloser(strings.NewReader("test body")))
+			req, err := http.NewRequestWithContext(context.Background(), "POST", tt.url, io.NopCloser(strings.NewReader("test body")))
 			require.NoError(t, err, "failed to create request")
 			ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: tt.respCode, Body: io.NopCloser(strings.NewReader(""))}
@@ -429,7 +430,7 @@ func TestGitServerHandler_NoCloneWithSingleCredPost(t *testing.T) {
 	}
 	handler := NewGitServerHandler(credentials, nil)
 
-	req, err := http.NewRequest("POST", "https://github.com/github/dependabot-action/git-upload-pack", io.NopCloser(strings.NewReader("test body")))
+	req, err := http.NewRequestWithContext(context.Background(), "POST", "https://github.com/github/dependabot-action/git-upload-pack", io.NopCloser(strings.NewReader("test body")))
 	require.NoError(t, err, "failed to create request")
 	ctx := &goproxy.ProxyCtx{Req: req}
 	_, _ = handler.HandleRequest(req, ctx)
