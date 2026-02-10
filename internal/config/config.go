@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// ProxyEnvSettings contains enviornment configuration for setting up the proxy.
+// ProxyEnvSettings contains environment configuration for setting up the proxy.
 type ProxyEnvSettings struct {
 	APIEndpoint    string
 	PackageManager string
