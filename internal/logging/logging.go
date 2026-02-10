@@ -47,7 +47,7 @@ func requestLog(ctx *goproxy.ProxyCtx, message string) {
 		argv = append([]any{reqId}, argv...)
 
 		if cache.WasResponseCached(ctx) {
-			format = format + " (cached)"
+			format += " (cached)"
 		}
 	}
 	formatted := fmt.Sprintf(format, argv...)

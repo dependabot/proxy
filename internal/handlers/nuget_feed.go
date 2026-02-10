@@ -189,13 +189,14 @@ func extraUrlsFromSourceResponse(body []byte, url string) []string {
 	var urls []string
 	bodyString := strings.TrimSpace(string(body))
 	bodyReader := bytes.NewReader(body)
-	if strings.HasPrefix(bodyString, "<") {
+	switch {
+	case strings.HasPrefix(bodyString, "<"):
 		// XML v2 API
 		urls = handleV2Response(bodyReader, url)
-	} else if strings.HasPrefix(bodyString, "{") {
+	case strings.HasPrefix(bodyString, "{"):
 		// JSON v3 API
 		urls = handleV3Response(bodyReader, url)
-	} else {
+	default:
 		logging.RequestLogf(nil, "unknown API response: %s...", bodyString[:10])
 	}
 
