@@ -16,17 +16,17 @@ func TestDependabotAPIHandler_HandleRequest(t *testing.T) {
 	})
 
 	req := httptest.NewRequest("GET", "https://api.dependabot.com/update_jobs/123/create_pull_request", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "", dependabotPassword, "dependabot repository request")
 
 	// HTTP, not HTTPS
 	req = httptest.NewRequest("GET", "http://api.dependabot.com/packages/somepkg", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "we always use HTTPS")
 
 	// missing subdomain
 	req = httptest.NewRequest("GET", "https://dependabot.com/packages/somepkg", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 }
 
@@ -40,6 +40,6 @@ func TestDependabotAPIHandler_CaseInsensitiveHostname(t *testing.T) {
 
 	// Request with lowercase hostname should still match uppercase endpoint
 	req := httptest.NewRequest("GET", "https://api.dependabot.com/update_jobs/123/create_pull_request", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "", dependabotPassword, "case-insensitive hostname matching")
 }

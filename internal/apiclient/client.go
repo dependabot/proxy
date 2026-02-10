@@ -121,6 +121,7 @@ func (c *Client) RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, accoun
 	if err != nil {
 		return nil, err
 	}
+	defer rsp.Body.Close()
 	data, err := io.ReadAll(rsp.Body)
 	if err != nil {
 		logging.RequestLogf(ctx, "Failed reading scope response: %v", err)

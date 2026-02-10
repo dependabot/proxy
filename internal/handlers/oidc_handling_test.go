@@ -1064,7 +1064,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			// check URLs are authenticated
 			for _, urlToAuth := range tc.urlsToAuthenticate {
 				req := httptest.NewRequest("GET", urlToAuth, nil)
-				req, _ = handler.HandleRequest(req, nil)
+				req = handleRequestAndClose(handler, req, nil)
 				assertHasTokenAuth(t, req, "Bearer", "__test_token__", "package url: "+urlToAuth)
 			}
 		})

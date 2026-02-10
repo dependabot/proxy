@@ -41,6 +41,7 @@ func TestProxyHTTPRequest(t *testing.T) {
 	if err != nil {
 		t.Errorf("making proxied request: %v", err)
 	}
+	defer rsp.Body.Close()
 	assert.Equal(t, 200, rsp.StatusCode)
 }
 
@@ -67,6 +68,7 @@ func TestIPRestrictions(t *testing.T) {
 				t.Errorf("making proxied request: %v", err)
 				return
 			}
+			defer rsp.Body.Close()
 
 			assert.Equal(t, 403, rsp.StatusCode)
 		})
@@ -84,7 +86,7 @@ func TestIPRestrictions(t *testing.T) {
 	// the connection from being established while goproxy tries to setup TLS
 	for _, url := range httpsTestCases {
 		t.Run(url, func(t *testing.T) {
-			_, err := client.Get(url)
+			_, err := client.Get(url) //nolint:bodyclose // error expected, no body to close
 			assert.Error(t, err)
 		})
 	}
@@ -142,6 +144,7 @@ func TestMetadataAPIRestriction(t *testing.T) {
 			if err != nil {
 				t.Errorf("making proxied request: %v", err)
 			}
+			defer rsp.Body.Close()
 
 			assert.Equal(t, 403, rsp.StatusCode)
 		})
