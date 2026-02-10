@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -73,7 +74,7 @@ func TestURLWithoutCredentials(t *testing.T) {
 }
 
 func TestRequestLogger(t *testing.T) {
-	req, err := http.NewRequest("GET", "https://github.com:443", nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "https://github.com:443", nil)
 	require.NoError(t, err)
 	p := &goproxy.ProxyCtx{Session: 128}
 

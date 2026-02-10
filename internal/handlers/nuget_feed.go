@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"io"
@@ -83,7 +84,7 @@ func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
 				logging.RequestLogf(nil, "registered %s OIDC credentials for nuget feed: %s", oidcCredential.Provider(), key)
 
 				// now query all resources to add to the authentication list
-				req, err := http.NewRequest("GET", key, nil)
+				req, err := http.NewRequestWithContext(context.Background(), "GET", key, nil)
 				if err != nil {
 					logging.RequestLogf(nil, "error creating http request (%s): %v", key, err)
 					continue
@@ -137,7 +138,7 @@ func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
 		// and authenticate them all
 		if url != "" {
 			logging.RequestLogf(nil, "fetching service index for nuget feed %s", url)
-			req, err := http.NewRequest("GET", url, nil)
+			req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
 			authenticateNugetRequest(req, feedCred, nil)
 			if err != nil {
 				logging.RequestLogf(nil, "error creating http request (%s): %v", url, err)
