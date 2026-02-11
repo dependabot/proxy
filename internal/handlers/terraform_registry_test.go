@@ -60,7 +60,7 @@ func TestTerraformRegistryHandler(t *testing.T) {
 		t.Run(strings.Join([]string{tt.registryType, tt.host, tt.token}, " "), func(t *testing.T) {
 			handler := NewTerraformRegistryHandler(tt.credentials)
 
-			request, _ := handler.HandleRequest(httptest.NewRequest("GET", tt.url, nil), nil)
+			request := handleRequestAndClose(handler, httptest.NewRequest("GET", tt.url, nil), nil)
 
 			assert.Equal(t, tt.authorization, request.Header.Get("Authorization"))
 		})
@@ -70,7 +70,7 @@ func TestTerraformRegistryHandler(t *testing.T) {
 		handler := NewTerraformRegistryHandler(config.Credentials{})
 
 		url := "https://registry.terraform.io/v1/providers/org/name/versions"
-		request, _ := handler.HandleRequest(httptest.NewRequest("GET", url, nil), nil)
+		request := handleRequestAndClose(handler, httptest.NewRequest("GET", url, nil), nil)
 
 		assert.Equal(t, "", request.Header.Get("Authorization"), "should be empty")
 	})

@@ -27,7 +27,7 @@ func TestGitHubAPIHandler_withUrlFallback(t *testing.T) {
 	handler := NewGitHubAPIHandler(usingURL)
 
 	req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "token", "super-secret-token", "valid api request")
 }
 
@@ -63,22 +63,22 @@ func TestGitHubAPIHandler(t *testing.T) {
 
 			// Valid API request, prioritises non-installation token
 			req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", tt.personalAccessToken.GetString("password"), "valid api request")
 
 			// Valid API request with port, prioritises non-installation token
 			req = httptest.NewRequest("GET", "https://api.github.com:443/some-repo", nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", tt.personalAccessToken.GetString("password"), "valid api request with port")
 
 			// Different subdomain - not the GitHub API
 			req = httptest.NewRequest("GET", "https://github.com/some-repo", nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 			assertUnauthenticated(t, req, "different subdomain")
 
 			// HTTP, not HTTPS
 			req = httptest.NewRequest("GET", "http://api.github.com/some-repo", nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 			assertUnauthenticated(t, req, "http, not https")
 		})
 
@@ -88,7 +88,7 @@ func TestGitHubAPIHandler(t *testing.T) {
 
 		// Valid API request, uses installation token
 		req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
-		req, _ = handler.HandleRequest(req, nil)
+		req = handleRequestAndClose(handler, req, nil)
 		assertHasTokenAuth(t, req, "token", installationCred.GetString("password"), "valid api request")
 
 		// With only the proxima token
@@ -97,7 +97,7 @@ func TestGitHubAPIHandler(t *testing.T) {
 
 		// Valid API request, uses installation token
 		req = httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
-		req, _ = handler.HandleRequest(req, nil)
+		req = handleRequestAndClose(handler, req, nil)
 		assertUnauthenticated(t, req, "Proxima is unauthenticated")
 		assertHasProximaHeader(t, req, proximaCred.GetString("password"), "valid api request")
 	}
@@ -157,7 +157,7 @@ func TestGitHubAPIHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 
 			// Valid github git request, prioritises non-installation token
 			req := httptest.NewRequest("GET", fmt.Sprintf("https://api.github.com/%s", tt.repoNWO), nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 
 			switch {
 			case tt.expectedCredential != nil:
@@ -201,22 +201,22 @@ func TestGitHubAPIHandlerInProxima(t *testing.T) {
 
 			// Valid API request, prioritises non-installation token
 			req := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", tt.personalAccessToken.GetString("password"), "valid api request")
 
 			// Valid API request with port, prioritises non-installation token
 			req = httptest.NewRequest("GET", "https://api.foo.ghe.com:443/some-repo", nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", tt.personalAccessToken.GetString("password"), "valid api request with port")
 
 			// Different subdomain - not the GitHub API
 			req = httptest.NewRequest("GET", "https://ghe.com/some-repo", nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 			assertUnauthenticated(t, req, "different subdomain")
 
 			// HTTP, not HTTPS
 			req = httptest.NewRequest("GET", "http://api.foo.ghe.com/some-repo", nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 			assertUnauthenticated(t, req, "http, not https")
 		})
 
@@ -226,7 +226,7 @@ func TestGitHubAPIHandlerInProxima(t *testing.T) {
 
 		// Valid API request, uses installation token
 		req := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
-		req, _ = handler.HandleRequest(req, nil)
+		req = handleRequestAndClose(handler, req, nil)
 		assertHasTokenAuth(t, req, "token", installationCred.GetString("password"), "valid api request")
 
 	}
@@ -254,17 +254,17 @@ func TestGitHubAPIHandlerWithMulipleHosts(t *testing.T) {
 
 			// Request to github.com, using the correct token
 			req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", tt.personalAccessToken.GetString("password"), "request to github.com")
 
 			// Request to foo.ghe.com, using the correct token
 			req = httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", fooGheCred.GetString("password"), "request to foo.ghe.com")
 
 			// Different subdomain - not the GitHub API
 			req = httptest.NewRequest("GET", "https://github.com/some-repo", nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 			assertUnauthenticated(t, req, "different subdomain")
 		})
 	}
@@ -275,7 +275,7 @@ func TestGitHubAPIHandlerWithMulipleHosts(t *testing.T) {
 
 	// Valid API request, uses only github.com token
 	req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "token", githubCred.GetString("password"), "request to github.com")
 
 	// With only the foo.ghe.com token
@@ -284,7 +284,7 @@ func TestGitHubAPIHandlerWithMulipleHosts(t *testing.T) {
 
 	// Valid API request, uses only foo.ghe.com token
 	fooGheReq := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
-	fooGheReq, _ = fooGhehandler.HandleRequest(fooGheReq, nil)
+	fooGheReq = handleRequestAndClose(fooGhehandler, fooGheReq, nil)
 	assertHasTokenAuth(t, fooGheReq, "token", fooGheCred.GetString("password"), "request to foo.ghe.com")
 }
 
@@ -294,7 +294,7 @@ func TestGitHubAPIHandler_InstallationTokenFormat(t *testing.T) {
 	handler := NewGitHubAPIHandler(credentials)
 
 	req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "token", installationCred.GetString("password"), "valid api request")
 }
 
@@ -304,7 +304,7 @@ func TestGitHubAPIHandler_InstallationTokenFormat_Proxima(t *testing.T) {
 	handler := NewGitHubAPIHandler(credentials)
 
 	req := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "token", installationCred.GetString("password"), "valid api request")
 }
 
@@ -406,9 +406,10 @@ func TestGitHubAPIHandler_TokenFallback(t *testing.T) {
 			rsp := &http.Response{StatusCode: tt.respCode, Body: io.NopCloser(strings.NewReader("hello"))}
 
 			// tag request with auth so we'll handle retries
-			_, _ = handler.HandleRequest(req, ctx)
+			_ = handleRequestAndClose(handler, req, ctx)
 
 			newRsp := handler.HandleResponse(rsp, ctx)
+			defer newRsp.Body.Close()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")
 			if tt.expectReplacedResponse {
@@ -510,9 +511,10 @@ func TestGitHubAPIHandler_TokenFallback_In_Proxima(t *testing.T) {
 			rsp := &http.Response{StatusCode: tt.respCode, Body: io.NopCloser(strings.NewReader("hello"))}
 
 			// tag request with auth so we'll handle retries
-			_, _ = handler.HandleRequest(req, ctx)
+			_ = handleRequestAndClose(handler, req, ctx)
 
 			newRsp := handler.HandleResponse(rsp, ctx)
+			defer newRsp.Body.Close()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")
 			if tt.expectReplacedResponse {

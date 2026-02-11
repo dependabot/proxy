@@ -34,29 +34,29 @@ func TestHelmRegistryHandler(t *testing.T) {
 	handler := NewHelmRegistryHandler(credentials)
 
 	req := httptest.NewRequest("GET", "https://helmreg.bigco.com/some_chart", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, bigCoUser, bigCoPassword, "valid registry request")
 
 	req = httptest.NewRequest("GET", "https://example.com/some_chart", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, bigCoUser, bigCoPassword, "valid registry request")
 
 	req = httptest.NewRequest("GET", "https://helmreg.smallco.com/some_chart", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, smallCoToken, "", "valid registry request")
 
 	// Missing repo subdomain
 	req = httptest.NewRequest("GET", "https://bigco.com/some_chart", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 
 	// HTTP, not HTTPS
 	req = httptest.NewRequest("GET", "http://helmreg.bigco.com/some_chart", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "http, not https")
 
 	// Not a GET request
 	req = httptest.NewRequest("POST", "https://helmreg.bigco.com/some_chart", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "post request")
 }

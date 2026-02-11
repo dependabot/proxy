@@ -50,58 +50,58 @@ func TestPythonIndexHandler(t *testing.T) {
 	handler := NewPythonIndexHandler(credentials)
 
 	req := httptest.NewRequest("GET", "https://corp.dependabot.com/pyreg", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, dependabotToken, "", "dependabot registry request")
 
 	req = httptest.NewRequest("GET", "https://corp.deltaforce.com/somepkg", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "deltaforce registry request")
 
 	req = httptest.NewRequest("GET", "https://example.com/somepkg", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "deltaforce registry request")
 
 	// Path mismatch
 	req = httptest.NewRequest("GET", "https://corp.dependabot.com/foo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "dependabot registry request")
 
 	req = httptest.NewRequest("GET", "https://pypy.com/other/pgk/a", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "other registry request")
 
 	// Path mismatch on /+simple
 	req = httptest.NewRequest("GET", "https://pypy.com/dependabot/pgk/a", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, "dependabot", "sec123", "dependabot pypy registry request")
 
 	// Path mismatch on /simple
 	req = httptest.NewRequest("GET", "https://pypy.com/simple/pgk/a", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, "simple", "sec245", "simple pypy registry request")
 
 	// Missing repo subdomain
 	req = httptest.NewRequest("GET", "https://dependabot.com/pyreg", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 
 	// HTTP, not HTTPS
 	req = httptest.NewRequest("GET", "http://corp.dependabot.com/pyreg", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "http, not https")
 
 	// Not a GET request
 	req = httptest.NewRequest("POST", "https://corp.dependabot.com/pyreg", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "post request")
 
 	// Azure DevOps
 	req = httptest.NewRequest("GET", "https://pkgs.dev.azure.com/somepkg", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "azure devops registry request")
 
 	// Azure DevOps case insensitive
 	req = httptest.NewRequest("GET", "https://PKGS.dev.azure.com/somepkg", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "azure devops case insensitive registry request")
 }

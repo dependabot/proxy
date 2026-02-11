@@ -30,7 +30,7 @@ func TestGitServerHandler_url(t *testing.T) {
 
 	// Valid github git request, prioritises non-installation token
 	req := httptest.NewRequest("GET", "https://github.com/account/repo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		cred["username"].(string),
 		cred["password"].(string),
@@ -63,7 +63,7 @@ func TestGitServerHandler(t *testing.T) {
 
 	// Valid github git request, prioritises non-installation token
 	req := httptest.NewRequest("GET", "https://github.com/account/repo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		otherGitHubCred.GetString("username"),
 		otherGitHubCred.GetString("password"),
@@ -71,7 +71,7 @@ func TestGitServerHandler(t *testing.T) {
 
 	// Valid github git request, git user included but no password
 	req = httptest.NewRequest("GET", "https://git@github.com/account/repo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		otherGitHubCred.GetString("username"),
 		otherGitHubCred.GetString("password"),
@@ -79,7 +79,7 @@ func TestGitServerHandler(t *testing.T) {
 
 	// Valid bitbucket git request, prioritises non-installation token
 	req = httptest.NewRequest("GET", "https://bitbucket.org:443/account/repo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		bitBucketCred.GetString("username"),
 		bitBucketCred.GetString("password"),
@@ -87,7 +87,7 @@ func TestGitServerHandler(t *testing.T) {
 
 	// Valid GHE request
 	req = httptest.NewRequest("GET", "https://ghe.some-corp.com/account/_dependabot", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		gheCred.GetString("username"),
 		gheCred.GetString("password"),
@@ -95,17 +95,17 @@ func TestGitServerHandler(t *testing.T) {
 
 	// Special GHE dependabot-api endpoint
 	req = httptest.NewRequest("GET", "https://ghe.some-corp.com/_dependabot/update_jobs/123/details", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "_dependabot api URL prefix")
 
 	// Different subdomain - not the GitHub API
 	req = httptest.NewRequest("GET", "https://api.github.com/account/repo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 
 	// HTTP, not HTTPS
 	req = httptest.NewRequest("GET", "http://github.com/account/repo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "http, not https")
 
 	credentials = config.Credentials{
@@ -117,7 +117,7 @@ func TestGitServerHandler(t *testing.T) {
 
 	// Valid github git request, uses installation token
 	req = httptest.NewRequest("GET", "https://github.com/account/repo", nil)
-	req, _ = handler.HandleRequest(req, nil)
+	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		installationCred.GetString("username"),
 		installationCred.GetString("password"),
@@ -178,7 +178,7 @@ func TestGitServerHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 
 			// Valid github git request, prioritises non-installation token
 			req := httptest.NewRequest("GET", fmt.Sprintf("https://github.com/%s", tt.repoNWO), nil)
-			req, _ = handler.HandleRequest(req, nil)
+			req = handleRequestAndClose(handler, req, nil)
 
 			switch {
 			case tt.expectedCredential != nil:
@@ -217,7 +217,13 @@ func TestGitServerHandler404Retry(t *testing.T) {
 	assert.Equal(t, 404, newRsp.StatusCode, "no retry without addedAuthCtxKey")
 
 	ctxdata.SetValue(ctx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
+	if newRsp.Body != nil {
+		newRsp.Body.Close()
+	}
 	newRsp = handler.HandleResponse(rsp, ctx)
+	if newRsp != nil && newRsp.Body != nil {
+		defer newRsp.Body.Close()
+	}
 	assert.Equal(t, 401, newRsp.StatusCode, "should retry")
 }
 
@@ -240,7 +246,13 @@ func TestGitServerHandlerNoRetry(t *testing.T) {
 
 	// Ensure we _don't_ retry
 	ctxdata.SetValue(ctx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
+	if newRsp.Body != nil {
+		newRsp.Body.Close()
+	}
 	newRsp = handler.HandleResponse(rsp, ctx)
+	if newRsp != nil && newRsp.Body != nil {
+		defer newRsp.Body.Close()
+	}
 	assert.Equal(t, 404, newRsp.StatusCode, "")
 }
 
@@ -324,8 +336,9 @@ func TestGitServerHandler_TokenFallback(t *testing.T) {
 			ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: tt.respCode, Body: io.NopCloser(strings.NewReader("hello"))}
 
-			_, _ = handler.HandleRequest(req, ctx)
+			_ = handleRequestAndClose(handler, req, ctx)
 			newRsp := handler.HandleResponse(rsp, ctx)
+			defer newRsp.Body.Close()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")
 			if tt.expectReplacedResponse {
@@ -412,11 +425,15 @@ func TestGitServerHandler_TokenFallbackWithPost(t *testing.T) {
 			ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: tt.respCode, Body: io.NopCloser(strings.NewReader(""))}
 
-			req, _ = handler.HandleRequest(req, ctx)
+			req = handleRequestAndClose(handler, req, ctx)
 			// trigger cloning body
-			_, err = roundTripper(req, ctx)
+			rtResp, err := roundTripper(req, ctx)
+			if rtResp != nil && rtResp.Body != nil {
+				rtResp.Body.Close()
+			}
 			require.NoError(t, err, "first request err")
 			newRsp := handler.HandleResponse(rsp, ctx)
+			defer newRsp.Body.Close()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")
 		})
@@ -433,7 +450,7 @@ func TestGitServerHandler_NoCloneWithSingleCredPost(t *testing.T) {
 	req, err := http.NewRequestWithContext(context.Background(), "POST", "https://github.com/github/dependabot-action/git-upload-pack", io.NopCloser(strings.NewReader("test body")))
 	require.NoError(t, err, "failed to create request")
 	ctx := &goproxy.ProxyCtx{Req: req}
-	_, _ = handler.HandleRequest(req, ctx)
+	_ = handleRequestAndClose(handler, req, ctx)
 	_, found := ctxdata.GetBuffer(ctx, reqBodyCtxKey)
 
 	assert.False(t, found, "expect clone buffer not present")
@@ -475,7 +492,8 @@ func TestGitServerHandler_RepositoryScopedCredentials(t *testing.T) {
 			ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(""))}
 
-			handler.HandleResponse(rsp, ctx)
+			newRsp := handler.HandleResponse(rsp, ctx)
+			defer newRsp.Body.Close()
 			assert.Equal(t, []string{
 				otherGitHubCred.GetString("password"),
 				unscopedInstallationCred.GetString("password"),
@@ -542,6 +560,7 @@ func TestGitServerHandler_RequestJITAccess(t *testing.T) {
 
 			ctxdata.SetValue(ctx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
 			newRsp := handler.HandleResponse(rsp, ctx)
+			defer newRsp.Body.Close()
 			assert.Equal(t, test.jitAccessEndpoint != "", testClient.receivedRequest, "request more scope unexpected")
 			if test.jitAccessEndpoint != "" {
 				assert.Equal(t, 200, newRsp.StatusCode, "should have succeeded")
