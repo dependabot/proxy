@@ -7,7 +7,7 @@ It is used by the [`dependabot-core`][dependabot-core] to handle authentication 
 
 To build and run the proxy, you need to have the following installed:
 
-- [Go][go] (version 1.25 or later)
+- [Go][go] (version 1.26 or later)
 - [Docker][docker]
 
 ## License
