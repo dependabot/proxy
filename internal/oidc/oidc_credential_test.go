@@ -268,6 +268,41 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			},
 			nil,
 		},
+		{
+			"cloudsmith",
+			config.Credential{
+				"oidc-namespace":    "my-org",
+				"oidc-service-slug": "my-service",
+			},
+			&CloudsmithOIDCParameters{
+				OrgName:     "my-org",
+				ServiceSlug: "my-service",
+				ApiHost:     "api.cloudsmith.io",
+				Audience:    "https://github.com/my-repo-owner",
+			},
+		},
+		{
+			"cloudsmith with explicit values",
+			config.Credential{
+				"oidc-namespace":    "my-org",
+				"oidc-service-slug": "my-service",
+				"api-host":          "api.example.com",
+				"audience":          "my-audience",
+			},
+			&CloudsmithOIDCParameters{
+				OrgName:     "my-org",
+				ServiceSlug: "my-service",
+				ApiHost:     "api.example.com",
+				Audience:    "my-audience",
+			},
+		},
+		{
+			"looks like cloudsmith but missing service slug",
+			config.Credential{
+				"oidc-namespace": "my-org",
+			},
+			nil,
+		},
 	}
 
 	for _, tc := range tests {
@@ -275,9 +310,11 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			// these variables are necessary
 			os.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
 			os.Setenv(envActionsIDTokenRequestToken, "test-token")
+			os.Setenv(envActionsRepositoryOwner, "my-repo-owner")
 			defer func() {
 				os.Unsetenv(envActionsIDTokenRequestURL)
 				os.Unsetenv(envActionsIDTokenRequestToken)
+				os.Unsetenv(envActionsRepositoryOwner)
 			}()
 
 			actual, _ := CreateOIDCCredential(tc.cred)
@@ -327,9 +364,74 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 				assert.Equal(t, expectedParams.ProviderName, p.ProviderName)
 				assert.Equal(t, expectedParams.Audience, p.Audience)
 				assert.Equal(t, expectedParams.IdentityMappingName, p.IdentityMappingName)
+			case *CloudsmithOIDCParameters:
+				expectedParams, ok := tc.expectedParameters.(*CloudsmithOIDCParameters)
+				if !ok {
+					t.Fatalf("expected parameters of type CloudsmithOIDCParameters, but got %T", tc.expectedParameters)
+				}
+				assert.Equal(t, expectedParams.OrgName, p.OrgName)
+				assert.Equal(t, expectedParams.ServiceSlug, p.ServiceSlug)
+				assert.Equal(t, expectedParams.ApiHost, p.ApiHost)
+				assert.Equal(t, expectedParams.Audience, p.Audience)
 			default:
 				t.Fatalf("unexpected parameters type %T", actual.parameters)
 			}
 		})
 	}
+}
+
+func TestTryCreateOIDCCredentialCloudsmithRepositoryOwnerEnvironmentBehavior(t *testing.T) {
+	// Setup
+	os.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
+	os.Setenv(envActionsIDTokenRequestToken, "test-token")
+	os.Setenv(envActionsRepositoryOwner, "test-owner")
+	defer func() {
+		os.Unsetenv(envActionsIDTokenRequestURL)
+		os.Unsetenv(envActionsIDTokenRequestToken)
+		os.Unsetenv(envActionsRepositoryOwner)
+	}()
+
+	cred := config.Credential{
+		"oidc-namespace":    "my-org",
+		"oidc-service-slug": "my-service",
+	}
+	creds, err := CreateOIDCCredential(cred)
+
+	// audience available from environment variable should be used
+	assert.NoError(t, err)
+	assert.NotNil(t, creds)
+	params, ok := creds.parameters.(*CloudsmithOIDCParameters)
+	assert.True(t, ok)
+	assert.Equal(
+		t,
+		"https://github.com/test-owner",
+		params.Audience,
+		"expected audience to be derived from environment",
+	)
+
+	// should not override provided audience value
+	credWithAudience := config.Credential{
+		"oidc-namespace":    "my-org",
+		"oidc-service-slug": "my-service",
+		"audience":          "explicit-audience",
+	}
+	credsWithAudience, err := CreateOIDCCredential(credWithAudience)
+	assert.NoError(t, err)
+	paramsWithAudience, ok := credsWithAudience.parameters.(*CloudsmithOIDCParameters)
+	assert.True(t, ok)
+	assert.Equal(
+		t,
+		"explicit-audience",
+		paramsWithAudience.Audience,
+		"expected audience to be the explicitly provided value",
+	)
+
+	// Verify error on no environment variable and no provided audience
+	os.Unsetenv(envActionsRepositoryOwner)
+	_, err = CreateOIDCCredential(cred)
+	assert.Error(
+		t,
+		err,
+		"creating cloudsmith OIDC credential without audience should fail",
+	)
 }
