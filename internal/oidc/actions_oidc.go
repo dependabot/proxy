@@ -618,7 +618,7 @@ func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParamete
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Cloudsmith returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("cloudsmith returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var tokenResp cloudsmithTokenResponse
@@ -627,7 +627,7 @@ func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParamete
 	}
 
 	if tokenResp.Token == "" {
-		return nil, fmt.Errorf("Cloudsmith token response does not contain a token")
+		return nil, fmt.Errorf("cloudsmith token response does not contain a token")
 	}
 
 	// Cloudsmith tokens are valid for 2 hours according to their documentation
