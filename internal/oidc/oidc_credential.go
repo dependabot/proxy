@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	envActionsRepositoryOwner = "ACTIONS_REPOSITORY_OWNER"
+	envActionsRepositoryOwner = "GITHUB_REPOSITORY_OWNER"
 )
 
 func GetRepositoryOwner() string {
