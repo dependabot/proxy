@@ -614,7 +614,7 @@ func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParamete
 		return nil, fmt.Errorf("failed to read cloudsmith token response body: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, fmt.Errorf("cloudsmith returned status %d: %s", resp.StatusCode, string(body))
 	}
 
