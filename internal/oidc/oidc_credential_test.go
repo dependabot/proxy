@@ -273,12 +273,13 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			config.Credential{
 				"oidc-namespace":    "my-org",
 				"oidc-service-slug": "my-service",
+				"oidc-audience":     "my-audience",
 			},
 			&CloudsmithOIDCParameters{
 				OrgName:     "my-org",
 				ServiceSlug: "my-service",
 				ApiHost:     "api.cloudsmith.io",
-				Audience:    "https://github.com/my-repo-owner",
+				Audience:    "my-audience",
 			},
 		},
 		{
@@ -287,7 +288,7 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 				"oidc-namespace":    "my-org",
 				"oidc-service-slug": "my-service",
 				"api-host":          "api.example.com",
-				"audience":          "my-audience",
+				"oidc-audience":     "my-audience",
 			},
 			&CloudsmithOIDCParameters{
 				OrgName:     "my-org",
@@ -297,9 +298,25 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			},
 		},
 		{
+			"looks like cloudsmith but missing service slug and audience",
+			config.Credential{
+				"oidc-namespace": "my-org",
+			},
+			nil,
+		},
+		{
 			"looks like cloudsmith but missing service slug",
 			config.Credential{
 				"oidc-namespace": "my-org",
+				"oidc-audience":  "my-audience",
+			},
+			nil,
+		},
+		{
+			"looks like cloudsmith but missing audience",
+			config.Credential{
+				"oidc-namespace":    "my-org",
+				"oidc-service-slug": "my-service",
 			},
 			nil,
 		},
@@ -310,11 +327,9 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			// these variables are necessary
 			os.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
 			os.Setenv(envActionsIDTokenRequestToken, "test-token")
-			os.Setenv(envActionsRepositoryOwner, "my-repo-owner")
 			defer func() {
 				os.Unsetenv(envActionsIDTokenRequestURL)
 				os.Unsetenv(envActionsIDTokenRequestToken)
-				os.Unsetenv(envActionsRepositoryOwner)
 			}()
 
 			actual, _ := CreateOIDCCredential(tc.cred)
@@ -378,60 +393,4 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestTryCreateOIDCCredentialCloudsmithRepositoryOwnerEnvironmentBehavior(t *testing.T) {
-	// Setup
-	os.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
-	os.Setenv(envActionsIDTokenRequestToken, "test-token")
-	os.Setenv(envActionsRepositoryOwner, "test-owner")
-	defer func() {
-		os.Unsetenv(envActionsIDTokenRequestURL)
-		os.Unsetenv(envActionsIDTokenRequestToken)
-		os.Unsetenv(envActionsRepositoryOwner)
-	}()
-
-	cred := config.Credential{
-		"oidc-namespace":    "my-org",
-		"oidc-service-slug": "my-service",
-	}
-	creds, err := CreateOIDCCredential(cred)
-
-	// audience available from environment variable should be used
-	assert.NoError(t, err)
-	assert.NotNil(t, creds)
-	params, ok := creds.parameters.(*CloudsmithOIDCParameters)
-	assert.True(t, ok)
-	assert.Equal(
-		t,
-		"https://github.com/test-owner",
-		params.Audience,
-		"expected audience to be derived from environment",
-	)
-
-	// should not override provided audience value
-	credWithAudience := config.Credential{
-		"oidc-namespace":    "my-org",
-		"oidc-service-slug": "my-service",
-		"audience":          "explicit-audience",
-	}
-	credsWithAudience, err := CreateOIDCCredential(credWithAudience)
-	assert.NoError(t, err)
-	paramsWithAudience, ok := credsWithAudience.parameters.(*CloudsmithOIDCParameters)
-	assert.True(t, ok)
-	assert.Equal(
-		t,
-		"explicit-audience",
-		paramsWithAudience.Audience,
-		"expected audience to be the explicitly provided value",
-	)
-
-	// Verify error on no environment variable and no provided audience
-	os.Unsetenv(envActionsRepositoryOwner)
-	_, err = CreateOIDCCredential(cred)
-	assert.Error(
-		t,
-		err,
-		"creating cloudsmith OIDC credential without audience should fail",
-	)
 }
