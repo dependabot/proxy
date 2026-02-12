@@ -153,7 +153,10 @@ func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
 			if owner := GetRepositoryOwner(); owner != "" {
 				audience = fmt.Sprintf("https://github.com/%s", owner)
 			} else {
-				return nil, fmt.Errorf("missing audience for cloudsmith")
+				return nil, fmt.Errorf(
+					"missing audience for cloudsmith, either provide 'audience' or set '%s' in environment",
+					envActionsRepositoryOwner,
+				)
 			}
 		}
 		parameters = &CloudsmithOIDCParameters{
