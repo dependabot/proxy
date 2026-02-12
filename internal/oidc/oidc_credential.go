@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -14,6 +15,14 @@ import (
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
 )
+
+const (
+	envActionsRepositoryOwner = "ACTIONS_REPOSITORY_OWNER"
+)
+
+func GetRepositoryOwner() string {
+	return os.Getenv(envActionsRepositoryOwner)
+}
 
 type OIDCParameters interface {
 	Name() string
@@ -52,6 +61,17 @@ func (a *AWSOIDCParameters) Name() string {
 	return "aws"
 }
 
+type CloudsmithOIDCParameters struct {
+	OrgName     string
+	ServiceSlug string
+	ApiHost     string
+	Audience    string
+}
+
+func (c *CloudsmithOIDCParameters) Name() string {
+	return "cloudsmith"
+}
+
 type OIDCCredential struct {
 	parameters  OIDCParameters
 	cachedToken string
@@ -86,6 +106,10 @@ func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
 	domain := cred.GetString("domain")
 	domainOwner := cred.GetString("domain-owner")
 
+	// cloudsmith values
+	orgName := cred.GetString("oidc-namespace")
+	serviceSlug := cred.GetString("oidc-service-slug")
+
 	switch {
 	case tenantID != "" && clientID != "":
 		parameters = &AzureOIDCParameters{
@@ -118,6 +142,25 @@ func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
 			Audience:    audience,
 			Domain:      domain,
 			DomainOwner: domainOwner,
+		}
+	case orgName != "" && serviceSlug != "":
+		apiHost := cred.GetString("api-host")
+		if apiHost == "" {
+			apiHost = "api.cloudsmith.io"
+		}
+		audience := cred.GetString("audience")
+		if audience == "" {
+			if owner := GetRepositoryOwner(); owner != "" {
+				audience = fmt.Sprintf("https://github.com/%s", owner)
+			} else {
+				return nil, fmt.Errorf("missing audience for cloudsmith")
+			}
+		}
+		parameters = &CloudsmithOIDCParameters{
+			OrgName:     orgName,
+			ServiceSlug: serviceSlug,
+			ApiHost:     apiHost,
+			Audience:    audience,
 		}
 	}
 
@@ -160,6 +203,8 @@ func GetOrRefreshOIDCToken(cred *OIDCCredential, ctx context.Context) (string, e
 		oidcAccessToken, err = GetJFrogAccessTokenForDevOps(ctx, *params)
 	case *AWSOIDCParameters:
 		oidcAccessToken, err = GetAWSAccessTokenForDevOps(ctx, *params)
+	case *CloudsmithOIDCParameters:
+		oidcAccessToken, err = GetCloudsmithAccessTokenForDevOps(ctx, *params)
 	default:
 		return "", fmt.Errorf("unsupported OIDC provider: %s", cred.Provider())
 	}
