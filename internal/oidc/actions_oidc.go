@@ -573,9 +573,6 @@ func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParamete
 	if params.ApiHost == "" {
 		return nil, fmt.Errorf("API host is required")
 	}
-	if params.Audience == "" {
-		return nil, fmt.Errorf("audience is required")
-	}
 	if params.OrgName == "" {
 		return nil, fmt.Errorf("org name is required")
 	}
