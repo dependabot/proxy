@@ -122,6 +122,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"url":               "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -216,6 +217,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"registry":          "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -310,6 +312,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"registry":          "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -403,6 +406,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"url":               "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -496,6 +500,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"registry":          "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -589,6 +594,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"url":               "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -682,6 +688,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"url":               "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -775,6 +782,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"url":               "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -892,6 +900,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"url":               "https://cloudsmith.example.com/v3/index.json",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{
@@ -993,6 +1002,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"url":               "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -1086,6 +1096,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"url":               "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -1181,6 +1192,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"host":              "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -1274,6 +1286,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"url":               "https://cloudsmith.example.com",
 					"oidc-namespace":    "space",
 					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -1339,8 +1352,6 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"expires_in": 3600
 				}`))
 			case "cloudsmith":
-				// for fallback on Audience
-				t.Setenv("GITHUB_REPOSITORY_OWNER", "testowner")
 				namespace := tc.credentials[0]["oidc-namespace"]
 				httpmock.RegisterResponder("POST", fmt.Sprintf("https://api.cloudsmith.io/openid/%s/", namespace),
 					httpmock.NewStringResponder(200, `{

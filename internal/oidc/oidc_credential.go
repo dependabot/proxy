@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"sync"
 	"time"
 
@@ -15,14 +14,6 @@ import (
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
 )
-
-const (
-	envActionsRepositoryOwner = "GITHUB_REPOSITORY_OWNER"
-)
-
-func GetRepositoryOwner() string {
-	return os.Getenv(envActionsRepositoryOwner)
-}
 
 type OIDCParameters interface {
 	Name() string
@@ -109,6 +100,7 @@ func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
 	// cloudsmith values
 	orgName := cred.GetString("oidc-namespace")
 	serviceSlug := cred.GetString("oidc-service-slug")
+	cloudsmithAudience := cred.GetString("oidc-audience")
 
 	switch {
 	case tenantID != "" && clientID != "":
@@ -143,27 +135,16 @@ func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
 			Domain:      domain,
 			DomainOwner: domainOwner,
 		}
-	case orgName != "" && serviceSlug != "":
+	case orgName != "" && serviceSlug != "" && cloudsmithAudience != "":
 		apiHost := cred.GetString("api-host")
 		if apiHost == "" {
 			apiHost = "api.cloudsmith.io"
-		}
-		audience := cred.GetString("audience")
-		if audience == "" {
-			if owner := GetRepositoryOwner(); owner != "" {
-				audience = fmt.Sprintf("https://github.com/%s", owner)
-			} else {
-				return nil, fmt.Errorf(
-					"missing audience for cloudsmith, either provide 'audience' or set '%s' in environment",
-					envActionsRepositoryOwner,
-				)
-			}
 		}
 		parameters = &CloudsmithOIDCParameters{
 			OrgName:     orgName,
 			ServiceSlug: serviceSlug,
 			ApiHost:     apiHost,
-			Audience:    audience,
+			Audience:    cloudsmithAudience,
 		}
 	}
 
