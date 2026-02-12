@@ -124,6 +124,29 @@ func TestGitServerHandler(t *testing.T) {
 		"valid github request")
 }
 
+func TestGitServerPublicReleaseDownload(t *testing.T) {
+	installationCred := testGitSourceCred("github.com", "x-access-token", "v1.token")
+	gheCred := testGitSourceCred("ghe.some-corp.com", "x-access-token", "corp")
+
+	credentials := config.Credentials{
+		installationCred,
+		gheCred,
+	}
+	handler := NewGitServerHandler(credentials, nil)
+
+	req := httptest.NewRequest("HEAD", "https://github.com/gradle/gradle-distributions/releases/download/v9.3.0/gradle-9.3.0-bin.zip", nil)
+	req, _ = handler.HandleRequest(req, nil)
+	assertUnauthenticated(t, req, "Public github.com release downloads should not be authenticated")
+
+	req = httptest.NewRequest("HEAD", "https://ghe.some-corp.com/gradle/gradle-distributions/releases/download/v9.3.0/gradle-9.3.0-bin.zip", nil)
+	req, _ = handler.HandleRequest(req, nil)
+	assertHasBasicAuth(t, req,
+		gheCred.GetString("username"),
+		gheCred.GetString("password"),
+		"valid github request")
+
+}
+
 func TestGitServerHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 	installationToken1 := "v1.token1"
 	privateRepo1Cred := testGitSourceCred("github.com", "x-access-token", installationToken1, withAccessibleRepos([]string{"github/private-repo-1"}))

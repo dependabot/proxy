@@ -323,6 +323,10 @@ func getCredentialsForRequest(r *http.Request, credentials *gitCredentialsMap, e
 		return nil
 	}
 
+	if isPublicGitHubDownload(host, r.URL.Path) {
+		return nil
+	}
+
 	// Get credentials for the host that not unscoped to specific repositories.
 	hostCreds := credentials.get(host)
 	credsForRequest := hostCreds.getCredentialsForRepo(allReposScopeIdentifier)
@@ -341,6 +345,12 @@ func getCredentialsForRequest(r *http.Request, credentials *gitCredentialsMap, e
 	}
 
 	return credsForRequest
+}
+
+// GitHub release download URLs are public
+// and do not require authentication
+func isPublicGitHubDownload(host string, path string) bool {
+	return host == "github.com" && strings.Contains(path, "/releases/download/")
 }
 
 // HandleResponse handles retrying failed auth responses with alternate credentials
