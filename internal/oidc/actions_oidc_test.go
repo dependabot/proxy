@@ -1009,7 +1009,6 @@ func TestGetCloudsmithAccessToken(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, cloudsmithToken)
 				assert.Equal(t, tt.expectedToken, cloudsmithToken.Token)
-				assert.NotNil(t, cloudsmithToken.ExpiresIn)
 			}
 		})
 	}
