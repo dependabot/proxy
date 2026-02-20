@@ -178,6 +178,15 @@ type awsTokenResponse struct {
 	Expiration         float64 `json:"expiration"`
 }
 
+type cloudsmithTokenRequest struct {
+	OIDCToken   string `json:"oidc_token"`
+	ServiceSlug string `json:"service_slug"`
+}
+
+type cloudsmithTokenResponse struct {
+	Token string `json:"token"`
+}
+
 // OIDCAccessToken represents an access token with its expiry information
 type OIDCAccessToken struct {
 	Token     string
@@ -555,6 +564,93 @@ func GetAWSAccessTokenForDevOps(ctx context.Context, params AWSOIDCParameters) (
 	}
 
 	return awsToken, nil
+}
+
+func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParameters, githubToken string) (*OIDCAccessToken, error) {
+	if params.ServiceSlug == "" {
+		return nil, fmt.Errorf("service slug is required")
+	}
+	if params.ApiHost == "" {
+		return nil, fmt.Errorf("API host is required")
+	}
+	if params.OrgName == "" {
+		return nil, fmt.Errorf("org name is required")
+	}
+	if githubToken == "" {
+		return nil, fmt.Errorf("GitHub token is required")
+	}
+
+	requestBody := cloudsmithTokenRequest{
+		OIDCToken:   githubToken,
+		ServiceSlug: params.ServiceSlug,
+	}
+
+	requestBodyJson, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal cloudsmith token request: %w", err)
+	}
+
+	tokenURL := fmt.Sprintf("https://%s/openid/%s/", params.ApiHost, params.OrgName)
+	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, bytes.NewReader(requestBodyJson))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cloudsmith token request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "dependabot-proxy/1.0")
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute cloudsmith token request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read cloudsmith token response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("cloudsmith returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp cloudsmithTokenResponse
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, fmt.Errorf("failed to parse cloudsmith token response: %w", err)
+	}
+
+	if tokenResp.Token == "" {
+		return nil, fmt.Errorf("cloudsmith token response does not contain a token")
+	}
+
+	// Cloudsmith tokens are valid for 2 hours according to their documentation
+	return &OIDCAccessToken{
+		Token:     tokenResp.Token,
+		ExpiresIn: 2 * time.Hour,
+	}, nil
+}
+
+func GetCloudsmithAccessTokenForDevOps(ctx context.Context, params CloudsmithOIDCParameters) (*OIDCAccessToken, error) {
+	if !IsOIDCConfigured() {
+		return nil, fmt.Errorf("GitHub Actions OIDC is not configured")
+	}
+
+	// Get GitHub OIDC token
+	githubToken, err := GetToken(ctx, params.Audience)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GitHub OIDC token: %w", err)
+	}
+
+	cloudsmithToken, err := GetCloudsmithAccessToken(ctx, params, githubToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to exchange GitHub token for cloudsmith token: %w", err)
+	}
+
+	return cloudsmithToken, nil
 }
 
 func calculateContentSha256Header(payload []byte) string {

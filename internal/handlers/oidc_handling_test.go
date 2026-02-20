@@ -110,6 +110,29 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://jfrog.example.com/packages/some-package",
 			},
 		},
+		{
+			name:     "Cargo",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewCargoRegistryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "cargo_registry",
+					"url":               "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for cargo registry: https://cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
+			},
+		},
 		//
 		// Composer
 		//
@@ -182,6 +205,30 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://jfrog.example.com/some-package",
 			},
 		},
+		{
+			name:     "Composer",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewComposerHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "composer_repository",
+					"registry":          "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for composer repository: cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
+			},
+		},
+
 		//
 		// Docker
 		//
@@ -251,6 +298,29 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
+			},
+		},
+		{
+			name:     "Docker",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "docker_registry",
+					"registry":          "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for docker registry: https://cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
 			},
 		},
 		//
@@ -324,6 +394,29 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://jfrog.example.com/packages/some-package",
 			},
 		},
+		{
+			name:     "Go proxy",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewGoProxyServerHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "goproxy_server",
+					"url":               "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for goproxy server: https://cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
+			},
+		},
 		//
 		// Helm
 		//
@@ -393,6 +486,29 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
+			},
+		},
+		{
+			name:     "Helm registry",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewHelmRegistryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "helm_registry",
+					"registry":          "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for helm registry: https://cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
 			},
 		},
 		//
@@ -466,6 +582,29 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://jfrog.example.com/some-package",
 			},
 		},
+		{
+			name:     "Hex",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewHexRepositoryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "hex_repository",
+					"url":               "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for hex repository: https://cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
+			},
+		},
 		//
 		// Maven
 		//
@@ -537,6 +676,29 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://jfrog.example.com/packages/some-package",
 			},
 		},
+		{
+			name:     "Maven",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewMavenRepositoryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "maven_repository",
+					"url":               "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for maven repository: cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
+			},
+		},
 		//
 		// NPM
 		//
@@ -606,6 +768,29 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
+			},
+		},
+		{
+			name:     "NPM",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewNPMRegistryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "npm_registry",
+					"url":               "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for npm registry: cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
 			},
 		},
 		//
@@ -703,6 +888,37 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://jfrog.example.com/v3/packages/some.package/index.json", // package url
 			},
 		},
+		{
+			name:     "NuGet",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewNugetFeedHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "nuget_feed",
+					"url":               "https://cloudsmith.example.com/v3/index.json",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{
+				{
+					verb:     "GET",
+					url:      "https://cloudsmith.example.com/v3/index.json",
+					response: `{"version":"3.0.0","resources":[{"@id":"https://cloudsmith.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+				},
+			},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for nuget feed: https://cloudsmith.example.com/v3/index.json",
+				"  registered cloudsmith OIDC credentials for nuget resource: https://cloudsmith.example.com/v3/packages",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/v3/index.json",                       // base url
+				"https://cloudsmith.example.com/v3/packages/some.package/index.json", // package url
+			},
+		},
 		//
 		// Pub
 		//
@@ -774,6 +990,29 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://jfrog.example.com/some-package",
 			},
 		},
+		{
+			name:     "Pub",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewPubRepositoryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "pub_repository",
+					"url":               "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for pub repository: https://cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
+			},
+		},
 		//
 		// Python
 		//
@@ -843,6 +1082,29 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
+			},
+		},
+		{
+			name:     "Python",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewPythonIndexHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "python_index",
+					"url":               "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for python index: cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
 			},
 		},
 		//
@@ -917,6 +1179,30 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://jfrog.example.com/some-package",
 			},
 		},
+		{
+			name:     "RubyGems",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewRubyGemsServerHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "rubygems_server",
+					"url":               "https://cloudsmith.example.com",
+					"host":              "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for rubygems server: https://cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
+			},
+		},
 		//
 		// Terraform
 		//
@@ -988,6 +1274,29 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://jfrog.example.com/some-package",
 			},
 		},
+		{
+			name:     "Terraform",
+			provider: "cloudsmith",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewTerraformRegistryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":              "terraform_registry",
+					"url":               "https://cloudsmith.example.com",
+					"oidc-namespace":    "space",
+					"oidc-service-slug": "repo",
+					"oidc-audience":     "my-audience",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered cloudsmith OIDC credentials for terraform registry: cloudsmith.example.com",
+			},
+			urlsToAuthenticate: []string{
+				"https://cloudsmith.example.com/some-package",
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%s - %s", tc.name, tc.provider), func(t *testing.T) {
@@ -1041,6 +1350,12 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				httpmock.RegisterResponder("POST", "https://jfrog.example.com/access/api/v1/oidc/token", httpmock.NewStringResponder(200, `{
 					"access_token": "__test_token__",
 					"expires_in": 3600
+				}`))
+			case "cloudsmith":
+				namespace := tc.credentials[0]["oidc-namespace"]
+				httpmock.RegisterResponder("POST", fmt.Sprintf("https://api.cloudsmith.io/openid/%s/", namespace),
+					httpmock.NewStringResponder(200, `{
+						"token": "__test_token__"
 				}`))
 			default:
 				t.Fatal("unsupported provider in test case: " + tc.provider)
