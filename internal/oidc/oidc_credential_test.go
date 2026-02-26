@@ -268,6 +268,58 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			},
 			nil,
 		},
+		{
+			"cloudsmith",
+			config.Credential{
+				"oidc-namespace":    "my-org",
+				"oidc-service-slug": "my-service",
+				"oidc-audience":     "my-audience",
+			},
+			&CloudsmithOIDCParameters{
+				OrgName:     "my-org",
+				ServiceSlug: "my-service",
+				ApiHost:     "api.cloudsmith.io",
+				Audience:    "my-audience",
+			},
+		},
+		{
+			"cloudsmith with explicit values",
+			config.Credential{
+				"oidc-namespace":    "my-org",
+				"oidc-service-slug": "my-service",
+				"api-host":          "api.example.com",
+				"oidc-audience":     "my-audience",
+			},
+			&CloudsmithOIDCParameters{
+				OrgName:     "my-org",
+				ServiceSlug: "my-service",
+				ApiHost:     "api.example.com",
+				Audience:    "my-audience",
+			},
+		},
+		{
+			"looks like cloudsmith but missing service slug and audience",
+			config.Credential{
+				"oidc-namespace": "my-org",
+			},
+			nil,
+		},
+		{
+			"looks like cloudsmith but missing service slug",
+			config.Credential{
+				"oidc-namespace": "my-org",
+				"oidc-audience":  "my-audience",
+			},
+			nil,
+		},
+		{
+			"looks like cloudsmith but missing audience",
+			config.Credential{
+				"oidc-namespace":    "my-org",
+				"oidc-service-slug": "my-service",
+			},
+			nil,
+		},
 	}
 
 	for _, tc := range tests {
@@ -327,6 +379,15 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 				assert.Equal(t, expectedParams.ProviderName, p.ProviderName)
 				assert.Equal(t, expectedParams.Audience, p.Audience)
 				assert.Equal(t, expectedParams.IdentityMappingName, p.IdentityMappingName)
+			case *CloudsmithOIDCParameters:
+				expectedParams, ok := tc.expectedParameters.(*CloudsmithOIDCParameters)
+				if !ok {
+					t.Fatalf("expected parameters of type CloudsmithOIDCParameters, but got %T", tc.expectedParameters)
+				}
+				assert.Equal(t, expectedParams.OrgName, p.OrgName)
+				assert.Equal(t, expectedParams.ServiceSlug, p.ServiceSlug)
+				assert.Equal(t, expectedParams.ApiHost, p.ApiHost)
+				assert.Equal(t, expectedParams.Audience, p.Audience)
 			default:
 				t.Fatalf("unexpected parameters type %T", actual.parameters)
 			}
