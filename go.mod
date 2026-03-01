@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/aws/aws-sdk-go v1.55.8
-	github.com/aws/aws-sdk-go-v2 v1.41.1
+	github.com/aws/aws-sdk-go-v2 v1.41.2
 	github.com/elazarl/goproxy v0.0.0-20240726154733-8b0c20506380
 	github.com/evalphobia/logrus_sentry v0.8.2
 	github.com/getsentry/raven-go v0.2.0
@@ -21,7 +21,7 @@ require (
 )
 
 require (
-	github.com/aws/smithy-go v1.24.0 // indirect
+	github.com/aws/smithy-go v1.24.1 // indirect
 	github.com/cenk/backoff v2.2.1+incompatible // indirect
 	github.com/certifi/gocertifi v0.0.0-20191021191039-0944d244cd40 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
