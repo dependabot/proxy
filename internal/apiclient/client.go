@@ -98,7 +98,9 @@ func WithTransport(transport *http.Transport) ClientOpt {
 }
 
 // RequestJITAccess asks the API to create a token with access to the specified repository.
-func (c *Client) RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, account string, repo string) (*config.Credential, error) {
+// If username and password are provided, they are used for basic auth; otherwise the client's
+// default token is used in the Authorization header.
+func (c *Client) RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (*config.Credential, error) {
 	url := c.newURL("%s", endpoint)
 
 	if err := c.jitRateLimit.Acquire(ctx.Req.Context(), 1); err != nil {
@@ -115,6 +117,9 @@ func (c *Client) RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, accoun
 	req, err := c.newRequest(ctx.Req.Context(), "POST", url, string(payload))
 	if err != nil {
 		return nil, err
+	}
+	if username != "" && password != "" {
+		req.SetBasicAuth(username, password)
 	}
 
 	rsp, err := c.httpClient.Do(req)
