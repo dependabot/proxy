@@ -9,11 +9,14 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/elazarl/goproxy"
+	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dependabot/proxy/internal/apiclient"
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/ctxdata"
 )
@@ -510,7 +513,7 @@ type TestScopeRequester struct {
 
 const jitToken = "newToken"
 
-func (t *TestScopeRequester) RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, account string, repo string) (*config.Credential, error) {
+func (t *TestScopeRequester) RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (*config.Credential, error) {
 	t.receivedRequest = true
 
 	return &config.Credential{
@@ -569,4 +572,105 @@ func TestGitServerHandler_RequestJITAccess(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestJITEndpointUsesExplicitAuthWhenProvided(t *testing.T) {
+	// jit_access host is different from the endpoint host _AND_ requires separate auth
+	// This test verifies that the explicit username and password that accompany the jit_access cred are used
+	creds := []config.Credential{
+		{
+			"type":     "git_source",
+			"host":     "github.com",
+			"username": "x-access-token",
+			"password": "this-token-has-expired",
+		},
+		{
+			"type":            "jit_access",
+			"credential-type": "git_source",
+			"host":            "github.com", // if requests to github.com fail we need to use the other endpoint and auth to get a new token
+			"endpoint":        "https://dpdbot.dev.azure.com/some/path/dependabot/job/1234/jit_access",
+			"username":        "x-access-token",
+			"password":        "explicit-jit-access-token",
+		},
+	}
+
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	// The expected order is:
+	//   1. Request to github.com is made with expired token and fails with 401
+	//   2. Request to jit_access endpoint is made with explicit credentials and returns new token
+	//   3. Original request is retried with new token and succeeds
+
+	urlsRequested := []string{}
+	httpmock.RegisterResponder("GET", "https://github.com/account/repo/info/refs?service=git-upload-pack", func(req *http.Request) (*http.Response, error) {
+		_, pass, _ := req.BasicAuth()
+		if pass == "this-token-has-expired" {
+			urlsRequested = append(urlsRequested, fmt.Sprintf("%d|%s", 401, req.URL.String()))
+			return &http.Response{
+				StatusCode: 401,
+				Body:       io.NopCloser(strings.NewReader("token has expired")),
+			}, nil
+		}
+
+		if pass == "refreshed-token" {
+			urlsRequested = append(urlsRequested, fmt.Sprintf("%d|%s", 200, req.URL.String()))
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader("success!")),
+			}, nil
+		}
+
+		urlsRequested = append(urlsRequested, fmt.Sprintf("%d|%s", 400, req.URL.String()))
+		return &http.Response{
+			StatusCode: 400,
+			Body:       io.NopCloser(strings.NewReader("unexpected")),
+		}, nil
+	})
+
+	httpmock.RegisterResponder("POST", "https://dpdbot.dev.azure.com/some/path/dependabot/job/1234/jit_access", func(req *http.Request) (*http.Response, error) {
+		urlsRequested = append(urlsRequested, fmt.Sprintf("%d|%s", 200, req.URL.String()))
+		user, pass, ok := req.BasicAuth()
+		assert.True(t, ok, "should have basic auth on JIT access request")
+		assert.Equal(t, "x-access-token", user, "should have used explicit username for JIT access request")
+		assert.Equal(t, "explicit-jit-access-token", pass, "should have used explicit password for JIT access request")
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(strings.NewReader(`{"username":"x-access-token","password":"refreshed-token"}`)),
+		}, nil
+	})
+
+	apiClient := apiclient.New("", "job-token-is-wrong-token", "") // other token given for the API client
+	handler := NewGitServerHandler(creds, apiClient)
+
+	// this is the actual network request
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "https://github.com/account/repo/info/refs?service=git-upload-pack", nil)
+	require.NoError(t, err)
+
+	// RoundTripper delegates to http.DefaultTransport so retries go through httpmock
+	roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Response, error) {
+		return http.DefaultTransport.RoundTrip(r)
+	})
+	proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+
+	req, _ = handler.HandleRequest(req, proxyCtx)
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+
+	// HandleResponse triggers retry logic including JIT credential refresh
+	resp = handler.HandleResponse(resp, proxyCtx)
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	assert.Equal(t, "success!", bodyStr, "expected successful response body")
+	assert.Equal(t, []string{
+		"401|https://github.com/account/repo/info/refs?service=git-upload-pack",
+		"200|https://dpdbot.dev.azure.com/some/path/dependabot/job/1234/jit_access",
+		"200|https://github.com/account/repo/info/refs?service=git-upload-pack",
+	}, urlsRequested, "expected request flow: github.com (401), jit_access refresh (200), github.com (200)")
 }

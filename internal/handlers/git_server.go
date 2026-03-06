@@ -21,10 +21,16 @@ import (
 // github.com or private git servers
 type GitServerHandler struct {
 	credentials     *gitCredentialsMap
-	jitAccessByHost map[string]string
+	jitAccessByHost map[string]jitAccessConfig
 	client          ScopeRequester
 
 	reposAlreadyTried *threadsafe.Map[string, struct{}]
+}
+
+type jitAccessConfig struct {
+	endpoint string
+	username string
+	password string
 }
 
 type gitCredentialsMap struct {
@@ -213,7 +219,7 @@ const (
 )
 
 type ScopeRequester interface {
-	RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, account string, repo string) (*config.Credential, error)
+	RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (*config.Credential, error)
 }
 
 // NewGitServerHandler returns a new GitServerHandler, adding basic auth to
@@ -221,7 +227,7 @@ type ScopeRequester interface {
 func NewGitServerHandler(creds config.Credentials, client ScopeRequester) *GitServerHandler {
 	handler := GitServerHandler{
 		credentials:       newGitCredentialsMap(),
-		jitAccessByHost:   map[string]string{},
+		jitAccessByHost:   map[string]jitAccessConfig{},
 		client:            client,
 		reposAlreadyTried: threadsafe.NewMap[string, struct{}](),
 	}
@@ -252,7 +258,11 @@ func (h *GitServerHandler) addJITAccess(cred config.Credential) {
 	}
 
 	host := strings.ToLower(cred.GetString("host"))
-	h.jitAccessByHost[host] = cred.GetString("endpoint")
+	h.jitAccessByHost[host] = jitAccessConfig{
+		endpoint: cred.GetString("endpoint"),
+		username: cred.GetString("username"),
+		password: cred.GetString("password"),
+	}
 }
 
 // HandleRequest adds auth to a git server request
@@ -480,8 +490,8 @@ func (h *GitServerHandler) requestWithAlternativeAuth(ctx *goproxy.ProxyCtx, bod
 
 func (h *GitServerHandler) getJITCredentialsForRequest(ctx *goproxy.ProxyCtx) *gitCredentials {
 	host := helpers.GetHost(ctx.Req)
-	endpoint := h.jitAccessByHost[host]
-	if endpoint == "" {
+	jitConfig := h.jitAccessByHost[host]
+	if jitConfig.endpoint == "" {
 		return nil
 	}
 
@@ -494,7 +504,7 @@ func (h *GitServerHandler) getJITCredentialsForRequest(ctx *goproxy.ProxyCtx) *g
 	if h.client == nil {
 		return nil
 	}
-	credential, err := h.client.RequestJITAccess(ctx, endpoint, org, repo)
+	credential, err := h.client.RequestJITAccess(ctx, jitConfig.endpoint, jitConfig.username, jitConfig.password, org, repo)
 	if credential == nil || err != nil {
 		return nil
 	}
