@@ -644,7 +644,7 @@ func TestJITEndpointUsesExplicitAuthWhenProvided(t *testing.T) {
 	handler := NewGitServerHandler(creds, apiClient)
 
 	// this is the actual network request
-	req, err := http.NewRequest("GET", "https://github.com/account/repo/info/refs?service=git-upload-pack", nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "https://github.com/account/repo/info/refs?service=git-upload-pack", nil)
 	require.NoError(t, err)
 
 	// RoundTripper delegates to http.DefaultTransport so retries go through httpmock
@@ -663,6 +663,7 @@ func TestJITEndpointUsesExplicitAuthWhenProvided(t *testing.T) {
 
 	// HandleResponse triggers retry logic including JIT credential refresh
 	resp = handler.HandleResponse(resp, proxyCtx)
+	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := string(body)
