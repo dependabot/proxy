@@ -1,14 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ecr"
-	"github.com/aws/aws-sdk-go/service/ecr/ecriface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/elazarl/goproxy"
 	"github.com/stackrox/docker-registry-client/registry"
 	"github.com/stretchr/testify/assert"
@@ -57,7 +58,7 @@ func TestDockerRegistryHandler(t *testing.T) {
 			"password": hubPassword,
 		},
 	}
-	getECRClient := func(region, keyID, secretKey string) (ecriface.ECRAPI, error) {
+	getECRClient := func(region, keyID, secretKey string) (ECRClient, error) {
 		return &mockECRClient{user: ecrDockerUser, token: ecrDockerPassword}, nil
 	}
 	handler := NewDockerRegistryHandler(credentials, &http.Transport{}, getECRClient)
@@ -150,15 +151,14 @@ func TestDockerRegistryHandler(t *testing.T) {
 }
 
 type mockECRClient struct {
-	ecriface.ECRAPI
 	user  string
 	token string
 }
 
-func (c *mockECRClient) GetAuthorizationToken(*ecr.GetAuthorizationTokenInput) (*ecr.GetAuthorizationTokenOutput, error) {
+func (c *mockECRClient) GetAuthorizationToken(ctx context.Context, params *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error) {
 	authToken := base64.StdEncoding.EncodeToString([]byte(c.user + ":" + c.token))
 	return &ecr.GetAuthorizationTokenOutput{
-		AuthorizationData: []*ecr.AuthorizationData{
+		AuthorizationData: []types.AuthorizationData{
 			{
 				AuthorizationToken: aws.String(authToken),
 			},

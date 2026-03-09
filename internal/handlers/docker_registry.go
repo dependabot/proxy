@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -8,15 +9,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ecr"
-	"github.com/aws/aws-sdk-go/service/ecr/ecriface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/elazarl/goproxy"
 	"github.com/stackrox/docker-registry-client/registry"
 
-	"github.com/dependabot/proxy/internal/config"
+	proxyconfig "github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
 	"github.com/dependabot/proxy/internal/oidc"
@@ -27,7 +27,12 @@ var (
 	ecrRe = regexp.MustCompile(`\A\d+.dkr.ecr.([a-z0-9-]+)\.amazonaws\.com\z`)
 )
 
-type getECRClient func(region, keyID, secretKey string) (ecriface.ECRAPI, error)
+// ECRClient interface for ECR API operations (for testing)
+type ECRClient interface {
+	GetAuthorizationToken(ctx context.Context, params *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error)
+}
+
+type getECRClient func(region, keyID, secretKey string) (ECRClient, error)
 
 // DockerRegistryHandler handles requests to Docker registries, adding auth.
 type DockerRegistryHandler struct {
@@ -38,7 +43,7 @@ type DockerRegistryHandler struct {
 }
 
 // NewDockerRegistryHandler returns a new DockerRegistryHandler.
-func NewDockerRegistryHandler(creds config.Credentials, transport http.RoundTripper, getECRClient getECRClient) *DockerRegistryHandler {
+func NewDockerRegistryHandler(creds proxyconfig.Credentials, transport http.RoundTripper, getECRClient getECRClient) *DockerRegistryHandler {
 	handler := DockerRegistryHandler{
 		credentials:     []*dockerRegistryCredentials{},
 		transport:       transport,
@@ -150,16 +155,16 @@ func (h *DockerRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pr
 	return req, nil
 }
 
-func defaultGetECRClient(region, keyID, secretKey string) (ecriface.ECRAPI, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(region),
-		Credentials: credentials.NewStaticCredentials(keyID, secretKey, ""),
-	})
+func defaultGetECRClient(region, keyID, secretKey string) (ECRClient, error) {
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(keyID, secretKey, "")),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	return ecr.New(sess), nil
+	return ecr.NewFromConfig(cfg), nil
 }
 
 type dockerRegistryCredentials struct {
@@ -193,7 +198,7 @@ func (c *dockerRegistryCredentials) getECRCredentials(ctx *goproxy.ProxyCtx) boo
 		return false
 	}
 
-	rsp, err := ecrSvc.GetAuthorizationToken(&ecr.GetAuthorizationTokenInput{})
+	rsp, err := ecrSvc.GetAuthorizationToken(context.Background(), &ecr.GetAuthorizationTokenInput{})
 	if err != nil {
 		logging.RequestLogf(ctx, "! failed to get ecr authorization token (key_id=%s)", c.username)
 		return false
@@ -201,7 +206,7 @@ func (c *dockerRegistryCredentials) getECRCredentials(ctx *goproxy.ProxyCtx) boo
 
 	for _, ad := range rsp.AuthorizationData {
 		if ad.AuthorizationToken != nil {
-			decoded, err := base64.StdEncoding.DecodeString(*ad.AuthorizationToken)
+			decoded, err := base64.StdEncoding.DecodeString(aws.ToString(ad.AuthorizationToken))
 			if err != nil {
 				continue
 			}
