@@ -35,15 +35,17 @@ jobs:
       with:
         persist-credentials: false
 
-    - name: Download CLI and test
+    - name: Add Go bin to PATH
+      run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+    - name: Install Dependabot CLI
+      run: go install github.com/dependabot/cli/cmd/dependabot@latest
+
+    - name: Download smoke test
       env:
         SUITE: ${{ matrix.suite }}
       run: |
-        gh release download --repo dependabot/cli -p "*linux-amd64.tar.gz"
-        tar xzvf *.tar.gz >/dev/null 2>&1
-        ./dependabot --version
-        URL="https://api.github.com/repos/dependabot/smoke-tests/contents/tests/smoke-${SUITE}.yaml"
-        curl $(gh api "$URL" --jq .download_url) -o smoke.yaml
+        gh api "repos/dependabot/smoke-tests/contents/tests/smoke-${SUITE}.yaml" -H "Accept: application/vnd.github.raw" > smoke.yaml
 
     # Download the Proxy cache. The job is ideally 100% cached so no real calls are made.
     - name: Download cache
@@ -60,7 +62,7 @@ jobs:
         LOCAL_GITHUB_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         set -o pipefail
-        ./dependabot test \
+        dependabot test \
           -f=smoke.yaml \
           -o=result.yaml \
           --cache=cache \
