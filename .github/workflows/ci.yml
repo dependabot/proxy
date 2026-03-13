@@ -25,6 +25,42 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      # yamllint is pre-installed on GitHub Actions runners:
+      # https://github.com/adrienverge/yamllint/pull/588
+      - run: yamllint .
+
+      - run: go mod tidy -diff
+
+      - name: Ensure gofmt passes
+        run: |
+          UNFORMATTED=$(gofmt -l . | grep -v '^vendor/' || true) # gofmt doesn't ignore the `vendor` folder
+          if [ -n "$UNFORMATTED" ]; then
+              echo "$UNFORMATTED" | xargs gofmt -d
+              exit 1
+          fi
+
+      - run: go build ./... # gives better error messages then go vet when the build fails, and go vet will reuse the build cache
+
+      - run: go vet ./...
+
   # The `github/codeql-action/start-proxy` action uses native binaries for
   # Linux, macOS, and Windows.
   build-codeql:
