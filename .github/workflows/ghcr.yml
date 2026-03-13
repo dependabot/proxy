@@ -1,5 +1,5 @@
 name: Publish Docker images (GHCR)
-on:
+on: # yamllint disable-line rule:truthy
   push:
     branches:
       - main
