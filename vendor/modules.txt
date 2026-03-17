@@ -95,9 +95,11 @@ github.com/docker/distribution/manifest/schema2
 # github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7
 ## explicit
 github.com/docker/libtrust
-# github.com/elazarl/goproxy v0.0.0-20240726154733-8b0c20506380
-## explicit; go 1.18
+# github.com/elazarl/goproxy v1.8.2
+## explicit; go 1.23.0
 github.com/elazarl/goproxy
+github.com/elazarl/goproxy/internal/http1parser
+github.com/elazarl/goproxy/internal/signer
 # github.com/evalphobia/logrus_sentry v0.8.2
 ## explicit
 github.com/evalphobia/logrus_sentry
