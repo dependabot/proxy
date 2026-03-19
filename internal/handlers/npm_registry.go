@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 
@@ -86,7 +85,6 @@ func (h *NPMRegistryHandler) GetOIDCCredential(url url.URL) (*oidc.OIDCCredentia
 	targetUrl := fmt.Sprintf("%s/%s", url.Host, url.Path)
 	for registry, cred := range h.oidcCredentials {
 		if strings.HasPrefix(targetUrl, registry) {
-			fmt.Fprint(os.Stderr, targetUrl)
 			return cred, true
 		}
 	}
