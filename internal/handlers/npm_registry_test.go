@@ -43,24 +43,6 @@ func TestNPMRegistryHandler(t *testing.T) {
 			"url":   "https://example.org:443/reg-path",
 			"token": privateRegToken,
 		},
-		config.Credential{
-			"type":         "npm_registry",
-			"url":          "https://mydomain-123456789123.d.codeartifact.us-east-1.amazonaws.com/npm/my-registry-1/",
-			"aws-region":   "us-east-1",
-			"account-id":   "123456789123",
-			"role-name":    "my-registry-role-1",
-			"domain":       "mydomain",
-			"domain-owner": "123456789123",
-		},
-		config.Credential{
-			"type":         "npm_registry",
-			"url":          "https://mydomain-123456789123.d.codeartifact.us-east-1.amazonaws.com/npm/my-registry-2/",
-			"aws-region":   "us-east-1",
-			"account-id":   "123456789123",
-			"role-name":    "my-registry-role-2",
-			"domain":       "mydomain",
-			"domain-owner": "123456789123",
-		},
 	}
 	handler := NewNPMRegistryHandler(credentials)
 
