@@ -1,9 +1,7 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 
@@ -47,24 +45,17 @@ func NewNPMRegistryHandler(creds config.Credentials) *NPMRegistryHandler {
 
 		oidcCredential, _ := oidc.CreateOIDCCredential(cred)
 		if oidcCredential != nil {
-			var myUrl string
 			maybeUrl := cred.GetString("url")
-			if maybeUrl == "" && registry != "" {
-				regURL, err := helpers.ParseURLLax(registry)
-				if err == nil {
-					myUrl = fmt.Sprintf("%s/%s", regURL.Host, regURL.Path)
-				}
-			} else {
-				parsedUrl, err := helpers.ParseURLLax(maybeUrl)
-				if err == nil {
-					myUrl = fmt.Sprintf("%s/%s", parsedUrl.Host, parsedUrl.Path)
-				}
+			if maybeUrl == "" {
+				maybeUrl = registry
 			}
-			if myUrl != "" {
-				handler.oidcCredentials[myUrl] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for npm registry: %s", oidcCredential.Provider(), myUrl)
+			parsedUrl, err := helpers.ParseURLLax(maybeUrl)
+			if err == nil {
+				handler.oidcCredentials[parsedUrl.String()] = oidcCredential
+				logging.RequestLogf(nil, "registered %s OIDC credentials for npm registry: %s", oidcCredential.Provider(), parsedUrl.String())
+				continue
 			}
-			continue
+			logging.RequestLogf(nil, "failed to create OIDC credential for npm registry: %s", registry)
 		}
 
 		npmCred := npmRegistryCredentials{
@@ -80,17 +71,6 @@ func NewNPMRegistryHandler(creds config.Credentials) *NPMRegistryHandler {
 	return &handler
 }
 
-// GetOIDCCredential returns oidc credential for url
-func (h *NPMRegistryHandler) GetOIDCCredential(url url.URL) (*oidc.OIDCCredential, bool) {
-	targetUrl := fmt.Sprintf("%s/%s", url.Host, url.Path)
-	for registry, cred := range h.oidcCredentials {
-		if strings.HasPrefix(targetUrl, registry) {
-			return cred, true
-		}
-	}
-	return nil, false
-}
-
 // HandleRequest adds auth to an npm registry request
 func (h *NPMRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") {
@@ -104,20 +84,10 @@ func (h *NPMRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 	}
 
 	// Try OIDC credentials first
-	h.mutex.RLock()
-	oidcCred, hasOIDC := h.GetOIDCCredential(*req.URL)
-	h.mutex.RUnlock()
+	authed := oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, req, ctx)
 
-	if hasOIDC {
-		token, err := oidc.GetOrRefreshOIDCToken(oidcCred, req.Context())
-		if err != nil {
-			logging.RequestLogf(ctx, "* failed to get token via OIDC for %s: %v", req.URL, err)
-			// Fall through to try static credentials
-		} else {
-			logging.RequestLogf(ctx, "* authenticating npm registry request with OIDC token (host: %s)", req.URL)
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-			return req, nil
-		}
+	if authed {
+		return req, nil
 	}
 
 	// Fall back to static credentials

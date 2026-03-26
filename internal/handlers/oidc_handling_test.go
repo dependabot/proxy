@@ -559,7 +559,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered aws OIDC credentials for npm registry: npm.example.com",
+				"registered aws OIDC credentials for npm registry: https://npm.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://npm.example.com/some-package",
@@ -581,7 +581,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered azure OIDC credentials for npm registry: npm.example.com",
+				"registered azure OIDC credentials for npm registry: https://npm.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://npm.example.com/some-package",
@@ -602,7 +602,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for npm registry: jfrog.example.com",
+				"registered jfrog OIDC credentials for npm registry: https://jfrog.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",

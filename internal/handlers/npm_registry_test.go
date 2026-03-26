@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/dependabot/proxy/internal/config"
@@ -112,10 +111,8 @@ func TestNPMRegistryHandler(t *testing.T) {
 
 func TestNPMRegistryHandler_OIDC_MultipleRegistriesSameHost(t *testing.T) {
 	// Setup environment for OIDC
-	os.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "http://oidc-url")
-	os.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "oidc-token")
-	defer os.Unsetenv("ACTIONS_ID_TOKEN_REQUEST_URL")
-	defer os.Unsetenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "http://oidc-url")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "oidc-token")
 
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
