@@ -58,7 +58,7 @@ func NewNPMRegistryHandler(creds config.Credentials) *NPMRegistryHandler {
 				logging.RequestLogf(nil, "registered %s OIDC credentials for npm registry: %s", oidcCredential.Provider(), parsedUrl.String())
 				continue
 			}
-			logging.RequestLogf(nil, "failed to create OIDC credential for npm registry: %s", registry)
+			logging.RequestLogf(nil, "failed to register OIDC credential for npm registry: %s", registry)
 		}
 
 		npmCred := npmRegistryCredentials{
