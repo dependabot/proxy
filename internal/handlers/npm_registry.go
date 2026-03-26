@@ -45,9 +45,12 @@ func NewNPMRegistryHandler(creds config.Credentials) *NPMRegistryHandler {
 
 		oidcCredential, _ := oidc.CreateOIDCCredential(cred)
 		if oidcCredential != nil {
-			maybeUrl := cred.GetString("url")
+			maybeUrl := cred.GetString("host")
 			if maybeUrl == "" {
-				maybeUrl = registry
+				maybeUrl = cred.GetString("url")
+				if maybeUrl == "" {
+					maybeUrl = registry
+				}
 			}
 			parsedUrl, err := helpers.ParseURLLax(maybeUrl)
 			if err == nil {
