@@ -225,8 +225,15 @@ func TryAuthOIDCRequestWithPrefix(mutex *sync.RWMutex, oidcCredentials map[strin
 		if err != nil {
 			logging.RequestLogf(ctx, "* failed to get %s token via OIDC for %s: %v", matchedCred.Provider(), req.URL.Hostname(), err)
 		} else {
-			logging.RequestLogf(ctx, "* authenticating request with OIDC token (host: %s)", req.URL.Hostname())
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+			switch matchedCred.parameters.(type) {
+			case *CloudsmithOIDCParameters:
+				logging.RequestLogf(ctx, "* authenticating request with OIDC API key (host: %s)", req.URL.Hostname())
+				req.Header.Set("X-Api-Key", token)
+			default:
+				logging.RequestLogf(ctx, "* authenticating request with OIDC token (host: %s)", req.URL.Hostname())
+				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+			}
+
 			return true
 		}
 	}

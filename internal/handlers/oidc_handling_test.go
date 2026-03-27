@@ -1380,7 +1380,12 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			for _, urlToAuth := range tc.urlsToAuthenticate {
 				req := httptest.NewRequest("GET", urlToAuth, nil)
 				req = handleRequestAndClose(handler, req, nil)
-				assertHasTokenAuth(t, req, "Bearer", "__test_token__", "package url: "+urlToAuth)
+				if tc.provider == "cloudsmith" {
+					assert.Equal(t, "__test_token__", req.Header.Get("X-Api-Key"), "package url: "+urlToAuth+" should include Cloudsmith API key")
+					assert.Equal(t, "", req.Header.Get("Authorization"), "package url: "+urlToAuth+" should not include Authorization header for Cloudsmith")
+				} else {
+					assertHasTokenAuth(t, req, "Bearer", "__test_token__", "package url: "+urlToAuth)
+				}
 			}
 		})
 	}
