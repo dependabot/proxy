@@ -96,8 +96,13 @@ func (h *NPMRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 			logging.RequestLogf(ctx, "* failed to get token via OIDC for %s: %v", reqHost, err)
 			// Fall through to try static credentials
 		} else {
-			logging.RequestLogf(ctx, "* authenticating npm registry request with OIDC token (host: %s)", reqHost)
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+			if oidcCred.Provider() == "cloudsmith" {
+				logging.RequestLogf(ctx, "* authenticating npm registry request with OIDC API key (host: %s)", reqHost)
+				req.Header.Set("X-Api-Key", token)
+			} else {
+				logging.RequestLogf(ctx, "* authenticating npm registry request with OIDC token (host: %s)", reqHost)
+				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+			}
 			return req, nil
 		}
 	}

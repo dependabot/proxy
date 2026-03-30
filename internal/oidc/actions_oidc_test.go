@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -828,6 +829,186 @@ func TestGetAWSAccessToken(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tt.expectedToken, awsToken.Token)
+			}
+		})
+	}
+}
+
+func TestGetCloudsmithAccessToken(t *testing.T) {
+	tests := []struct {
+		name          string
+		params        CloudsmithOIDCParameters
+		githubToken   string
+		serverHandler http.HandlerFunc
+		expectError   bool
+		expectedToken string
+	}{
+		{
+			name: "successful token exchange",
+			params: CloudsmithOIDCParameters{
+				OrgName:     "my-org",
+				ServiceSlug: "my-service",
+				ApiHost:     "api.example.com",
+				Audience:    "my-audience",
+			},
+			githubToken: "test-github-jwt-token",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "POST", r.Method)
+				assert.Equal(t, "api.example.com", r.Host)
+				assert.Equal(t, "/openid/my-org/", r.URL.Path)
+				assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+				assert.Equal(t, "application/json", r.Header.Get("Accept"))
+				assert.Equal(t, "dependabot-proxy/1.0", r.Header.Get("User-Agent"))
+
+				bodyBytes, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				defer r.Body.Close()
+
+				var request cloudsmithTokenRequest
+				err = json.Unmarshal(bodyBytes, &request)
+				require.NoError(t, err)
+
+				assert.Equal(t, "test-github-jwt-token", request.OIDCToken)
+				assert.Equal(t, "my-service", request.ServiceSlug)
+
+				resp := cloudsmithTokenResponse{
+					Token: "test-cloudsmith-token",
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			},
+			expectError:   false,
+			expectedToken: "test-cloudsmith-token",
+		},
+		{
+			name: "missing service slug",
+			params: CloudsmithOIDCParameters{
+				OrgName:  "my-org",
+				ApiHost:  "api.cloudsmith.io",
+				Audience: "my-audience",
+			},
+			githubToken: "test-github-jwt-token",
+			expectError: true,
+		},
+		{
+			name: "missing API host",
+			params: CloudsmithOIDCParameters{
+				OrgName:     "my-org",
+				ServiceSlug: "my-service",
+				Audience:    "my-audience",
+			},
+			githubToken: "test-github-jwt-token",
+			expectError: true,
+		},
+		{
+			name: "missing audience",
+			params: CloudsmithOIDCParameters{
+				OrgName:     "my-org",
+				ServiceSlug: "my-service",
+				ApiHost:     "api.cloudsmith.io",
+			},
+			githubToken: "test-github-jwt-token",
+			expectError: true,
+		},
+		{
+			name: "missing org name",
+			params: CloudsmithOIDCParameters{
+				ServiceSlug: "my-service",
+				ApiHost:     "api.cloudsmith.io",
+				Audience:    "my-audience",
+			},
+			githubToken: "test-github-jwt-token",
+			expectError: true,
+		},
+		{
+			name: "missing GitHub token",
+			params: CloudsmithOIDCParameters{
+				OrgName:     "my-org",
+				ServiceSlug: "my-service",
+				ApiHost:     "api.cloudsmith.io",
+				Audience:    "my-audience",
+			},
+			githubToken: "",
+			expectError: true,
+		},
+		{
+			name: "Cloudsmith returns 401",
+			params: CloudsmithOIDCParameters{
+				OrgName:     "my-org",
+				ServiceSlug: "my-service",
+				ApiHost:     "api.cloudsmith.io",
+				Audience:    "my-audience",
+			},
+			githubToken: "invalid-token",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"detail":"Invalid token."}`))
+			},
+			expectError: true,
+		},
+		{
+			name: "Cloudsmith returns invalid JSON",
+			params: CloudsmithOIDCParameters{
+				OrgName:     "my-org",
+				ServiceSlug: "my-service",
+				ApiHost:     "api.cloudsmith.io",
+				Audience:    "my-audience",
+			},
+			githubToken: "test-github-jwt-token",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{invalid json`))
+			},
+			expectError: true,
+		},
+		{
+			name: "Cloudsmith returns empty token",
+			params: CloudsmithOIDCParameters{
+				OrgName:     "my-org",
+				ServiceSlug: "my-service",
+				ApiHost:     "api.cloudsmith.io",
+				Audience:    "my-audience",
+			},
+			githubToken: "test-github-jwt-token",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				resp := cloudsmithTokenResponse{
+					Token: "",
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+
+			var cloudsmithToken *OIDCAccessToken
+			var err error
+
+			if tt.params.ApiHost != "" && tt.params.OrgName != "" {
+				// Create a test server for Cloudsmith
+				httpmock.Activate()
+				defer httpmock.DeactivateAndReset()
+
+				url := fmt.Sprintf("https://%s/openid/%s/", tt.params.ApiHost, tt.params.OrgName)
+				httpmock.RegisterResponder("POST", url, httpmock.Responder(func(req *http.Request) (*http.Response, error) {
+					rr := httptest.NewRecorder()
+					tt.serverHandler(rr, req)
+					return rr.Result(), nil
+				}))
+			}
+
+			cloudsmithToken, err = GetCloudsmithAccessToken(ctx, tt.params, tt.githubToken)
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, cloudsmithToken)
+				assert.Equal(t, tt.expectedToken, cloudsmithToken.Token)
 			}
 		})
 	}
