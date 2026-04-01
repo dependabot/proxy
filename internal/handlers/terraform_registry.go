@@ -13,14 +13,20 @@ import (
 )
 
 type TerraformRegistryHandler struct {
-	credentials     map[string]string
+	credentials     []terraformRegistryCredentials
 	oidcCredentials map[string]*oidc.OIDCCredential
 	mutex           sync.RWMutex
 }
 
+type terraformRegistryCredentials struct {
+	host  string
+	url   string
+	token string
+}
+
 func NewTerraformRegistryHandler(credentials config.Credentials) *TerraformRegistryHandler {
 	handler := TerraformRegistryHandler{
-		credentials:     make(map[string]string),
+		credentials:     []terraformRegistryCredentials{},
 		oidcCredentials: make(map[string]*oidc.OIDCCredential),
 	}
 
@@ -40,7 +46,12 @@ func NewTerraformRegistryHandler(credentials config.Credentials) *TerraformRegis
 			continue
 		}
 
-		handler.credentials[host] = credential.GetString("token")
+		terraformCred := terraformRegistryCredentials{
+			host:  host,
+			url:   credential.GetString("url"),
+			token: credential.GetString("token"),
+		}
+		handler.credentials = append(handler.credentials, terraformCred)
 	}
 	return &handler
 }
@@ -56,15 +67,22 @@ func (h *TerraformRegistryHandler) HandleRequest(request *http.Request, context 
 	}
 
 	// Fall back to static credentials
-	host := request.URL.Hostname()
-	token, ok := h.credentials[host]
-
-	if !ok {
-		return request, nil
+	for _, cred := range h.credentials {
+		// Match by URL first (more specific), then by host
+		if cred.url != "" {
+			if helpers.UrlMatchesRequest(request, cred.url, true) {
+				logging.RequestLogf(context, "* authenticating terraform registry request (url: %s)", cred.url)
+				request.Header.Set("Authorization", "Bearer "+cred.token)
+				return request, nil
+			}
+		} else if cred.host != "" {
+			if helpers.CheckHost(request, cred.host) {
+				logging.RequestLogf(context, "* authenticating terraform registry request (host: %s)", cred.host)
+				request.Header.Set("Authorization", "Bearer "+cred.token)
+				return request, nil
+			}
+		}
 	}
-
-	logging.RequestLogf(context, "* authenticating terraform registry request (host: %s)", host)
-	request.Header.Set("Authorization", "Bearer "+token)
 
 	return request, nil
 }
