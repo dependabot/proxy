@@ -46,10 +46,22 @@ func NewTerraformRegistryHandler(credentials config.Credentials) *TerraformRegis
 			continue
 		}
 
+		token := credential.GetString("token")
+		url := credential.GetString("url")
+
+		// Skip credentials with empty token or both empty host and url
+		if token == "" || (host == "" && url == "") {
+			continue
+		}
+
 		terraformCred := terraformRegistryCredentials{
-			host:  host,
-			url:   credential.GetString("url"),
-			token: credential.GetString("token"),
+			url:   url,
+			token: token,
+		}
+		// Only set host when url is not provided to ensure URL-prefix matching
+		// takes precedence and doesn't fall back to host matching
+		if url == "" {
+			terraformCred.host = host
 		}
 		handler.credentials = append(handler.credentials, terraformCred)
 	}
@@ -68,20 +80,13 @@ func (h *TerraformRegistryHandler) HandleRequest(request *http.Request, context 
 
 	// Fall back to static credentials
 	for _, cred := range h.credentials {
-		// Match by URL first (more specific), then by host
-		if cred.url != "" {
-			if helpers.UrlMatchesRequest(request, cred.url, true) {
-				logging.RequestLogf(context, "* authenticating terraform registry request (url: %s)", cred.url)
-				request.Header.Set("Authorization", "Bearer "+cred.token)
-				return request, nil
-			}
-		} else if cred.host != "" {
-			if helpers.CheckHost(request, cred.host) {
-				logging.RequestLogf(context, "* authenticating terraform registry request (host: %s)", cred.host)
-				request.Header.Set("Authorization", "Bearer "+cred.token)
-				return request, nil
-			}
+		if !helpers.UrlMatchesRequest(request, cred.url, true) && !helpers.CheckHost(request, cred.host) {
+			continue
 		}
+
+		logging.RequestLogf(context, "* authenticating terraform registry request (host: %s)", request.URL.Hostname())
+		request.Header.Set("Authorization", "Bearer "+cred.token)
+		return request, nil
 	}
 
 	return request, nil

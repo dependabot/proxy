@@ -31,7 +31,11 @@ func NewHexOrganizationHandler(creds config.Credentials) *HexOrganizationHandler
 		}
 
 		org := cred.GetString("organization")
+		// Support both "key" and "token" (backwards compatibility)
 		key := cred.GetString("key")
+		if key == "" {
+			key = cred.GetString("token")
+		}
 		if org == "" || key == "" {
 			continue
 		}
