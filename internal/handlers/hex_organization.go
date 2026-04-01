@@ -18,7 +18,7 @@ type HexOrganizationHandler struct {
 
 type hexOrganizationCredentials struct {
 	organization string
-	token        string
+	key          string
 }
 
 // NewHexOrganizationHandler returns a new HexOrganizationHandler.
@@ -31,14 +31,14 @@ func NewHexOrganizationHandler(creds config.Credentials) *HexOrganizationHandler
 		}
 
 		org := cred.GetString("organization")
-		token := cred.GetString("token")
-		if org == "" || token == "" {
+		key := cred.GetString("key")
+		if org == "" || key == "" {
 			continue
 		}
 
 		hexCred := hexOrganizationCredentials{
 			organization: org,
-			token:        token,
+			key:          key,
 		}
 		handler.credentials = append(handler.credentials, hexCred)
 	}
@@ -65,7 +65,7 @@ func (h *HexOrganizationHandler) HandleRequest(req *http.Request, ctx *goproxy.P
 	for _, cred := range h.credentials {
 		if cred.organization == reqOrg {
 			logging.RequestLogf(ctx, "* authenticating hex request (org: %s)", reqOrg)
-			req.Header.Set("authorization", cred.token)
+			req.Header.Set("authorization", cred.key)
 			return req, nil
 		}
 	}
