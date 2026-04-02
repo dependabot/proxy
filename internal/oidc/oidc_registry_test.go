@@ -297,3 +297,73 @@ func TestOIDCRegistry_Register_RegistryField(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "ghcr.io", key)
 }
+
+func TestOIDCRegistry_TryAuth_PathSpecificBeatsHostOnly(t *testing.T) {
+	setupOIDCEnv(t)
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	mockAzureOIDC(t, "tenant-1", "__host_only_token__")
+	mockAzureOIDC(t, "tenant-2", "__path_specific_token__")
+
+	r := NewOIDCRegistry()
+
+	hostOnlyCred := config.Credential{
+		"type":      "test_registry",
+		"tenant-id": "tenant-1",
+		"client-id": "client-1",
+		"host":      "registry.example.com",
+	}
+	pathSpecificCred := azureCredWithURL("tenant-2", "client-2", "https://registry.example.com/packages/private")
+
+	// Register the less specific match first to verify the most specific wins
+	r.Register(hostOnlyCred, []string{"url"}, "test registry")
+	r.Register(pathSpecificCred, []string{"url"}, "test registry")
+
+	req := httptest.NewRequest("GET", "https://registry.example.com/packages/private/module.tgz", nil)
+	ok := r.TryAuth(req, nil)
+
+	assert.True(t, ok, "path-specific credential should match request")
+	assert.Equal(t, "Bearer __path_specific_token__", req.Header.Get("Authorization"))
+}
+
+func TestOIDCRegistry_TryAuth_LongestPathPrefixWins(t *testing.T) {
+	setupOIDCEnv(t)
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	mockAzureOIDC(t, "tenant-1", "__short_prefix_token__")
+	mockAzureOIDC(t, "tenant-2", "__long_prefix_token__")
+
+	r := NewOIDCRegistry()
+
+	shortPrefixCred := azureCredWithURL("tenant-1", "client-1", "https://registry.example.com/packages")
+	longPrefixCred := azureCredWithURL("tenant-2", "client-2", "https://registry.example.com/packages/private")
+
+	// Register the shorter prefix first to verify specificity over insertion order
+	r.Register(shortPrefixCred, []string{"url"}, "test registry")
+	r.Register(longPrefixCred, []string{"url"}, "test registry")
+
+	req := httptest.NewRequest("GET", "https://registry.example.com/packages/private/module.tgz", nil)
+	ok := r.TryAuth(req, nil)
+
+	assert.True(t, ok, "longer path prefix should match request")
+	assert.Equal(t, "Bearer __long_prefix_token__", req.Header.Get("Authorization"))
+}
+
+func TestOIDCRegistry_TryAuth_CaseInsensitiveHost(t *testing.T) {
+	setupOIDCEnv(t)
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	mockAzureOIDC(t, "tenant-1", "__test_token__")
+
+	r := NewOIDCRegistry()
+
+	cred := azureCredWithURL("tenant-1", "client-1", "https://Registry.Example.COM/packages")
+	r.Register(cred, []string{"url"}, "test registry")
+
+	// Request with different casing should still match
+	req := httptest.NewRequest("GET", "https://REGISTRY.EXAMPLE.COM/packages/something", nil)
+	ok := r.TryAuth(req, nil)
+
+	assert.True(t, ok, "host matching should be case-insensitive")
+	assert.Equal(t, "Bearer __test_token__", req.Header.Get("Authorization"))
+}

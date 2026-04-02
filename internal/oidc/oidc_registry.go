@@ -41,6 +41,7 @@ func NewOIDCRegistry() *OIDCRegistry {
 //
 // Returns:
 //   - (credential, key, true)  if an OIDC credential was created and registered
+//   - (credential, "", false)  if OIDC-configured but no URL or host could be resolved
 //   - (nil, "", false)         if the credential is not OIDC-configured
 func (r *OIDCRegistry) Register(
 	cred config.Credential,
@@ -94,7 +95,7 @@ func (r *OIDCRegistry) RegisterURL(url string, cred *OIDCCredential, registryTyp
 //
 // Returns true if the request was authenticated, false otherwise.
 func (r *OIDCRegistry) TryAuth(req *http.Request, ctx *goproxy.ProxyCtx) bool {
-	host := helpers.GetHost(req)
+	host := strings.ToLower(helpers.GetHost(req))
 	reqPort := req.URL.Port()
 	if reqPort == "" {
 		reqPort = "443"
@@ -108,16 +109,21 @@ func (r *OIDCRegistry) TryAuth(req *http.Request, ctx *goproxy.ProxyCtx) bool {
 		return false
 	}
 
-	// Find the matching entry: host is already matched, check port + path prefix
+	// Find the most specific matching entry: host is already matched,
+	// select the longest path prefix among entries with the same port.
 	var matched *OIDCCredential
+	bestPathLen := -1
 	for i := range entries {
 		e := &entries[i]
 		if e.port != reqPort {
 			continue
 		}
-		if strings.HasPrefix(req.URL.Path, e.path) {
+		if !strings.HasPrefix(req.URL.Path, e.path) {
+			continue
+		}
+		if len(e.path) > bestPathLen {
 			matched = e.credential
-			break
+			bestPathLen = len(e.path)
 		}
 	}
 
