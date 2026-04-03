@@ -154,22 +154,28 @@ func (r *OIDCRegistry) TryAuth(req *http.Request, ctx *goproxy.ProxyCtx) bool {
 }
 
 // addEntry parses a URL or hostname string and adds a credential entry
-// to the appropriate host bucket. Returns false if the URL could not be parsed.
+// to the appropriate host bucket. Skips duplicates with the same path and port.
+// Returns false if the URL could not be parsed.
 func (r *OIDCRegistry) addEntry(urlOrHost string, cred *OIDCCredential) bool {
 	host, path, port := parseRegistryURL(urlOrHost)
 	if host == "" {
 		return false
 	}
 
-	entry := oidcEntry{
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	for _, e := range r.byHost[host] {
+		if e.path == path && e.port == port {
+			return true
+		}
+	}
+
+	r.byHost[host] = append(r.byHost[host], oidcEntry{
 		path:       path,
 		port:       port,
 		credential: cred,
-	}
-
-	r.mutex.Lock()
-	r.byHost[host] = append(r.byHost[host], entry)
-	r.mutex.Unlock()
+	})
 
 	return true
 }

@@ -462,3 +462,21 @@ func TestOIDCRegistry_RegisterURL_MultipleOnSameHost(t *testing.T) {
 		assert.Equal(t, "Bearer __test_token__", req.Header.Get("Authorization"))
 	}
 }
+
+func TestOIDCRegistry_Register_NoDuplicateEntries(t *testing.T) {
+	setupOIDCEnv(t)
+
+	r := NewOIDCRegistry()
+
+	cred1 := azureCredWithURL("tenant-1", "client-1", "https://registry.example.com/packages")
+	cred2 := azureCredWithURL("tenant-2", "client-2", "https://registry.example.com/packages")
+
+	r.Register(cred1, []string{"url"}, "test registry")
+	r.Register(cred2, []string{"url"}, "test registry")
+
+	r.mutex.RLock()
+	entries := r.byHost["registry.example.com"]
+	r.mutex.RUnlock()
+
+	assert.Equal(t, 1, len(entries), "duplicate path+port should not create a second entry")
+}
