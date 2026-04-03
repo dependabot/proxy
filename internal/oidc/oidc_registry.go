@@ -68,7 +68,9 @@ func (r *OIDCRegistry) Register(
 		return oidcCredential, "", false
 	}
 
-	r.addEntry(key, oidcCredential)
+	if !r.addEntry(key, oidcCredential) {
+		return oidcCredential, "", false
+	}
 	logging.RequestLogf(nil, "registered %s OIDC credentials for %s: %s", oidcCredential.Provider(), registryType, key)
 
 	return oidcCredential, key, true
@@ -81,7 +83,9 @@ func (r *OIDCRegistry) RegisterURL(url string, cred *OIDCCredential, registryTyp
 	if url == "" || cred == nil {
 		return
 	}
-	r.addEntry(url, cred)
+	if !r.addEntry(url, cred) {
+		return
+	}
 	logging.RequestLogf(nil, "registered %s OIDC credentials for %s: %s", cred.Provider(), registryType, url)
 }
 
@@ -150,11 +154,11 @@ func (r *OIDCRegistry) TryAuth(req *http.Request, ctx *goproxy.ProxyCtx) bool {
 }
 
 // addEntry parses a URL or hostname string and adds a credential entry
-// to the appropriate host bucket.
-func (r *OIDCRegistry) addEntry(urlOrHost string, cred *OIDCCredential) {
+// to the appropriate host bucket. Returns false if the URL could not be parsed.
+func (r *OIDCRegistry) addEntry(urlOrHost string, cred *OIDCCredential) bool {
 	host, path, port := parseRegistryURL(urlOrHost)
 	if host == "" {
-		return
+		return false
 	}
 
 	entry := oidcEntry{
@@ -166,6 +170,8 @@ func (r *OIDCRegistry) addEntry(urlOrHost string, cred *OIDCCredential) {
 	r.mutex.Lock()
 	r.byHost[host] = append(r.byHost[host], entry)
 	r.mutex.Unlock()
+
+	return true
 }
 
 // parseRegistryURL extracts host, path, and port from a URL or hostname string.
