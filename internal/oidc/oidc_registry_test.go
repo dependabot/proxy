@@ -367,3 +367,98 @@ func TestOIDCRegistry_TryAuth_CaseInsensitiveHost(t *testing.T) {
 	assert.True(t, ok, "host matching should be case-insensitive")
 	assert.Equal(t, "Bearer __test_token__", req.Header.Get("Authorization"))
 }
+
+func mockCloudsmithOIDC(t *testing.T, namespace, token string) {
+	t.Helper()
+	httpmock.RegisterResponder("GET", "https://token.actions.example.com",
+		httpmock.NewStringResponder(200, `{"count": 1, "value": "sometoken"}`))
+	httpmock.RegisterResponder("POST",
+		"https://api.cloudsmith.io/openid/"+namespace+"/",
+		httpmock.NewStringResponder(200, `{"token": "`+token+`"}`))
+}
+
+func cloudsmithCred(namespace, serviceSlug, audience, url string) config.Credential {
+	return config.Credential{
+		"type":              "test_registry",
+		"oidc-namespace":    namespace,
+		"oidc-service-slug": serviceSlug,
+		"oidc-audience":     audience,
+		"url":               url,
+	}
+}
+
+func TestOIDCRegistry_TryAuth_Cloudsmith_UsesAPIKey(t *testing.T) {
+	setupOIDCEnv(t)
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	mockCloudsmithOIDC(t, "my-org", "__cs_token__")
+
+	r := NewOIDCRegistry()
+
+	cred := cloudsmithCred("my-org", "my-service", "https://cloudsmith.io", "https://dl.cloudsmith.io/basic/my-org/my-repo")
+	r.Register(cred, []string{"url"}, "test registry")
+
+	req := httptest.NewRequest("GET", "https://dl.cloudsmith.io/basic/my-org/my-repo/some-package", nil)
+	ok := r.TryAuth(req, nil)
+
+	assert.True(t, ok, "cloudsmith OIDC should authenticate")
+	assert.Equal(t, "__cs_token__", req.Header.Get("X-Api-Key"), "cloudsmith should use X-Api-Key")
+	assert.Empty(t, req.Header.Get("Authorization"), "cloudsmith should not set Authorization")
+}
+
+func TestOIDCRegistry_Register_IndexURLField(t *testing.T) {
+	setupOIDCEnv(t)
+	r := NewOIDCRegistry()
+
+	cred := azureCred("tenant-1", "client-1")
+	cred["index-url"] = "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple"
+
+	_, key, ok := r.Register(cred, []string{"index-url", "url"}, "python index")
+
+	assert.True(t, ok)
+	assert.Equal(t, "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple", key)
+}
+
+func TestOIDCRegistry_TryAuth_URLWithoutProtocol(t *testing.T) {
+	setupOIDCEnv(t)
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	mockAzureOIDC(t, "tenant-1", "__test_token__")
+
+	r := NewOIDCRegistry()
+
+	cred := azureCred("tenant-1", "client-1")
+	cred["url"] = "registry.example.com/packages"
+	r.Register(cred, []string{"url"}, "test registry")
+
+	req := httptest.NewRequest("GET", "https://registry.example.com/packages/something", nil)
+	ok := r.TryAuth(req, nil)
+
+	assert.True(t, ok, "URL without protocol should be handled by ParseURLLax")
+	assert.Equal(t, "Bearer __test_token__", req.Header.Get("Authorization"))
+}
+
+func TestOIDCRegistry_RegisterURL_MultipleOnSameHost(t *testing.T) {
+	setupOIDCEnv(t)
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	mockAzureOIDC(t, "tenant-1", "__test_token__")
+
+	r := NewOIDCRegistry()
+
+	cred := azureCredWithURL("tenant-1", "client-1", "https://nuget.example.com/v3/index.json")
+	oidcCred, _, ok := r.Register(cred, []string{"url"}, "nuget feed")
+	require.True(t, ok)
+
+	// Register additional discovered resource URLs (nuget pattern)
+	r.RegisterURL("https://nuget.example.com/v3/package-content", oidcCred, "nuget resource")
+	r.RegisterURL("https://nuget.example.com/v3/registrations", oidcCred, "nuget resource")
+
+	// All three paths should authenticate
+	for _, path := range []string{"/v3/index.json", "/v3/package-content/Some.Package/1.0.0", "/v3/registrations/some.package/index.json"} {
+		req := httptest.NewRequest("GET", "https://nuget.example.com"+path, nil)
+		ok := r.TryAuth(req, nil)
+		assert.True(t, ok, "should authenticate: "+path)
+		assert.Equal(t, "Bearer __test_token__", req.Header.Get("Authorization"))
+	}
+}
