@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"net/http"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/elazarl/goproxy"
@@ -65,6 +67,12 @@ func NewTerraformRegistryHandler(credentials config.Credentials) *TerraformRegis
 		}
 		handler.credentials = append(handler.credentials, terraformCred)
 	}
+
+	// Sort credentials by URL path length descending (longest first)
+	sort.Slice(handler.credentials, func(i, j int) bool {
+		return len(handler.credentials[i].url) > len(handler.credentials[j].url)
+	})
+
 	return &handler
 }
 
@@ -80,7 +88,7 @@ func (h *TerraformRegistryHandler) HandleRequest(request *http.Request, context 
 
 	// Fall back to static credentials
 	for _, cred := range h.credentials {
-		if !helpers.UrlMatchesRequest(request, cred.url, true) && !helpers.CheckHost(request, cred.host) {
+		if !urlMatchesRequestWithBoundary(request, cred.url) && !helpers.CheckHost(request, cred.host) {
 			continue
 		}
 
@@ -90,4 +98,54 @@ func (h *TerraformRegistryHandler) HandleRequest(request *http.Request, context 
 	}
 
 	return request, nil
+}
+
+// urlMatchesRequestWithBoundary checks if the request URL matches the credential URL
+// with proper path boundary checking.
+func urlMatchesRequestWithBoundary(request *http.Request, credURL string) bool {
+	if credURL == "" {
+		return false
+	}
+
+	parsedURL, err := helpers.ParseURLLax(credURL)
+	if err != nil {
+		return false
+	}
+
+	if !helpers.AreHostnamesEqual(parsedURL.Hostname(), request.URL.Hostname()) {
+		return false
+	}
+
+	urlPort := parsedURL.Port()
+	if urlPort == "" {
+		urlPort = "443"
+	}
+
+	reqPort := request.URL.Port()
+	if reqPort == "" {
+		reqPort = "443"
+	}
+
+	if urlPort != reqPort {
+		return false
+	}
+
+	credPath := strings.TrimRight(parsedURL.Path, "/")
+	reqPath := request.URL.Path
+
+	if credPath == "" {
+		// Empty path matches everything on the host
+		return true
+	}
+
+	if reqPath == credPath {
+		return true
+	}
+
+	// Check if request path starts with credPath followed by /
+	if strings.HasPrefix(reqPath, credPath+"/") {
+		return true
+	}
+
+	return false
 }

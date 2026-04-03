@@ -110,4 +110,26 @@ func TestTerraformRegistryHandler(t *testing.T) {
 		handler := NewTerraformRegistryHandler(credentials)
 		assert.Equal(t, 0, len(handler.credentials), "should skip credential with empty host and url")
 	})
+
+	t.Run("path boundary: /org should not match /org1", func(t *testing.T) {
+		// Credentials are sorted longest-path-first to ensure /org1 matches before /org
+		credentials := config.Credentials{
+			config.Credential{"type": "terraform_registry", "url": "https://terraform.example.com/org", "token": "token-org"},
+			config.Credential{"type": "terraform_registry", "url": "https://terraform.example.com/org1", "token": "token-org1"},
+		}
+		handler := NewTerraformRegistryHandler(credentials)
+
+		assert.Equal(t, "https://terraform.example.com/org1", handler.credentials[0].url, "longer path should be first")
+		assert.Equal(t, "https://terraform.example.com/org", handler.credentials[1].url, "shorter path should be second")
+
+		req1 := handleRequestAndClose(handler, httptest.NewRequest("GET", "https://terraform.example.com/org1/v1/providers/foo", nil), nil)
+		assert.Equal(t, "Bearer token-org1", req1.Header.Get("Authorization"), "/org1 path should use org1 token")
+
+		req2 := handleRequestAndClose(handler, httptest.NewRequest("GET", "https://terraform.example.com/org/v1/providers/bar", nil), nil)
+		assert.Equal(t, "Bearer token-org", req2.Header.Get("Authorization"), "/org path should use org token")
+
+		// Request to /org123 should NOT match /org1 or /org (path boundary check)
+		req3 := handleRequestAndClose(handler, httptest.NewRequest("GET", "https://terraform.example.com/org123/v1/providers/baz", nil), nil)
+		assert.Equal(t, "", req3.Header.Get("Authorization"), "/org123 should not match /org or /org1")
+	})
 }
