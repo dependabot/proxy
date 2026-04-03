@@ -68,10 +68,9 @@ func (r *OIDCRegistry) Register(
 		return oidcCredential, "", false
 	}
 
-	if !r.addEntry(key, oidcCredential) {
+	if !r.addEntry(key, oidcCredential, registryType) {
 		return oidcCredential, "", false
 	}
-	logging.RequestLogf(nil, "registered %s OIDC credentials for %s: %s", oidcCredential.Provider(), registryType, key)
 
 	return oidcCredential, key, true
 }
@@ -83,14 +82,14 @@ func (r *OIDCRegistry) RegisterURL(url string, cred *OIDCCredential, registryTyp
 	if url == "" || cred == nil {
 		return
 	}
-	if !r.addEntry(url, cred) {
-		return
-	}
-	logging.RequestLogf(nil, "registered %s OIDC credentials for %s: %s", cred.Provider(), registryType, url)
+	r.addEntry(url, cred, registryType)
 }
 
 // TryAuth finds the matching OIDC credential for the request and
 // sets the appropriate auth header.
+//
+// Callers are responsible for scheme and method checks (e.g. HTTPS-only,
+// GET/HEAD only) before calling TryAuth.
 //
 // Lookup:
 //  1. Find the host bucket via map lookup (exact hostname match)
@@ -154,11 +153,14 @@ func (r *OIDCRegistry) TryAuth(req *http.Request, ctx *goproxy.ProxyCtx) bool {
 }
 
 // addEntry parses a URL or hostname string and adds a credential entry
-// to the appropriate host bucket. Skips duplicates with the same path and port.
-// Returns false if the URL could not be parsed.
-func (r *OIDCRegistry) addEntry(urlOrHost string, cred *OIDCCredential) bool {
+// to the appropriate host bucket. Returns true if the credential is stored
+// (either newly added or already present from a prior registration).
+// Returns false only when the URL cannot be parsed.
+// Duplicates with the same path and port are skipped (first-wins).
+func (r *OIDCRegistry) addEntry(urlOrHost string, cred *OIDCCredential, registryType string) bool {
 	host, path, port := parseRegistryURL(urlOrHost)
 	if host == "" {
+		logging.RequestLogf(nil, "failed to parse OIDC credential URL: %s", urlOrHost)
 		return false
 	}
 
@@ -167,6 +169,9 @@ func (r *OIDCRegistry) addEntry(urlOrHost string, cred *OIDCCredential) bool {
 
 	for _, e := range r.byHost[host] {
 		if e.path == path && e.port == port {
+			// First-wins: the credential already stored for this path+port
+			// will be used; the new one is discarded.
+			logging.RequestLogf(nil, "skipping duplicate OIDC credential for %s (path: %s)", host, path)
 			return true
 		}
 	}
@@ -177,6 +182,7 @@ func (r *OIDCRegistry) addEntry(urlOrHost string, cred *OIDCCredential) bool {
 		credential: cred,
 	})
 
+	logging.RequestLogf(nil, "registered %s OIDC credentials for %s: %s", cred.Provider(), registryType, urlOrHost)
 	return true
 }
 

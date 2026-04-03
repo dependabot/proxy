@@ -1,7 +1,11 @@
 package oidc
 
 import (
+	"bytes"
+	"log"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/jarcoal/httpmock"
@@ -470,12 +474,35 @@ func TestOIDCRegistry_Register_NoDuplicateEntries(t *testing.T) {
 	cred1 := azureCredWithURL("tenant-1", "client-1", "https://registry.example.com/packages")
 	cred2 := azureCredWithURL("tenant-2", "client-2", "https://registry.example.com/packages")
 
-	r.Register(cred1, []string{"url"}, "test registry")
-	r.Register(cred2, []string{"url"}, "test registry")
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
+
+	oidcCred1, key1, ok1 := r.Register(cred1, []string{"url"}, "test registry")
+	oidcCred2, key2, ok2 := r.Register(cred2, []string{"url"}, "test registry")
+
+	// Both should return ok=true (credential is registered or already present)
+	assert.True(t, ok1, "first registration should succeed")
+	assert.True(t, ok2, "duplicate registration should still return ok=true")
+	assert.NotNil(t, oidcCred1)
+	assert.NotNil(t, oidcCred2)
+	assert.Equal(t, key1, key2, "both should resolve to the same key")
 
 	r.mutex.RLock()
 	entries := r.byHost["registry.example.com"]
 	r.mutex.RUnlock()
 
 	assert.Equal(t, 1, len(entries), "duplicate path+port should not create a second entry")
+
+	// First-wins: the stored credential should be from tenant-1
+	assert.Equal(t, "tenant-1",
+		entries[0].credential.parameters.(*AzureOIDCParameters).TenantID,
+		"first credential should be retained (first-wins)")
+
+	// Verify logging: "registered" only once, "skipping duplicate" for the second
+	logOutput := logBuf.String()
+	assert.Equal(t, 1, strings.Count(logOutput, "registered azure OIDC credentials for test registry"),
+		"should log 'registered' only once")
+	assert.Contains(t, logOutput, "skipping duplicate OIDC credential",
+		"should log that duplicate was skipped")
 }
