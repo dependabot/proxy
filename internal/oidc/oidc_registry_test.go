@@ -2,7 +2,6 @@ package oidc
 
 import (
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/jarcoal/httpmock"
@@ -99,9 +98,9 @@ func TestOIDCRegistry_Register_FallsBackToHost(t *testing.T) {
 }
 
 func TestOIDCRegistry_Register_NotOIDC(t *testing.T) {
-	// Don't set OIDC env vars — CreateOIDCCredential will return nil
-	os.Unsetenv(envActionsIDTokenRequestURL)
-	os.Unsetenv(envActionsIDTokenRequestToken)
+	// Ensure OIDC env vars are not set — CreateOIDCCredential will return nil
+	t.Setenv(envActionsIDTokenRequestURL, "")
+	t.Setenv(envActionsIDTokenRequestToken, "")
 
 	r := NewOIDCRegistry()
 	cred := config.Credential{
