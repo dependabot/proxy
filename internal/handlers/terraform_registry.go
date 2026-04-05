@@ -68,8 +68,10 @@ func NewTerraformRegistryHandler(credentials config.Credentials) *TerraformRegis
 		handler.credentials = append(handler.credentials, terraformCred)
 	}
 
-	// Sort credentials by URL path length descending (longest first)
-	sort.Slice(handler.credentials, func(i, j int) bool {
+	// Sort credentials by URL length descending (longest first) to ensure
+	// more specific URLs match before shorter ones. Using SliceStable for
+	// deterministic ordering when URL lengths are equal.
+	sort.SliceStable(handler.credentials, func(i, j int) bool {
 		return len(handler.credentials[i].url) > len(handler.credentials[j].url)
 	})
 
