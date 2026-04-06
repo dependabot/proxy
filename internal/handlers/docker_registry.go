@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -31,18 +30,17 @@ type getECRClient func(region, keyID, secretKey string) (ecriface.ECRAPI, error)
 
 // DockerRegistryHandler handles requests to Docker registries, adding auth.
 type DockerRegistryHandler struct {
-	credentials     []*dockerRegistryCredentials
-	transport       http.RoundTripper
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []*dockerRegistryCredentials
+	transport    http.RoundTripper
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 // NewDockerRegistryHandler returns a new DockerRegistryHandler.
 func NewDockerRegistryHandler(creds config.Credentials, transport http.RoundTripper, getECRClient getECRClient) *DockerRegistryHandler {
 	handler := DockerRegistryHandler{
-		credentials:     []*dockerRegistryCredentials{},
-		transport:       transport,
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []*dockerRegistryCredentials{},
+		transport:    transport,
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	if getECRClient == nil {
@@ -59,12 +57,8 @@ func NewDockerRegistryHandler(creds config.Credentials, transport http.RoundTrip
 			registry = cred.Host()
 		}
 
-		oidcCredential, _ := oidc.CreateOIDCCredential(cred)
-		if oidcCredential != nil {
-			if registry != "" {
-				handler.oidcCredentials[registry] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for docker registry: %s", oidcCredential.Provider(), registry)
-			}
+		// OIDC credentials are not used as static credentials.
+		if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"registry"}, "docker registry"); oidcCred != nil {
 			continue
 		}
 
@@ -110,7 +104,7 @@ func (h *DockerRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pr
 	}
 
 	// Try OIDC credentials first
-	if oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, req, ctx) {
+	if h.oidcRegistry.TryAuth(req, ctx) {
 		return req, nil
 	}
 
