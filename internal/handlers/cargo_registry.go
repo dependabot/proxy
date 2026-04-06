@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/elazarl/goproxy"
 	"github.com/sirupsen/logrus"
@@ -35,9 +34,8 @@ import (
 // credentials locally in this example:
 // https://jfrog.com/help/r/artifactory-how-to-integrate-artifactory-with-cargo-using-sparse-indexing/client-configuration
 type CargoRegistryHandler struct {
-	credentials     []cargoRepositoryCredentials
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []cargoRepositoryCredentials
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 type cargoRepositoryCredentials struct {
@@ -47,8 +45,8 @@ type cargoRepositoryCredentials struct {
 
 func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandler {
 	handler := CargoRegistryHandler{
-		credentials:     []cargoRepositoryCredentials{},
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []cargoRepositoryCredentials{},
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	for _, credential := range credentials {
@@ -58,12 +56,14 @@ func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandl
 
 		url := credential.GetString("url")
 
-		oidcCredential, _ := oidc.CreateOIDCCredential(credential)
-		if oidcCredential != nil {
-			if url != "" {
-				handler.oidcCredentials[url] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for cargo registry: %s", oidcCredential.Provider(), url)
+		// Cargo credentials must remain URL-scoped; do not allow OIDC
+		// registration to fall back to host-only matching when url is empty.
+		// OIDC credentials are not used as static credentials.
+		if url != "" {
+			if oidcCred, _, _ := handler.oidcRegistry.Register(credential, []string{"url"}, "cargo registry"); oidcCred != nil {
+				continue
 			}
+		} else if oidcCred, _ := oidc.CreateOIDCCredential(credential); oidcCred != nil {
 			continue
 		}
 
@@ -90,7 +90,7 @@ func (h *CargoRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 	}
 
 	// Try OIDC credentials first
-	if oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, req, ctx) {
+	if h.oidcRegistry.TryAuth(req, ctx) {
 		return req, nil
 	}
 
