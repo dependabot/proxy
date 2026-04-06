@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -18,9 +17,8 @@ var simpleSuffixRe = regexp.MustCompile(`/\+?simple/?\z`)
 
 // PythonIndexHandler handles requests to Python indexes, adding auth.
 type PythonIndexHandler struct {
-	credentials     []pythonIndexCredentials
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []pythonIndexCredentials
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 type pythonIndexCredentials struct {
@@ -34,8 +32,8 @@ type pythonIndexCredentials struct {
 // NewPythonIndexHandler returns a new PythonIndexHandler.
 func NewPythonIndexHandler(creds config.Credentials) *PythonIndexHandler {
 	handler := PythonIndexHandler{
-		credentials:     []pythonIndexCredentials{},
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []pythonIndexCredentials{},
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	for _, cred := range creds {
@@ -47,16 +45,21 @@ func NewPythonIndexHandler(creds config.Credentials) *PythonIndexHandler {
 
 		oidcCredential, _ := oidc.CreateOIDCCredential(cred)
 		if oidcCredential != nil {
-			host := cred.Host()
-			if host == "" && indexURL != "" {
-				regURL, err := helpers.ParseURLLax(indexURL)
-				if err == nil {
-					host = regURL.Hostname()
-				}
+			// Normalize the registration URL by stripping the /simple or /+simple
+			// suffix, matching how static credentials are matched at request time.
+			// Without this, a config of /dependabot/+simple/ would not prefix-match
+			// requests to /dependabot/pkg/a.
+			regURL := indexURL
+			if regURL == "" {
+				regURL = cred.GetString("url")
 			}
-			if host != "" {
-				handler.oidcCredentials[host] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for python index: %s", oidcCredential.Provider(), host)
+			if regURL != "" {
+				regURL = simpleSuffixRe.ReplaceAllString(regURL, "/")
+			} else {
+				regURL = cred.Host()
+			}
+			if regURL != "" {
+				handler.oidcRegistry.RegisterURL(regURL, oidcCredential, "python index")
 			}
 			continue
 		}
@@ -85,7 +88,7 @@ func (h *PythonIndexHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 	}
 
 	// Try OIDC credentials first
-	if oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, req, ctx) {
+	if h.oidcRegistry.TryAuth(req, ctx) {
 		return req, nil
 	}
 
