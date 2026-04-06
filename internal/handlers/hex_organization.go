@@ -13,12 +13,17 @@ import (
 
 // HexOrganizationHandler handles requests to repo.hex.pm, adding auth.
 type HexOrganizationHandler struct {
-	orgTokens map[string]string
+	credentials []hexOrganizationCredentials
+}
+
+type hexOrganizationCredentials struct {
+	organization string
+	key          string
 }
 
 // NewHexOrganizationHandler returns a new HexOrganizationHandler.
 func NewHexOrganizationHandler(creds config.Credentials) *HexOrganizationHandler {
-	handler := HexOrganizationHandler{orgTokens: map[string]string{}}
+	handler := HexOrganizationHandler{credentials: []hexOrganizationCredentials{}}
 
 	for _, cred := range creds {
 		if cred["type"] != "hex_organization" {
@@ -26,12 +31,20 @@ func NewHexOrganizationHandler(creds config.Credentials) *HexOrganizationHandler
 		}
 
 		org := cred.GetString("organization")
-		token := cred.GetString("token")
-		if org == "" || token == "" {
+		// Support both "key" and "token" (backwards compatibility)
+		key := cred.GetString("key")
+		if key == "" {
+			key = cred.GetString("token")
+		}
+		if org == "" || key == "" {
 			continue
 		}
 
-		handler.orgTokens[org] = token
+		hexCred := hexOrganizationCredentials{
+			organization: org,
+			key:          key,
+		}
+		handler.credentials = append(handler.credentials, hexCred)
 	}
 
 	return &handler
@@ -52,13 +65,14 @@ func (h *HexOrganizationHandler) HandleRequest(req *http.Request, ctx *goproxy.P
 		return req, nil
 	}
 
-	token, ok := h.orgTokens[pathParts[1]]
-	if !ok {
-		return req, nil
+	reqOrg := pathParts[1]
+	for _, cred := range h.credentials {
+		if cred.organization == reqOrg {
+			logging.RequestLogf(ctx, "* authenticating hex request (org: %s)", reqOrg)
+			req.Header.Set("authorization", cred.key)
+			return req, nil
+		}
 	}
-
-	logging.RequestLogf(ctx, "* authenticating hex request (org: %s)", pathParts[1])
-	req.Header.Set("authorization", token)
 
 	return req, nil
 }

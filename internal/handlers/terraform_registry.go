@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"net/http"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/elazarl/goproxy"
@@ -13,14 +15,20 @@ import (
 )
 
 type TerraformRegistryHandler struct {
-	credentials     map[string]string
+	credentials     []terraformRegistryCredentials
 	oidcCredentials map[string]*oidc.OIDCCredential
 	mutex           sync.RWMutex
 }
 
+type terraformRegistryCredentials struct {
+	host  string
+	url   string
+	token string
+}
+
 func NewTerraformRegistryHandler(credentials config.Credentials) *TerraformRegistryHandler {
 	handler := TerraformRegistryHandler{
-		credentials:     make(map[string]string),
+		credentials:     []terraformRegistryCredentials{},
 		oidcCredentials: make(map[string]*oidc.OIDCCredential),
 	}
 
@@ -40,8 +48,33 @@ func NewTerraformRegistryHandler(credentials config.Credentials) *TerraformRegis
 			continue
 		}
 
-		handler.credentials[host] = credential.GetString("token")
+		token := credential.GetString("token")
+		url := credential.GetString("url")
+
+		// Skip credentials with empty token or both empty host and url
+		if token == "" || (host == "" && url == "") {
+			continue
+		}
+
+		terraformCred := terraformRegistryCredentials{
+			url:   url,
+			token: token,
+		}
+		// Only set host when url is not provided to ensure URL-prefix matching
+		// takes precedence and doesn't fall back to host matching
+		if url == "" {
+			terraformCred.host = host
+		}
+		handler.credentials = append(handler.credentials, terraformCred)
 	}
+
+	// Sort credentials by URL length descending (longest first) to ensure
+	// more specific URLs match before shorter ones. Using SliceStable for
+	// deterministic ordering when URL lengths are equal.
+	sort.SliceStable(handler.credentials, func(i, j int) bool {
+		return len(handler.credentials[i].url) > len(handler.credentials[j].url)
+	})
+
 	return &handler
 }
 
@@ -56,15 +89,65 @@ func (h *TerraformRegistryHandler) HandleRequest(request *http.Request, context 
 	}
 
 	// Fall back to static credentials
-	host := request.URL.Hostname()
-	token, ok := h.credentials[host]
+	for _, cred := range h.credentials {
+		if !urlMatchesRequestWithBoundary(request, cred.url) && !helpers.CheckHost(request, cred.host) {
+			continue
+		}
 
-	if !ok {
+		logging.RequestLogf(context, "* authenticating terraform registry request (host: %s)", request.URL.Hostname())
+		request.Header.Set("Authorization", "Bearer "+cred.token)
 		return request, nil
 	}
 
-	logging.RequestLogf(context, "* authenticating terraform registry request (host: %s)", host)
-	request.Header.Set("Authorization", "Bearer "+token)
-
 	return request, nil
+}
+
+// urlMatchesRequestWithBoundary checks if the request URL matches the credential URL
+// with proper path boundary checking.
+func urlMatchesRequestWithBoundary(request *http.Request, credURL string) bool {
+	if credURL == "" {
+		return false
+	}
+
+	parsedURL, err := helpers.ParseURLLax(credURL)
+	if err != nil {
+		return false
+	}
+
+	if !helpers.AreHostnamesEqual(parsedURL.Hostname(), request.URL.Hostname()) {
+		return false
+	}
+
+	urlPort := parsedURL.Port()
+	if urlPort == "" {
+		urlPort = "443"
+	}
+
+	reqPort := request.URL.Port()
+	if reqPort == "" {
+		reqPort = "443"
+	}
+
+	if urlPort != reqPort {
+		return false
+	}
+
+	credPath := strings.TrimRight(parsedURL.Path, "/")
+	reqPath := request.URL.Path
+
+	if credPath == "" {
+		// Empty path matches everything on the host
+		return true
+	}
+
+	if reqPath == credPath {
+		return true
+	}
+
+	// Check if request path starts with credPath followed by /
+	if strings.HasPrefix(reqPath, credPath+"/") {
+		return true
+	}
+
+	return false
 }
