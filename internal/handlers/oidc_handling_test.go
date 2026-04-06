@@ -1035,7 +1035,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered aws OIDC credentials for python index: python.example.com",
+				"registered aws OIDC credentials for python index: https://python.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://python.example.com/some-package",
@@ -1057,7 +1057,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered azure OIDC credentials for python index: python.example.com",
+				"registered azure OIDC credentials for python index: https://python.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://python.example.com/some-package",
@@ -1078,7 +1078,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for python index: jfrog.example.com",
+				"registered jfrog OIDC credentials for python index: https://jfrog.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
@@ -1101,7 +1101,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for python index: cloudsmith.example.com",
+				"registered cloudsmith OIDC credentials for python index: https://cloudsmith.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
@@ -1389,4 +1389,55 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPythonOIDCSimpleSuffixStripping verifies that Python index URLs ending
+// with /simple or /+simple are normalized before OIDC registration, so that
+// requests to sibling paths (e.g. /org/pkg/a) still match.
+func TestPythonOIDCSimpleSuffixStripping(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	tenantA := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	tenantB := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	clientId := "87654321-4321-4321-4321-210987654321"
+
+	tokenUrl := "https://token.actions.example.com" //nolint:gosec // test URL
+	httpmock.RegisterResponder("GET", tokenUrl,
+		httpmock.NewStringResponder(200, `{"count":1,"value":"sometoken"}`))
+
+	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantA),
+		httpmock.NewStringResponder(200, `{"access_token":"__token_A__","expires_in":3600,"token_type":"Bearer"}`))
+	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantB),
+		httpmock.NewStringResponder(200, `{"access_token":"__token_B__","expires_in":3600,"token_type":"Bearer"}`))
+
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", tokenUrl)
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "sometoken")
+
+	creds := config.Credentials{
+		config.Credential{
+			"type":      "python_index",
+			"index-url": "https://pkgs.example.com/org/feed-A/+simple/",
+			"tenant-id": tenantA,
+			"client-id": clientId,
+		},
+		config.Credential{
+			"type":      "python_index",
+			"index-url": "https://pkgs.example.com/org/feed-B/simple",
+			"tenant-id": tenantB,
+			"client-id": clientId,
+		},
+	}
+
+	handler := NewPythonIndexHandler(creds)
+
+	// /+simple/ should be stripped → registered as /org/feed-A/
+	reqA := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-A/pkg/a", nil)
+	reqA = handleRequestAndClose(handler, reqA, nil)
+	assertHasTokenAuth(t, reqA, "Bearer", "__token_A__", "feed-A request should use token A")
+
+	// /simple should be stripped → registered as /org/feed-B/
+	reqB := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-B/pkg/b", nil)
+	reqB = handleRequestAndClose(handler, reqB, nil)
+	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B request should use token B")
 }
