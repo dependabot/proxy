@@ -3,7 +3,6 @@ package handlers
 import (
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -15,9 +14,8 @@ import (
 
 // RubyGemsServerHandler handles requests to rubygems servers, adding auth.
 type RubyGemsServerHandler struct {
-	credentials     []rubyGemsServerCredentials
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []rubyGemsServerCredentials
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 type rubyGemsServerCredentials struct {
@@ -29,8 +27,8 @@ type rubyGemsServerCredentials struct {
 // NewRubyGemsServerHandler returns a new RubyGemsServerHandler.
 func NewRubyGemsServerHandler(creds config.Credentials) *RubyGemsServerHandler {
 	handler := RubyGemsServerHandler{
-		credentials:     []rubyGemsServerCredentials{},
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []rubyGemsServerCredentials{},
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	for _, cred := range creds {
@@ -41,16 +39,8 @@ func NewRubyGemsServerHandler(creds config.Credentials) *RubyGemsServerHandler {
 		host := cred.Host()
 		url := cred.GetString("url")
 
-		oidcCredential, _ := oidc.CreateOIDCCredential(cred)
-		if oidcCredential != nil {
-			hostURL := url
-			if hostURL == "" {
-				hostURL = host
-			}
-			if hostURL != "" {
-				handler.oidcCredentials[hostURL] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for rubygems server: %s", oidcCredential.Provider(), hostURL)
-			}
+		// OIDC credentials are not used as static credentials.
+		if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"url"}, "rubygems server"); oidcCred != nil {
 			continue
 		}
 
@@ -72,7 +62,7 @@ func (h *RubyGemsServerHandler) HandleRequest(req *http.Request, ctx *goproxy.Pr
 	}
 
 	// Try OIDC credentials first
-	if oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, req, ctx) {
+	if h.oidcRegistry.TryAuth(req, ctx) {
 		return req, nil
 	}
 
