@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -15,9 +14,8 @@ import (
 )
 
 type TerraformRegistryHandler struct {
-	credentials     []terraformRegistryCredentials
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []terraformRegistryCredentials
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 type terraformRegistryCredentials struct {
@@ -28,8 +26,8 @@ type terraformRegistryCredentials struct {
 
 func NewTerraformRegistryHandler(credentials config.Credentials) *TerraformRegistryHandler {
 	handler := TerraformRegistryHandler{
-		credentials:     []terraformRegistryCredentials{},
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []terraformRegistryCredentials{},
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	for _, credential := range credentials {
@@ -37,17 +35,12 @@ func NewTerraformRegistryHandler(credentials config.Credentials) *TerraformRegis
 			continue
 		}
 
-		host := credential.Host()
-
-		oidcCredential, _ := oidc.CreateOIDCCredential(credential)
-		if oidcCredential != nil {
-			if host != "" {
-				handler.oidcCredentials[host] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for terraform registry: %s", oidcCredential.Provider(), host)
-			}
+		// OIDC credentials are not used as static credentials.
+		if oidcCred, _, _ := handler.oidcRegistry.Register(credential, []string{"url"}, "terraform registry"); oidcCred != nil {
 			continue
 		}
 
+		host := credential.Host()
 		token := credential.GetString("token")
 		url := credential.GetString("url")
 
@@ -84,7 +77,7 @@ func (h *TerraformRegistryHandler) HandleRequest(request *http.Request, context 
 	}
 
 	// Try OIDC credentials first
-	if oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, request, context) {
+	if h.oidcRegistry.TryAuth(request, context) {
 		return request, nil
 	}
 
