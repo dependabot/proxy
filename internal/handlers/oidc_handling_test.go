@@ -155,7 +155,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered aws OIDC credentials for composer repository: composer.example.com",
+				"registered aws OIDC credentials for composer repository: https://composer.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://composer.example.com/some-package",
@@ -177,7 +177,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered azure OIDC credentials for composer repository: composer.example.com",
+				"registered azure OIDC credentials for composer repository: https://composer.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://composer.example.com/some-package",
@@ -199,7 +199,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for composer repository: jfrog.example.com",
+				"registered jfrog OIDC credentials for composer repository: https://jfrog.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
@@ -222,7 +222,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for composer repository: cloudsmith.example.com",
+				"registered cloudsmith OIDC credentials for composer repository: https://cloudsmith.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
