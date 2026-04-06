@@ -627,7 +627,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered aws OIDC credentials for maven repository: maven.example.com",
+				"registered aws OIDC credentials for maven repository: https://maven.example.com/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://maven.example.com/packages/some-package",
@@ -649,7 +649,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered azure OIDC credentials for maven repository: maven.example.com",
+				"registered azure OIDC credentials for maven repository: https://maven.example.com/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://maven.example.com/packages/some-package",
@@ -670,7 +670,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for maven repository: jfrog.example.com",
+				"registered jfrog OIDC credentials for maven repository: https://jfrog.example.com/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/packages/some-package",
@@ -693,7 +693,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for maven repository: cloudsmith.example.com",
+				"registered cloudsmith OIDC credentials for maven repository: https://cloudsmith.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
