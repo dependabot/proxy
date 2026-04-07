@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -17,9 +15,8 @@ import (
 // NPMRegistryHandler handles requests to NPM registries, adding auth to
 // requests to registries for which we have credentials.
 type NPMRegistryHandler struct {
-	credentials     []npmRegistryCredentials
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []npmRegistryCredentials
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 type npmRegistryCredentials struct {
@@ -33,8 +30,8 @@ type npmRegistryCredentials struct {
 // NewNPMRegistryHandler returns a new NPMRegistryHandler,
 func NewNPMRegistryHandler(creds config.Credentials) *NPMRegistryHandler {
 	handler := NPMRegistryHandler{
-		credentials:     []npmRegistryCredentials{},
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []npmRegistryCredentials{},
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	for _, cred := range creds {
@@ -44,19 +41,8 @@ func NewNPMRegistryHandler(creds config.Credentials) *NPMRegistryHandler {
 
 		registry := cred.GetString("registry")
 
-		oidcCredential, _ := oidc.CreateOIDCCredential(cred)
-		if oidcCredential != nil {
-			host := cred.Host()
-			if host == "" && registry != "" {
-				regURL, err := helpers.ParseURLLax(registry)
-				if err == nil {
-					host = regURL.Hostname()
-				}
-			}
-			if host != "" {
-				handler.oidcCredentials[host] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for npm registry: %s", oidcCredential.Provider(), host)
-			}
+		// OIDC credentials are not used as static credentials.
+		if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"registry", "url"}, "npm registry"); oidcCred != nil {
 			continue
 		}
 
@@ -86,25 +72,8 @@ func (h *NPMRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 	}
 
 	// Try OIDC credentials first
-	h.mutex.RLock()
-	oidcCred, hasOIDC := h.oidcCredentials[reqHost]
-	h.mutex.RUnlock()
-
-	if hasOIDC {
-		token, err := oidc.GetOrRefreshOIDCToken(oidcCred, req.Context())
-		if err != nil {
-			logging.RequestLogf(ctx, "* failed to get token via OIDC for %s: %v", reqHost, err)
-			// Fall through to try static credentials
-		} else {
-			if oidcCred.Provider() == "cloudsmith" {
-				logging.RequestLogf(ctx, "* authenticating npm registry request with OIDC API key (host: %s)", reqHost)
-				req.Header.Set("X-Api-Key", token)
-			} else {
-				logging.RequestLogf(ctx, "* authenticating npm registry request with OIDC token (host: %s)", reqHost)
-				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-			}
-			return req, nil
-		}
+	if h.oidcRegistry.TryAuth(req, ctx) {
+		return req, nil
 	}
 
 	// Fall back to static credentials
