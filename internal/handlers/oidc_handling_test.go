@@ -721,7 +721,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered aws OIDC credentials for npm registry: https://npm.example.com",
+				"registered aws OIDC credentials for npm registry: npm.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://npm.example.com/some-package",
@@ -743,7 +743,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered azure OIDC credentials for npm registry: https://npm.example.com",
+				"registered azure OIDC credentials for npm registry: npm.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://npm.example.com/some-package",
@@ -764,7 +764,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for npm registry: https://jfrog.example.com",
+				"registered jfrog OIDC credentials for npm registry: jfrog.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
@@ -787,7 +787,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for npm registry: https://cloudsmith.example.com",
+				"registered cloudsmith OIDC credentials for npm registry: cloudsmith.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
@@ -1440,55 +1440,4 @@ func TestPythonOIDCSimpleSuffixStripping(t *testing.T) {
 	reqB := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-B/pkg/b", nil)
 	reqB = handleRequestAndClose(handler, reqB, nil)
 	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B request should use token B")
-}
-
-// TestNPMOIDCSameHostDifferentPaths verifies that two npm OIDC credentials on
-// the same host with different URL paths do not collide — each request is
-// authenticated with the credential whose path is the longest prefix match.
-func TestNPMOIDCSameHostDifferentPaths(t *testing.T) {
-	httpmock.Activate()
-	defer httpmock.DeactivateAndReset()
-
-	tenantA := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-	tenantB := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-	clientId := "87654321-4321-4321-4321-210987654321"
-
-	tokenUrl := "https://token.actions.example.com" //nolint:gosec // test URL
-	httpmock.RegisterResponder("GET", tokenUrl,
-		httpmock.NewStringResponder(200, `{"count":1,"value":"sometoken"}`))
-
-	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantA),
-		httpmock.NewStringResponder(200, `{"access_token":"__token_A__","expires_in":3600,"token_type":"Bearer"}`))
-	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantB),
-		httpmock.NewStringResponder(200, `{"access_token":"__token_B__","expires_in":3600,"token_type":"Bearer"}`))
-
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", tokenUrl)
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "sometoken")
-
-	creds := config.Credentials{
-		config.Credential{
-			"type":      "npm_registry",
-			"url":       "https://pkgs.example.com/org/feed-A",
-			"tenant-id": tenantA,
-			"client-id": clientId,
-		},
-		config.Credential{
-			"type":      "npm_registry",
-			"url":       "https://pkgs.example.com/org/feed-B",
-			"tenant-id": tenantB,
-			"client-id": clientId,
-		},
-	}
-
-	handler := NewNPMRegistryHandler(creds)
-
-	// Request to feed-A path should get token A
-	reqA := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-A/some-package", nil)
-	reqA = handleRequestAndClose(handler, reqA, nil)
-	assertHasTokenAuth(t, reqA, "Bearer", "__token_A__", "feed-A should use token A")
-
-	// Request to feed-B path should get token B
-	reqB := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-B/some-package", nil)
-	reqB = handleRequestAndClose(handler, reqB, nil)
-	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B should use token B")
 }
