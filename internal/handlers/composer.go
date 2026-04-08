@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -14,9 +13,8 @@ import (
 
 // ComposerHandler handles requests to PHP registries, adding auth.
 type ComposerHandler struct {
-	credentials     []composerCredentials
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []composerCredentials
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 type composerCredentials struct {
@@ -30,8 +28,8 @@ type composerCredentials struct {
 // NewComposerHandler returns a new ComposerHandler.
 func NewComposerHandler(creds config.Credentials) *ComposerHandler {
 	handler := ComposerHandler{
-		credentials:     []composerCredentials{},
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []composerCredentials{},
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	for _, cred := range creds {
@@ -42,20 +40,8 @@ func NewComposerHandler(creds config.Credentials) *ComposerHandler {
 		registry := cred.GetString("registry")
 		url := cred.GetString("url")
 
-		oidcCredential, _ := oidc.CreateOIDCCredential(cred)
-		if oidcCredential != nil {
-			host := url
-			if host == "" {
-				host = registry
-			}
-			hostURL, err := helpers.ParseURLLax(host)
-			if err == nil {
-				host = hostURL.Hostname()
-			}
-			if host != "" {
-				handler.oidcCredentials[host] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for composer repository: %s", oidcCredential.Provider(), host)
-			}
+		// OIDC credentials are not used as static credentials.
+		if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"url", "registry"}, "composer repository"); oidcCred != nil {
 			continue
 		}
 
@@ -79,7 +65,7 @@ func (h *ComposerHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx
 	}
 
 	// Try OIDC credentials first
-	if oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, req, ctx) {
+	if h.oidcRegistry.TryAuth(req, ctx) {
 		return req, nil
 	}
 
