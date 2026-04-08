@@ -155,7 +155,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered aws OIDC credentials for composer repository: composer.example.com",
+				"registered aws OIDC credentials for composer repository: https://composer.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://composer.example.com/some-package",
@@ -177,7 +177,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered azure OIDC credentials for composer repository: composer.example.com",
+				"registered azure OIDC credentials for composer repository: https://composer.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://composer.example.com/some-package",
@@ -199,7 +199,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for composer repository: jfrog.example.com",
+				"registered jfrog OIDC credentials for composer repository: https://jfrog.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
@@ -222,7 +222,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for composer repository: cloudsmith.example.com",
+				"registered cloudsmith OIDC credentials for composer repository: https://cloudsmith.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
@@ -627,7 +627,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered aws OIDC credentials for maven repository: maven.example.com",
+				"registered aws OIDC credentials for maven repository: https://maven.example.com/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://maven.example.com/packages/some-package",
@@ -649,7 +649,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered azure OIDC credentials for maven repository: maven.example.com",
+				"registered azure OIDC credentials for maven repository: https://maven.example.com/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://maven.example.com/packages/some-package",
@@ -670,7 +670,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for maven repository: jfrog.example.com",
+				"registered jfrog OIDC credentials for maven repository: https://jfrog.example.com/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/packages/some-package",
@@ -693,7 +693,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for maven repository: cloudsmith.example.com",
+				"registered cloudsmith OIDC credentials for maven repository: https://cloudsmith.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
@@ -721,7 +721,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered aws OIDC credentials for npm registry: npm.example.com",
+				"registered aws OIDC credentials for npm registry: https://npm.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://npm.example.com/some-package",
@@ -743,7 +743,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered azure OIDC credentials for npm registry: npm.example.com",
+				"registered azure OIDC credentials for npm registry: https://npm.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://npm.example.com/some-package",
@@ -764,7 +764,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for npm registry: jfrog.example.com",
+				"registered jfrog OIDC credentials for npm registry: https://jfrog.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
@@ -787,7 +787,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for npm registry: cloudsmith.example.com",
+				"registered cloudsmith OIDC credentials for npm registry: https://cloudsmith.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
@@ -1035,7 +1035,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered aws OIDC credentials for python index: python.example.com",
+				"registered aws OIDC credentials for python index: https://python.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://python.example.com/some-package",
@@ -1057,7 +1057,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered azure OIDC credentials for python index: python.example.com",
+				"registered azure OIDC credentials for python index: https://python.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://python.example.com/some-package",
@@ -1078,7 +1078,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for python index: jfrog.example.com",
+				"registered jfrog OIDC credentials for python index: https://jfrog.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
@@ -1101,7 +1101,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for python index: cloudsmith.example.com",
+				"registered cloudsmith OIDC credentials for python index: https://cloudsmith.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
@@ -1225,7 +1225,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered aws OIDC credentials for terraform registry: terraform.example.com",
+				"registered aws OIDC credentials for terraform registry: https://terraform.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://terraform.example.com/some-package",
@@ -1268,7 +1268,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for terraform registry: jfrog.example.com",
+				"registered jfrog OIDC credentials for terraform registry: https://jfrog.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
@@ -1291,7 +1291,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for terraform registry: cloudsmith.example.com",
+				"registered cloudsmith OIDC credentials for terraform registry: https://cloudsmith.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
@@ -1389,4 +1389,159 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPythonOIDCSimpleSuffixStripping verifies that Python index URLs ending
+// with /simple or /+simple are normalized before OIDC registration, so that
+// requests to sibling paths (e.g. /org/pkg/a) still match.
+func TestPythonOIDCSimpleSuffixStripping(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	tenantA := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	tenantB := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	clientId := "87654321-4321-4321-4321-210987654321"
+
+	tokenUrl := "https://token.actions.example.com" //nolint:gosec // test URL
+	httpmock.RegisterResponder("GET", tokenUrl,
+		httpmock.NewStringResponder(200, `{"count":1,"value":"sometoken"}`))
+
+	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantA),
+		httpmock.NewStringResponder(200, `{"access_token":"__token_A__","expires_in":3600,"token_type":"Bearer"}`))
+	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantB),
+		httpmock.NewStringResponder(200, `{"access_token":"__token_B__","expires_in":3600,"token_type":"Bearer"}`))
+
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", tokenUrl)
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "sometoken")
+
+	creds := config.Credentials{
+		config.Credential{
+			"type":      "python_index",
+			"index-url": "https://pkgs.example.com/org/feed-A/+simple/",
+			"tenant-id": tenantA,
+			"client-id": clientId,
+		},
+		config.Credential{
+			"type":      "python_index",
+			"index-url": "https://pkgs.example.com/org/feed-B/simple",
+			"tenant-id": tenantB,
+			"client-id": clientId,
+		},
+	}
+
+	handler := NewPythonIndexHandler(creds)
+
+	// /+simple/ should be stripped → registered as /org/feed-A/
+	reqA := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-A/pkg/a", nil)
+	reqA = handleRequestAndClose(handler, reqA, nil)
+	assertHasTokenAuth(t, reqA, "Bearer", "__token_A__", "feed-A request should use token A")
+
+	// /simple should be stripped → registered as /org/feed-B/
+	reqB := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-B/pkg/b", nil)
+	reqB = handleRequestAndClose(handler, reqB, nil)
+	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B request should use token B")
+}
+
+// TestNPMOIDCSameHostDifferentPaths verifies that two npm OIDC credentials on
+// the same host with different URL paths do not collide — each request is
+// authenticated with the credential whose path is the longest prefix match.
+func TestNPMOIDCSameHostDifferentPaths(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	tenantA := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	tenantB := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	clientId := "87654321-4321-4321-4321-210987654321"
+
+	tokenUrl := "https://token.actions.example.com" //nolint:gosec // test URL
+	httpmock.RegisterResponder("GET", tokenUrl,
+		httpmock.NewStringResponder(200, `{"count":1,"value":"sometoken"}`))
+
+	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantA),
+		httpmock.NewStringResponder(200, `{"access_token":"__token_A__","expires_in":3600,"token_type":"Bearer"}`))
+	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantB),
+		httpmock.NewStringResponder(200, `{"access_token":"__token_B__","expires_in":3600,"token_type":"Bearer"}`))
+
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", tokenUrl)
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "sometoken")
+
+	creds := config.Credentials{
+		config.Credential{
+			"type":      "npm_registry",
+			"url":       "https://pkgs.example.com/org/feed-A",
+			"tenant-id": tenantA,
+			"client-id": clientId,
+		},
+		config.Credential{
+			"type":      "npm_registry",
+			"url":       "https://pkgs.example.com/org/feed-B",
+			"tenant-id": tenantB,
+			"client-id": clientId,
+		},
+	}
+
+	handler := NewNPMRegistryHandler(creds)
+
+	// Request to feed-A path should get token A
+	reqA := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-A/some-package", nil)
+	reqA = handleRequestAndClose(handler, reqA, nil)
+	assertHasTokenAuth(t, reqA, "Bearer", "__token_A__", "feed-A should use token A")
+
+	// Request to feed-B path should get token B
+	reqB := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-B/some-package", nil)
+	reqB = handleRequestAndClose(handler, reqB, nil)
+	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B should use token B")
+}
+
+// TestTerraformOIDCSameHostDifferentPaths verifies that two terraform OIDC
+// credentials on the same host with different URL paths do not collide — each
+// request is authenticated with the credential whose path is the longest
+// prefix match.
+func TestTerraformOIDCSameHostDifferentPaths(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	tenantA := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	tenantB := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	clientId := "87654321-4321-4321-4321-210987654321"
+
+	tokenUrl := "https://token.actions.example.com" //nolint:gosec // test URL
+	httpmock.RegisterResponder("GET", tokenUrl,
+		httpmock.NewStringResponder(200, `{"count":1,"value":"sometoken"}`))
+
+	// Two different Azure tenants → two different tokens
+	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantA),
+		httpmock.NewStringResponder(200, `{"access_token":"__token_A__","expires_in":3600,"token_type":"Bearer"}`))
+	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantB),
+		httpmock.NewStringResponder(200, `{"access_token":"__token_B__","expires_in":3600,"token_type":"Bearer"}`))
+
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", tokenUrl)
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "sometoken")
+
+	creds := config.Credentials{
+		config.Credential{
+			"type":      "terraform_registry",
+			"url":       "https://terraform.example.com/org/feed-A",
+			"tenant-id": tenantA,
+			"client-id": clientId,
+		},
+		config.Credential{
+			"type":      "terraform_registry",
+			"url":       "https://terraform.example.com/org/feed-B",
+			"tenant-id": tenantB,
+			"client-id": clientId,
+		},
+	}
+
+	handler := NewTerraformRegistryHandler(creds)
+
+	// Request to feed-A path should get token A
+	reqA := httptest.NewRequest("GET", "https://terraform.example.com/org/feed-A/v1/providers/org/name", nil)
+	reqA = handleRequestAndClose(handler, reqA, nil)
+	assertHasTokenAuth(t, reqA, "Bearer", "__token_A__", "feed-A should use token A")
+
+	// Request to feed-B path should get token B
+	reqB := httptest.NewRequest("GET", "https://terraform.example.com/org/feed-B/v1/providers/org/name", nil)
+	reqB = handleRequestAndClose(handler, reqB, nil)
+	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B should use token B")
 }

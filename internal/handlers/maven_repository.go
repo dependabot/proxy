@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -14,9 +13,8 @@ import (
 
 // MavenRepositoryHandler handles requests to maven repositories, adding auth.
 type MavenRepositoryHandler struct {
-	credentials     []mavenRepositoryCredentials
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []mavenRepositoryCredentials
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 type mavenRepositoryCredentials struct {
@@ -29,8 +27,8 @@ type mavenRepositoryCredentials struct {
 // NewMavenRepositoryHandler returns a new MavenRepositoryHandler.
 func NewMavenRepositoryHandler(creds config.Credentials) *MavenRepositoryHandler {
 	handler := MavenRepositoryHandler{
-		credentials:     []mavenRepositoryCredentials{},
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []mavenRepositoryCredentials{},
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	for _, cred := range creds {
@@ -40,19 +38,8 @@ func NewMavenRepositoryHandler(creds config.Credentials) *MavenRepositoryHandler
 
 		url := cred.GetString("url")
 
-		oidcCredential, _ := oidc.CreateOIDCCredential(cred)
-		if oidcCredential != nil {
-			host := cred.Host()
-			if host == "" && url != "" {
-				regURL, err := helpers.ParseURLLax(url)
-				if err == nil {
-					host = regURL.Hostname()
-				}
-			}
-			if host != "" {
-				handler.oidcCredentials[host] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for maven repository: %s", oidcCredential.Provider(), host)
-			}
+		// OIDC credentials are not used as static credentials.
+		if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"url"}, "maven repository"); oidcCred != nil {
 			continue
 		}
 
@@ -81,7 +68,7 @@ func (h *MavenRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.P
 	}
 
 	// Try OIDC credentials first
-	if oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, req, ctx) {
+	if h.oidcRegistry.TryAuth(req, ctx) {
 		return req, nil
 	}
 
