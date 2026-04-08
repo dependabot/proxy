@@ -1225,7 +1225,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered aws OIDC credentials for terraform registry: terraform.example.com",
+				"registered aws OIDC credentials for terraform registry: https://terraform.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://terraform.example.com/some-package",
@@ -1268,7 +1268,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for terraform registry: jfrog.example.com",
+				"registered jfrog OIDC credentials for terraform registry: https://jfrog.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/some-package",
@@ -1291,7 +1291,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for terraform registry: cloudsmith.example.com",
+				"registered cloudsmith OIDC credentials for terraform registry: https://cloudsmith.example.com",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
@@ -1489,6 +1489,59 @@ func TestNPMOIDCSameHostDifferentPaths(t *testing.T) {
 
 	// Request to feed-B path should get token B
 	reqB := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-B/some-package", nil)
+	reqB = handleRequestAndClose(handler, reqB, nil)
+	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B should use token B")
+}
+
+// TestTerraformOIDCSameHostDifferentPaths verifies that two terraform OIDC
+// credentials on the same host with different URL paths do not collide — each
+// request is authenticated with the credential whose path is the longest
+// prefix match.
+func TestTerraformOIDCSameHostDifferentPaths(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	tenantA := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	tenantB := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	clientId := "87654321-4321-4321-4321-210987654321"
+
+	tokenUrl := "https://token.actions.example.com" //nolint:gosec // test URL
+	httpmock.RegisterResponder("GET", tokenUrl,
+		httpmock.NewStringResponder(200, `{"count":1,"value":"sometoken"}`))
+
+	// Two different Azure tenants → two different tokens
+	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantA),
+		httpmock.NewStringResponder(200, `{"access_token":"__token_A__","expires_in":3600,"token_type":"Bearer"}`))
+	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantB),
+		httpmock.NewStringResponder(200, `{"access_token":"__token_B__","expires_in":3600,"token_type":"Bearer"}`))
+
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", tokenUrl)
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "sometoken")
+
+	creds := config.Credentials{
+		config.Credential{
+			"type":      "terraform_registry",
+			"url":       "https://terraform.example.com/org/feed-A",
+			"tenant-id": tenantA,
+			"client-id": clientId,
+		},
+		config.Credential{
+			"type":      "terraform_registry",
+			"url":       "https://terraform.example.com/org/feed-B",
+			"tenant-id": tenantB,
+			"client-id": clientId,
+		},
+	}
+
+	handler := NewTerraformRegistryHandler(creds)
+
+	// Request to feed-A path should get token A
+	reqA := httptest.NewRequest("GET", "https://terraform.example.com/org/feed-A/v1/providers/org/name", nil)
+	reqA = handleRequestAndClose(handler, reqA, nil)
+	assertHasTokenAuth(t, reqA, "Bearer", "__token_A__", "feed-A should use token A")
+
+	// Request to feed-B path should get token B
+	reqB := httptest.NewRequest("GET", "https://terraform.example.com/org/feed-B/v1/providers/org/name", nil)
 	reqB = handleRequestAndClose(handler, reqB, nil)
 	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B should use token B")
 }
