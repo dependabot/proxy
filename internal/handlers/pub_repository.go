@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/elazarl/goproxy"
 	"github.com/sirupsen/logrus"
@@ -17,9 +16,8 @@ import (
 // the v2 spec.
 // https://github.com/dart-lang/pub/blob/db003f2ec3a0751337a1c8d4ff22d4863a28afe6/doc/repository-spec-v2.md
 type PubRepositoryHandler struct {
-	credentials     []pubRepositoryCredentials
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []pubRepositoryCredentials
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 type pubRepositoryCredentials struct {
@@ -29,8 +27,8 @@ type pubRepositoryCredentials struct {
 
 func NewPubRepositoryHandler(credentials config.Credentials) *PubRepositoryHandler {
 	handler := PubRepositoryHandler{
-		credentials:     []pubRepositoryCredentials{},
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []pubRepositoryCredentials{},
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	for _, credential := range credentials {
@@ -40,12 +38,14 @@ func NewPubRepositoryHandler(credentials config.Credentials) *PubRepositoryHandl
 
 		url := credential.GetString("url")
 
-		oidcCredential, _ := oidc.CreateOIDCCredential(credential)
-		if oidcCredential != nil {
-			if url != "" {
-				handler.oidcCredentials[url] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for pub repository: %s", oidcCredential.Provider(), url)
+		// Pub credentials must remain URL-scoped; do not allow OIDC
+		// registration to fall back to host-only matching when url is empty.
+		// OIDC credentials are not used as static credentials.
+		if url != "" {
+			if oidcCred, _, _ := handler.oidcRegistry.Register(credential, []string{"url"}, "pub repository"); oidcCred != nil {
+				continue
 			}
+		} else if oidcCred, _ := oidc.CreateOIDCCredential(credential); oidcCred != nil {
 			continue
 		}
 
@@ -72,7 +72,7 @@ func (h *PubRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 	}
 
 	// Try OIDC credentials first
-	if oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, req, ctx) {
+	if h.oidcRegistry.TryAuth(req, ctx) {
 		return req, nil
 	}
 
