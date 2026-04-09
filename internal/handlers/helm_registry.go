@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -14,9 +13,8 @@ import (
 
 // HelmRegistryHandler handles requests to helm registries, adding auth.
 type HelmRegistryHandler struct {
-	credentials     []helmRegistryCredentials
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []helmRegistryCredentials
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 type helmRegistryCredentials struct {
@@ -28,8 +26,8 @@ type helmRegistryCredentials struct {
 // NewHelmRegistryHandler returns a new HelmRegistryHandler.
 func NewHelmRegistryHandler(creds config.Credentials) *HelmRegistryHandler {
 	handler := HelmRegistryHandler{
-		credentials:     []helmRegistryCredentials{},
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []helmRegistryCredentials{},
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	for _, cred := range creds {
@@ -42,12 +40,8 @@ func NewHelmRegistryHandler(creds config.Credentials) *HelmRegistryHandler {
 			registry = cred.Host()
 		}
 
-		oidcCredential, _ := oidc.CreateOIDCCredential(cred)
-		if oidcCredential != nil {
-			if registry != "" {
-				handler.oidcCredentials[registry] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for helm registry: %s", oidcCredential.Provider(), registry)
-			}
+		// OIDC credentials are not used as static credentials.
+		if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"registry"}, "helm registry"); oidcCred != nil {
 			continue
 		}
 
@@ -69,7 +63,7 @@ func (h *HelmRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Prox
 	}
 
 	// Try OIDC credentials first
-	if oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, req, ctx) {
+	if h.oidcRegistry.TryAuth(req, ctx) {
 		return req, nil
 	}
 
