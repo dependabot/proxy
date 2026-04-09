@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -13,9 +12,8 @@ import (
 )
 
 type GoProxyServerHandler struct {
-	credentials     []goProxyServerCredentials
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []goProxyServerCredentials
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 type goProxyServerCredentials struct {
@@ -28,8 +26,8 @@ type goProxyServerCredentials struct {
 // NewGoProxyServerHandler returns a new GoProxyServerHandler.
 func NewGoProxyServerHandler(creds config.Credentials) *GoProxyServerHandler {
 	handler := GoProxyServerHandler{
-		credentials:     []goProxyServerCredentials{},
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []goProxyServerCredentials{},
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	for _, cred := range creds {
@@ -40,16 +38,8 @@ func NewGoProxyServerHandler(creds config.Credentials) *GoProxyServerHandler {
 		url := cred.GetString("url")
 		host := cred.GetString("host")
 
-		oidcCredential, _ := oidc.CreateOIDCCredential(cred)
-		if oidcCredential != nil {
-			urlOrHost := url
-			if urlOrHost == "" {
-				urlOrHost = host
-			}
-			if urlOrHost != "" {
-				handler.oidcCredentials[urlOrHost] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for goproxy server: %s", oidcCredential.Provider(), urlOrHost)
-			}
+		// OIDC credentials are not used as static credentials.
+		if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"url"}, "goproxy server"); oidcCred != nil {
 			continue
 		}
 
@@ -76,7 +66,7 @@ func (h *GoProxyServerHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 	}
 
 	// Try OIDC credentials first
-	if oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, req, ctx) {
+	if h.oidcRegistry.TryAuth(req, ctx) {
 		return req, nil
 	}
 
