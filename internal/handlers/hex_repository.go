@@ -3,7 +3,6 @@ package handlers
 import (
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -15,9 +14,8 @@ import (
 
 // HexRepositoryHandler handles requests to private hex repositories, adding auth
 type HexRepositoryHandler struct {
-	credentials     []hexRepositoryCredentials
-	oidcCredentials map[string]*oidc.OIDCCredential
-	mutex           sync.RWMutex
+	credentials  []hexRepositoryCredentials
+	oidcRegistry *oidc.OIDCRegistry
 }
 
 type hexRepositoryCredentials struct {
@@ -27,8 +25,8 @@ type hexRepositoryCredentials struct {
 
 func NewHexRepositoryHandler(creds config.Credentials) *HexRepositoryHandler {
 	handler := HexRepositoryHandler{
-		credentials:     []hexRepositoryCredentials{},
-		oidcCredentials: make(map[string]*oidc.OIDCCredential),
+		credentials:  []hexRepositoryCredentials{},
+		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
 	for _, cred := range creds {
@@ -38,12 +36,14 @@ func NewHexRepositoryHandler(creds config.Credentials) *HexRepositoryHandler {
 
 		url := cred.GetString("url")
 
-		oidcCredential, _ := oidc.CreateOIDCCredential(cred)
-		if oidcCredential != nil {
-			if url != "" {
-				handler.oidcCredentials[url] = oidcCredential
-				logging.RequestLogf(nil, "registered %s OIDC credentials for hex repository: %s", oidcCredential.Provider(), url)
+		// Hex credentials must remain URL-scoped; do not allow OIDC
+		// registration to fall back to host-only matching when url is empty.
+		// OIDC credentials are not used as static credentials.
+		if url != "" {
+			if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"url"}, "hex repository"); oidcCred != nil {
+				continue
 			}
+		} else if oidcCred, _ := oidc.CreateOIDCCredential(cred); oidcCred != nil {
 			continue
 		}
 
@@ -70,7 +70,7 @@ func (h *HexRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 	}
 
 	// Try OIDC credentials first
-	if oidc.TryAuthOIDCRequestWithPrefix(&h.mutex, h.oidcCredentials, req, ctx) {
+	if h.oidcRegistry.TryAuth(req, ctx) {
 		return req, nil
 	}
 
