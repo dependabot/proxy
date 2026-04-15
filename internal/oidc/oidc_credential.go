@@ -98,9 +98,9 @@ func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
 	domainOwner := cred.GetString("domain-owner")
 
 	// cloudsmith values
-	orgName := cred.GetString("oidc-namespace")
-	serviceSlug := cred.GetString("oidc-service-slug")
-	cloudsmithAudience := cred.GetString("oidc-audience")
+	orgName := cred.GetString("namespace")
+	serviceSlug := cred.GetString("service-slug")
+	cloudsmithAudience := cred.GetString("audience")
 
 	switch {
 	case tenantID != "" && clientID != "":

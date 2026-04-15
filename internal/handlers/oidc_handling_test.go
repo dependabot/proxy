@@ -118,11 +118,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "cargo_registry",
-					"url":               "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "cargo_registry",
+					"url":          "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -213,11 +213,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "composer_repository",
-					"registry":          "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "composer_repository",
+					"registry":     "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -308,11 +308,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "docker_registry",
-					"registry":          "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "docker_registry",
+					"registry":     "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -402,11 +402,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "goproxy_server",
-					"url":               "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "goproxy_server",
+					"url":          "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -496,11 +496,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "helm_registry",
-					"registry":          "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "helm_registry",
+					"registry":     "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -590,11 +590,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "hex_repository",
-					"url":               "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "hex_repository",
+					"url":          "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -684,11 +684,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "maven_repository",
-					"url":               "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "maven_repository",
+					"url":          "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -778,11 +778,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "npm_registry",
-					"url":               "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "npm_registry",
+					"url":          "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -896,11 +896,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "nuget_feed",
-					"url":               "https://cloudsmith.example.com/v3/index.json",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "nuget_feed",
+					"url":          "https://cloudsmith.example.com/v3/index.json",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{
@@ -998,11 +998,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "pub_repository",
-					"url":               "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "pub_repository",
+					"url":          "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -1092,11 +1092,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "python_index",
-					"url":               "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "python_index",
+					"url":          "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -1187,12 +1187,12 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "rubygems_server",
-					"url":               "https://cloudsmith.example.com",
-					"host":              "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "rubygems_server",
+					"url":          "https://cloudsmith.example.com",
+					"host":         "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -1282,11 +1282,11 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			credentials: config.Credentials{
 				config.Credential{
-					"type":              "terraform_registry",
-					"url":               "https://cloudsmith.example.com",
-					"oidc-namespace":    "space",
-					"oidc-service-slug": "repo",
-					"oidc-audience":     "my-audience",
+					"type":         "terraform_registry",
+					"url":          "https://cloudsmith.example.com",
+					"namespace":    "space",
+					"service-slug": "repo",
+					"audience":     "my-audience",
 				},
 			},
 			urlMocks: []mockHttpRequest{},
@@ -1352,7 +1352,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"expires_in": 3600
 				}`))
 			case "cloudsmith":
-				namespace := tc.credentials[0]["oidc-namespace"]
+				namespace := tc.credentials[0]["namespace"]
 				httpmock.RegisterResponder("POST", fmt.Sprintf("https://api.cloudsmith.io/openid/%s/", namespace),
 					httpmock.NewStringResponder(200, `{
 						"token": "__test_token__"
