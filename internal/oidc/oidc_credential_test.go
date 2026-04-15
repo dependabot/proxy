@@ -271,9 +271,9 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 		{
 			"cloudsmith",
 			config.Credential{
-				"oidc-namespace":    "my-org",
-				"oidc-service-slug": "my-service",
-				"oidc-audience":     "my-audience",
+				"namespace":    "my-org",
+				"service-slug": "my-service",
+				"audience":     "my-audience",
 			},
 			&CloudsmithOIDCParameters{
 				OrgName:     "my-org",
@@ -285,10 +285,10 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 		{
 			"cloudsmith with explicit values",
 			config.Credential{
-				"oidc-namespace":    "my-org",
-				"oidc-service-slug": "my-service",
-				"api-host":          "api.example.com",
-				"oidc-audience":     "my-audience",
+				"namespace":    "my-org",
+				"service-slug": "my-service",
+				"api-host":     "api.example.com",
+				"audience":     "my-audience",
 			},
 			&CloudsmithOIDCParameters{
 				OrgName:     "my-org",
@@ -300,23 +300,23 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 		{
 			"looks like cloudsmith but missing service slug and audience",
 			config.Credential{
-				"oidc-namespace": "my-org",
+				"namespace": "my-org",
 			},
 			nil,
 		},
 		{
 			"looks like cloudsmith but missing service slug",
 			config.Credential{
-				"oidc-namespace": "my-org",
-				"oidc-audience":  "my-audience",
+				"namespace": "my-org",
+				"audience":  "my-audience",
 			},
 			nil,
 		},
 		{
 			"looks like cloudsmith but missing audience",
 			config.Credential{
-				"oidc-namespace":    "my-org",
-				"oidc-service-slug": "my-service",
+				"namespace":    "my-org",
+				"service-slug": "my-service",
 			},
 			nil,
 		},

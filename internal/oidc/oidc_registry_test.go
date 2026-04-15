@@ -382,11 +382,11 @@ func mockCloudsmithOIDC(t *testing.T, namespace, token string) {
 
 func cloudsmithCred(namespace, serviceSlug, audience, url string) config.Credential {
 	return config.Credential{
-		"type":              "test_registry",
-		"oidc-namespace":    namespace,
-		"oidc-service-slug": serviceSlug,
-		"oidc-audience":     audience,
-		"url":               url,
+		"type":         "test_registry",
+		"namespace":    namespace,
+		"service-slug": serviceSlug,
+		"audience":     audience,
+		"url":          url,
 	}
 }
 
