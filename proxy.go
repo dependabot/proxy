@@ -155,6 +155,9 @@ func handleForbidden(rsp *http.Response, p *goproxy.ProxyCtx) *http.Response {
 }
 
 func normaliseHost(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	if req.URL == nil {
+		return req, nil
+	}
 	req.URL.Host = strings.ToLower(req.URL.Host)
 	req.Host = strings.ToLower(req.Host)
 	return req, nil

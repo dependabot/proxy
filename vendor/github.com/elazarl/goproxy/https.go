@@ -269,7 +269,11 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 				req.RemoteAddr = r.RemoteAddr
 				ctx.Logf("req %v", r.Host)
 
-				if !strings.HasPrefix(req.URL.String(), scheme+"://") {
+				// The asterisk-form request-target ("*") is used by HTTP/2 PRI
+				// requests and OPTIONS. Do not prepend the host to it; doing so
+				// produces an invalid URL ("https://host:443*") that url.Parse
+				// rejects, leaving req.URL nil and causing downstream panics.
+				if req.URL.String() != "*" && !strings.HasPrefix(req.URL.String(), scheme+"://") {
 					req.URL, err = url.Parse(scheme + "://" + r.Host + req.URL.String())
 				}
 
