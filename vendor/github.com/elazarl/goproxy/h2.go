@@ -53,6 +53,14 @@ func (r *H2Transport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	}
 	defer rawServerTLS.Close()
 
+	// Extract hostname (without port) for TLS SNI and verification.
+	// raddr is guaranteed to contain ":" because of the guard above.
+	colonIdx := strings.LastIndex(raddr, ":")
+	if colonIdx < 0 {
+		return nil, errors.New("invalid host: missing port")
+	}
+	hostname := raddr[:colonIdx]
+
 	// Use BackendTLSConfig for the outbound connection if provided; otherwise
 	// fall back to TLSConfig. Clone to avoid mutating the original config.
 	backendTLSConfig := r.BackendTLSConfig
@@ -64,7 +72,7 @@ func (r *H2Transport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	backendTLSConfig.NextProtos = []string{http2.NextProtoTLS}
 	// Set ServerName for SNI if not already configured.
 	if backendTLSConfig.ServerName == "" {
-		backendTLSConfig.ServerName = raddr[:strings.LastIndex(raddr, ":")]
+		backendTLSConfig.ServerName = hostname
 	}
 	// Initiate TLS and check remote host name against certificate.
 	rawServerTLS = tls.Client(rawServerTLS, backendTLSConfig)
@@ -76,7 +84,7 @@ func (r *H2Transport) RoundTrip(_ *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	if !backendTLSConfig.InsecureSkipVerify {
-		if err = rawTLSConn.VerifyHostname(raddr[:strings.LastIndex(raddr, ":")]); err != nil {
+		if err = rawTLSConn.VerifyHostname(hostname); err != nil {
 			return nil, err
 		}
 	}

@@ -180,7 +180,7 @@ func mitmWithHTTP2() goproxy.FuncHttpsHandler {
 		if err != nil {
 			return nil, err
 		}
-		config.NextProtos = append([]string{"h2", "http/1.1"}, config.NextProtos...)
+		config.NextProtos = []string{"h2", "http/1.1"}
 		return config, nil
 	}
 	mitmAction := &goproxy.ConnectAction{
