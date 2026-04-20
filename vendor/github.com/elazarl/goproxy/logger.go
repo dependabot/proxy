@@ -1,5 +1,5 @@
 package goproxy
 
 type Logger interface {
-	Printf(format string, v ...any)
+	Printf(format string, v ...interface{})
 }
