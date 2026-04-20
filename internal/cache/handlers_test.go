@@ -123,6 +123,23 @@ func TestCache(t *testing.T) {
 			t.Error("cache should have 1 entry, got", len(cacher.cacheDB))
 		}
 	})
+
+	t.Run("Corrupt cache entry with invalid status is ignored", func(t *testing.T) {
+		req := httptest.NewRequest("GET", URL+"/invalid-status", nil)
+		cacheKey := key(req)
+		cacher.cacheDB[cacheKey] = &Entry{
+			Status:          0,
+			FilePath:        filepath.Join(cacheDir, "missing.cache"),
+			ResponseHeaders: http.Header{},
+		}
+
+		ctx := &goproxy.ProxyCtx{Req: req}
+		_, resp := cacher.OnRequest(req, ctx)
+		if resp != nil {
+			resp.Body.Close()
+			t.Error("invalid cache entries should be ignored")
+		}
+	})
 }
 
 func Test_sanitize(t *testing.T) {

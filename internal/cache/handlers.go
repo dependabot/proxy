@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -180,6 +181,11 @@ func (d *DB) OnRequest(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *
 	key := key(r)
 	ctxdata.SetValue(ctx, keyValue, key)
 	if entry, ok := d.cacheDB[key]; ok {
+		if http.StatusText(entry.Status) == "" {
+			logrus.Warnf("skipping cache entry with invalid status code (%d) for %s", entry.Status, r.URL.String())
+			return r, nil
+		}
+
 		f, err := os.Open(entry.FilePath)
 		if err != nil {
 			logrus.Errorln("failed to open cache file:", err)
@@ -192,7 +198,18 @@ func (d *DB) OnRequest(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *
 		resp.TransferEncoding = r.TransferEncoding
 		resp.Header = entry.ResponseHeaders
 		resp.StatusCode = entry.Status
+		resp.Status = fmt.Sprintf("%d %s", entry.Status, http.StatusText(entry.Status))
+		resp.Proto = "HTTP/1.1"
+		resp.ProtoMajor = 1
+		resp.ProtoMinor = 1
 		resp.Body = f
+
+		if _, err := httputil.DumpResponse(resp, false); err != nil {
+			logrus.Warnf("skipping cache entry with invalid response metadata for %s: %v", r.URL.String(), err)
+			_ = f.Close()
+			return r, nil
+		}
+
 		return r, resp
 	}
 	return r, nil
