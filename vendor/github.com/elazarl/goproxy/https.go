@@ -308,7 +308,18 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 								ctx.Warnf("HTTP2 connection failed: disallowed")
 								return false
 							}
-							tr := H2Transport{reader, client, tlsConfig, host}
+							var backendTLSConfig *tls.Config
+							if proxy.Tr != nil {
+								backendTLSConfig = proxy.Tr.TLSClientConfig
+							}
+							tr := H2Transport{
+								ClientReader:     reader,
+								ClientWriter:     client,
+								TLSConfig:        tlsConfig,
+								Host:             host,
+								Dial:             func(network, addr string) (net.Conn, error) { return proxy.dial(ctx, network, addr) },
+								BackendTLSConfig: backendTLSConfig,
+							}
 							if _, err := tr.RoundTrip(req); err != nil {
 								ctx.Warnf("HTTP2 connection failed: %v", err)
 							} else {

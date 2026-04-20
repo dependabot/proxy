@@ -50,11 +50,12 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Tr = transport
+	proxy.AllowHTTP2 = true
 
 	proxy.CertStore = newCertStore()
 
 	proxy.OnResponse().DoFunc(handleForbidden)
-	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+	proxy.OnRequest().HandleConnect(mitmWithHTTP2())
 	proxy.OnRequest().DoFunc(normaliseHost)
 	proxy.OnRequest().DoFunc(blockMetadataAPIHosts)
 	logger := NewRequestLogger()
@@ -168,4 +169,25 @@ func blockMetadataAPIHosts(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Requ
 		return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, "Forbidden")
 	}
 	return req, nil
+}
+
+// mitmWithHTTP2 returns an HTTPS handler that MITM's all CONNECT tunnels and
+// advertises HTTP/2 (h2) support via TLS ALPN, enabling cargo's sparse
+// crates.io index (and other HTTP/2 clients) to negotiate h2 through the proxy.
+func mitmWithHTTP2() goproxy.FuncHttpsHandler {
+	tlsConfigWithH2 := func(host string, ctx *goproxy.ProxyCtx) (*tls.Config, error) {
+		config, err := goproxy.TLSConfigFromCA(&goproxy.GoproxyCa)(host, ctx)
+		if err != nil {
+			return nil, err
+		}
+		config.NextProtos = append([]string{"h2", "http/1.1"}, config.NextProtos...)
+		return config, nil
+	}
+	mitmAction := &goproxy.ConnectAction{
+		Action:    goproxy.ConnectMitm,
+		TLSConfig: tlsConfigWithH2,
+	}
+	return func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+		return mitmAction, host
+	}
 }

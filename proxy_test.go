@@ -45,6 +45,61 @@ func TestProxyHTTPRequest(t *testing.T) {
 	assert.Equal(t, 200, rsp.StatusCode)
 }
 
+// TestProxyMITMNegotiatesH2 verifies that the proxy's MITM TLS advertises h2
+// via ALPN so HTTP/2 clients (such as cargo's sparse crates.io index client)
+// can negotiate h2 through the proxy. Without this, libcurl returns
+// "[8] Weird server reply (Invalid status line)" when it sends an HTTP/2
+// client preface and the proxy closes the connection.
+func TestProxyMITMNegotiatesH2(t *testing.T) {
+	var blockedIPs []net.IP
+	_, proxySrv := testProxyServer(t, testProxyConfig, blockedIPs)
+	defer proxySrv.Close()
+
+	conn, err := net.DialTimeout("tcp", proxySrv.Addr, 5*time.Second)
+	if err != nil {
+		t.Fatalf("dial proxy: %v", err)
+	}
+	defer conn.Close()
+
+	// Send CONNECT request for an arbitrary HTTPS host
+	connectReq := "CONNECT index.crates.io:443 HTTP/1.1\r\nHost: index.crates.io:443\r\n\r\n"
+	if _, err := conn.Write([]byte(connectReq)); err != nil {
+		t.Fatalf("write CONNECT request: %v", err)
+	}
+
+	// Read CONNECT response (byte-by-byte to avoid consuming TLS data)
+	connectResp := make([]byte, 0, 64)
+	oneByte := make([]byte, 1)
+	for !bytes.HasSuffix(connectResp, []byte("\r\n\r\n")) {
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		if _, err := conn.Read(oneByte); err != nil {
+			t.Fatalf("read CONNECT response: %v", err)
+		}
+		connectResp = append(connectResp, oneByte[0])
+	}
+	assert.Contains(t, string(connectResp), "200")
+
+	// Perform TLS handshake with h2 in ALPN NextProtos
+	rootCAs := x509.NewCertPool()
+	rootCAs.AppendCertsFromPEM([]byte(testProxyConfig.CA.Cert))
+	tlsConn := tls.Client(conn, &tls.Config{
+		ServerName: "index.crates.io",
+		RootCAs:    rootCAs,
+		NextProtos: []string{"h2", "http/1.1"},
+		MinVersion: tls.VersionTLS12,
+	})
+	defer tlsConn.Close()
+
+	tlsConn.SetDeadline(time.Now().Add(5 * time.Second))
+	if err := tlsConn.Handshake(); err != nil {
+		t.Fatalf("TLS handshake: %v", err)
+	}
+
+	// The proxy MITM TLS must have negotiated h2
+	assert.Equal(t, "h2", tlsConn.ConnectionState().NegotiatedProtocol,
+		"proxy MITM TLS should negotiate h2 when requested via ALPN")
+}
+
 func TestIPRestrictions(t *testing.T) {
 	blockedIPs = []net.IP{iPV4Localhost, iPV6Localhost}
 	client, proxy := testProxyServer(t, testProxyConfig, blockedIPs)

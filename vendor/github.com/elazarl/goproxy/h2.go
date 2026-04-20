@@ -23,6 +23,12 @@ type H2Transport struct {
 	ClientWriter io.Writer
 	TLSConfig    *tls.Config
 	Host         string
+	// Dial is an optional function used to create the TCP connection to the
+	// backend server. If nil, the package-level dial function is used.
+	Dial func(network, addr string) (net.Conn, error)
+	// BackendTLSConfig is an optional TLS configuration used for the
+	// outbound connection to the backend server. If nil, TLSConfig is used.
+	BackendTLSConfig *tls.Config
 }
 
 // RoundTrip executes an HTTP/2 session (including all contained streams).
@@ -33,15 +39,35 @@ func (r *H2Transport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	if !strings.Contains(raddr, ":") {
 		raddr += ":443"
 	}
-	rawServerTLS, err := dial("tcp", raddr)
+
+	// Use the provided Dial function if available, otherwise fall back to the
+	// package-level dial function that uses net.DialTCP directly.
+	dialFn := r.Dial
+	if dialFn == nil {
+		dialFn = dial
+	}
+
+	rawServerTLS, err := dialFn("tcp", raddr)
 	if err != nil {
 		return nil, err
 	}
 	defer rawServerTLS.Close()
+
+	// Use BackendTLSConfig for the outbound connection if provided; otherwise
+	// fall back to TLSConfig. Clone to avoid mutating the original config.
+	backendTLSConfig := r.BackendTLSConfig
+	if backendTLSConfig == nil {
+		backendTLSConfig = r.TLSConfig
+	}
+	backendTLSConfig = backendTLSConfig.Clone()
 	// Ensure that we only advertise HTTP/2 as the accepted protocol.
-	r.TLSConfig.NextProtos = []string{http2.NextProtoTLS}
+	backendTLSConfig.NextProtos = []string{http2.NextProtoTLS}
+	// Set ServerName for SNI if not already configured.
+	if backendTLSConfig.ServerName == "" {
+		backendTLSConfig.ServerName = raddr[:strings.LastIndex(raddr, ":")]
+	}
 	// Initiate TLS and check remote host name against certificate.
-	rawServerTLS = tls.Client(rawServerTLS, r.TLSConfig)
+	rawServerTLS = tls.Client(rawServerTLS, backendTLSConfig)
 	rawTLSConn, ok := rawServerTLS.(*tls.Conn)
 	if !ok {
 		return nil, errors.New("invalid TLS connection")
@@ -49,7 +75,7 @@ func (r *H2Transport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	if err = rawTLSConn.HandshakeContext(context.Background()); err != nil {
 		return nil, err
 	}
-	if r.TLSConfig == nil || !r.TLSConfig.InsecureSkipVerify {
+	if !backendTLSConfig.InsecureSkipVerify {
 		if err = rawTLSConn.VerifyHostname(raddr[:strings.LastIndex(raddr, ":")]); err != nil {
 			return nil, err
 		}
