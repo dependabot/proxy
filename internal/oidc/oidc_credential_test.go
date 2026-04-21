@@ -320,6 +320,41 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			},
 			nil,
 		},
+		{
+			"gcp with direct WIF (no service account)",
+			config.Credential{
+				"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			&GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				ServiceAccount:           "",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+		},
+		{
+			"gcp with service account impersonation",
+			config.Credential{
+				"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				"service-account":            "my-sa@my-project.iam.gserviceaccount.com",
+			},
+			&GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				ServiceAccount:           "my-sa@my-project.iam.gserviceaccount.com",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+		},
+		{
+			"gcp with explicit audience",
+			config.Credential{
+				"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				"audience":                   "custom-audience",
+			},
+			&GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				ServiceAccount:           "",
+				Audience:                 "custom-audience",
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -387,6 +422,14 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 				assert.Equal(t, expectedParams.OrgName, p.OrgName)
 				assert.Equal(t, expectedParams.ServiceSlug, p.ServiceSlug)
 				assert.Equal(t, expectedParams.ApiHost, p.ApiHost)
+				assert.Equal(t, expectedParams.Audience, p.Audience)
+			case *GCPOIDCParameters:
+				expectedParams, ok := tc.expectedParameters.(*GCPOIDCParameters)
+				if !ok {
+					t.Fatalf("expected parameters of type GCPOIDCParameters, but got %T", tc.expectedParameters)
+				}
+				assert.Equal(t, expectedParams.WorkloadIdentityProvider, p.WorkloadIdentityProvider)
+				assert.Equal(t, expectedParams.ServiceAccount, p.ServiceAccount)
 				assert.Equal(t, expectedParams.Audience, p.Audience)
 			default:
 				t.Fatalf("unexpected parameters type %T", actual.parameters)

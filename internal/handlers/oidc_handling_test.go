@@ -133,6 +133,27 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://cloudsmith.example.com/some-package",
 			},
 		},
+		{
+			name:     "Cargo",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewCargoRegistryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "cargo_registry",
+					"url":                        "https://us-central1-cargo.pkg.dev/my-project/my-repo",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for cargo registry: https://us-central1-cargo.pkg.dev/my-project/my-repo",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-cargo.pkg.dev/my-project/my-repo/some-package",
+			},
+		},
 		//
 		// Composer
 		//
@@ -226,6 +247,27 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
+			},
+		},
+		{
+			name:     "Composer",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewComposerHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "composer_repository",
+					"registry":                   "https://us-central1-composer.pkg.dev/my-project/my-repo",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for composer repository: https://us-central1-composer.pkg.dev/my-project/my-repo",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-composer.pkg.dev/my-project/my-repo/some-package",
 			},
 		},
 
@@ -323,6 +365,27 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://cloudsmith.example.com/some-package",
 			},
 		},
+		{
+			name:     "Docker",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "docker_registry",
+					"registry":                   "https://us-central1-docker.pkg.dev",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for docker registry: https://us-central1-docker.pkg.dev",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-docker.pkg.dev/some-package",
+			},
+		},
 		//
 		// Go proxy
 		//
@@ -415,6 +478,27 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
+			},
+		},
+		{
+			name:     "Go proxy",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewGoProxyServerHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "goproxy_server",
+					"url":                        "https://us-central1-go.pkg.dev/my-project/my-repo",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for goproxy server: https://us-central1-go.pkg.dev/my-project/my-repo",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-go.pkg.dev/my-project/my-repo/some-package",
 			},
 		},
 		//
@@ -511,6 +595,27 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://cloudsmith.example.com/some-package",
 			},
 		},
+		{
+			name:     "Helm registry",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewHelmRegistryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "helm_registry",
+					"registry":                   "https://us-central1-helm.pkg.dev/my-project/my-repo",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for helm registry: https://us-central1-helm.pkg.dev/my-project/my-repo",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-helm.pkg.dev/my-project/my-repo/some-package",
+			},
+		},
 		//
 		// Hex
 		//
@@ -603,6 +708,27 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
+			},
+		},
+		{
+			name:     "Hex",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewHexRepositoryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "hex_repository",
+					"url":                        "https://us-central1-hex.pkg.dev/my-project/my-repo",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for hex repository: https://us-central1-hex.pkg.dev/my-project/my-repo",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-hex.pkg.dev/my-project/my-repo/some-package",
 			},
 		},
 		//
@@ -699,6 +825,27 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://cloudsmith.example.com/some-package",
 			},
 		},
+		{
+			name:     "Maven",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewMavenRepositoryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "maven_repository",
+					"url":                        "https://us-central1-maven.pkg.dev/my-project/my-repo",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for maven repository: https://us-central1-maven.pkg.dev/my-project/my-repo",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-maven.pkg.dev/my-project/my-repo/some-package",
+			},
+		},
 		//
 		// NPM
 		//
@@ -791,6 +938,27 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
+			},
+		},
+		{
+			name:     "NPM",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewNPMRegistryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "npm_registry",
+					"url":                        "https://us-central1-npm.pkg.dev/my-project/my-repo",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for npm registry: https://us-central1-npm.pkg.dev/my-project/my-repo",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-npm.pkg.dev/my-project/my-repo/some-package",
 			},
 		},
 		//
@@ -919,6 +1087,35 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://cloudsmith.example.com/v3/packages/some.package/index.json", // package url
 			},
 		},
+		{
+			name:     "NuGet",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewNugetFeedHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "nuget_feed",
+					"url":                        "https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{
+				{
+					verb:     "GET",
+					url:      "https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
+					response: `{"version":"3.0.0","resources":[{"@id":"https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+				},
+			},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for nuget feed: https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
+				"registered gcp OIDC credentials for nuget resource: https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",                          // base url
+				"https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages/some.package/index.json", // package url
+			},
+		},
 		//
 		// Pub
 		//
@@ -1013,6 +1210,27 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://cloudsmith.example.com/some-package",
 			},
 		},
+		{
+			name:     "Pub",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewPubRepositoryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "pub_repository",
+					"url":                        "https://us-central1-pub.pkg.dev/my-project/my-repo",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for pub repository: https://us-central1-pub.pkg.dev/my-project/my-repo",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-pub.pkg.dev/my-project/my-repo/some-package",
+			},
+		},
 		//
 		// Python
 		//
@@ -1105,6 +1323,27 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/some-package",
+			},
+		},
+		{
+			name:     "Python",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewPythonIndexHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "python_index",
+					"index-url":                  "https://us-central1-python.pkg.dev/my-project/my-repo/simple",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for python index: https://us-central1-python.pkg.dev/my-project/my-repo/",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-python.pkg.dev/my-project/my-repo/simple/some-package",
 			},
 		},
 		//
@@ -1203,6 +1442,28 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://cloudsmith.example.com/some-package",
 			},
 		},
+		{
+			name:     "RubyGems",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewRubyGemsServerHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "rubygems_server",
+					"url":                        "https://us-central1-ruby.pkg.dev/my-project/my-repo",
+					"host":                       "https://us-central1-ruby.pkg.dev/my-project/my-repo",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for rubygems server: https://us-central1-ruby.pkg.dev/my-project/my-repo",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-ruby.pkg.dev/my-project/my-repo/some-package",
+			},
+		},
 		//
 		// Terraform
 		//
@@ -1297,6 +1558,27 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"https://cloudsmith.example.com/some-package",
 			},
 		},
+		{
+			name:     "Terraform",
+			provider: "gcp",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewTerraformRegistryHandler(creds)
+			},
+			credentials: config.Credentials{
+				config.Credential{
+					"type":                       "terraform_registry",
+					"url":                        "https://us-central1-terraform.pkg.dev/my-project/my-repo",
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				},
+			},
+			urlMocks: []mockHttpRequest{},
+			expectedLogLines: []string{
+				"registered gcp OIDC credentials for terraform registry: https://us-central1-terraform.pkg.dev/my-project/my-repo",
+			},
+			urlsToAuthenticate: []string{
+				"https://us-central1-terraform.pkg.dev/my-project/my-repo/some-package",
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%s - %s", tc.name, tc.provider), func(t *testing.T) {
@@ -1357,6 +1639,13 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					httpmock.NewStringResponder(200, `{
 						"token": "__test_token__"
 				}`))
+			case "gcp":
+				httpmock.RegisterResponder("POST", "https://sts.googleapis.com/v1/token",
+					httpmock.NewStringResponder(200, `{
+						"access_token": "__test_token__",
+						"expires_in": 3600,
+						"token_type": "urn:ietf:params:oauth:token-type:access_token"
+				}`))
 			default:
 				t.Fatal("unsupported provider in test case: " + tc.provider)
 			}
@@ -1380,10 +1669,20 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			for _, urlToAuth := range tc.urlsToAuthenticate {
 				req := httptest.NewRequest("GET", urlToAuth, nil)
 				req = handleRequestAndClose(handler, req, nil)
-				if tc.provider == "cloudsmith" {
+				switch tc.provider {
+				case "cloudsmith":
 					assert.Equal(t, "__test_token__", req.Header.Get("X-Api-Key"), "package url: "+urlToAuth+" should include Cloudsmith API key")
 					assert.Equal(t, "", req.Header.Get("Authorization"), "package url: "+urlToAuth+" should not include Authorization header for Cloudsmith")
-				} else {
+				case "gcp":
+					if strings.Contains(urlToAuth, "-docker.pkg.dev") {
+						user, pass, ok := req.BasicAuth()
+						assert.True(t, ok, "package url: "+urlToAuth+" should use Basic auth for GCP docker")
+						assert.Equal(t, "oauth2accesstoken", user, "package url: "+urlToAuth+" should use oauth2accesstoken as username")
+						assert.Equal(t, "__test_token__", pass, "package url: "+urlToAuth+" should include GCP token as password")
+					} else {
+						assertHasTokenAuth(t, req, "Bearer", "__test_token__", "package url: "+urlToAuth)
+					}
+				default:
 					assertHasTokenAuth(t, req, "Bearer", "__test_token__", "package url: "+urlToAuth)
 				}
 			}

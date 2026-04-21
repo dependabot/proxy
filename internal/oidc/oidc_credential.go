@@ -58,6 +58,16 @@ func (c *CloudsmithOIDCParameters) Name() string {
 	return "cloudsmith"
 }
 
+type GCPOIDCParameters struct {
+	WorkloadIdentityProvider string
+	ServiceAccount           string // "" => direct WIF (no impersonation)
+	Audience                 string
+}
+
+func (g *GCPOIDCParameters) Name() string {
+	return "gcp"
+}
+
 type OIDCCredential struct {
 	parameters  OIDCParameters
 	cachedToken string
@@ -96,6 +106,10 @@ func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
 	orgName := cred.GetString("namespace")
 	serviceSlug := cred.GetString("service-slug")
 	cloudsmithAudience := cred.GetString("audience")
+
+	// gcp values
+	workloadIdentityProvider := cred.GetString("workload-identity-provider")
+	serviceAccount := cred.GetString("service-account")
 
 	switch {
 	case tenantID != "" && clientID != "":
@@ -141,6 +155,16 @@ func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
 			ApiHost:     apiHost,
 			Audience:    cloudsmithAudience,
 		}
+	case workloadIdentityProvider != "":
+		audience := cred.GetString("audience")
+		if audience == "" {
+			audience = "//iam.googleapis.com/" + workloadIdentityProvider
+		}
+		parameters = &GCPOIDCParameters{
+			WorkloadIdentityProvider: workloadIdentityProvider,
+			ServiceAccount:           serviceAccount,
+			Audience:                 audience,
+		}
 	}
 
 	if parameters == nil {
@@ -184,6 +208,8 @@ func GetOrRefreshOIDCToken(cred *OIDCCredential, ctx context.Context) (string, e
 		oidcAccessToken, err = GetAWSAccessTokenForDevOps(ctx, *params)
 	case *CloudsmithOIDCParameters:
 		oidcAccessToken, err = GetCloudsmithAccessTokenForDevOps(ctx, *params)
+	case *GCPOIDCParameters:
+		oidcAccessToken, err = GetGCPAccessTokenForDevOps(ctx, *params)
 	default:
 		return "", fmt.Errorf("unsupported OIDC provider: %s", cred.Provider())
 	}

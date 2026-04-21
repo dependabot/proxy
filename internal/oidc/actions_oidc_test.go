@@ -1013,3 +1013,321 @@ func TestGetCloudsmithAccessToken(t *testing.T) {
 		})
 	}
 }
+
+func TestGetGCPAccessToken(t *testing.T) {
+	tests := []struct {
+		name          string
+		params        GCPOIDCParameters
+		githubToken   string
+		stsHandler    http.HandlerFunc
+		iamHandler    http.HandlerFunc
+		expectError   bool
+		expectedToken string
+	}{
+		{
+			name: "successful direct WIF (no service account)",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "test-github-jwt-token",
+			stsHandler: func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "POST", r.Method)
+				assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+				assert.Equal(t, "", r.Header.Get("Authorization"))
+
+				bodyBytes, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				defer r.Body.Close()
+
+				var request gcpSTSTokenRequest
+				err = json.Unmarshal(bodyBytes, &request)
+				require.NoError(t, err)
+
+				assert.Equal(t, "urn:ietf:params:oauth:grant-type:token-exchange", request.GrantType)
+				assert.Equal(t, "urn:ietf:params:oauth:token-type:access_token", request.RequestedTokenType)
+				assert.Equal(t, "urn:ietf:params:oauth:token-type:jwt", request.SubjectTokenType)
+				assert.Equal(t, "test-github-jwt-token", request.SubjectToken)
+				assert.Equal(t, "https://www.googleapis.com/auth/cloud-platform", request.Scope)
+
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+					AccessToken: "federated-access-token",
+					ExpiresIn:   3600,
+					TokenType:   "urn:ietf:params:oauth:token-type:access_token",
+				})
+			},
+			expectError:   false,
+			expectedToken: "federated-access-token",
+		},
+		{
+			name: "successful service account impersonation",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				ServiceAccount:           "my-sa@my-project.iam.gserviceaccount.com",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "test-github-jwt-token",
+			stsHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+					AccessToken: "federated-access-token",
+					ExpiresIn:   3600,
+				})
+			},
+			iamHandler: func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "POST", r.Method)
+				assert.Equal(t, "Bearer federated-access-token", r.Header.Get("Authorization"))
+
+				bodyBytes, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				defer r.Body.Close()
+
+				var request gcpIAMGenerateAccessTokenRequest
+				err = json.Unmarshal(bodyBytes, &request)
+				require.NoError(t, err)
+				assert.Contains(t, request.Scope, "https://www.googleapis.com/auth/cloud-platform")
+
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpIAMGenerateAccessTokenResponse{
+					AccessToken: "impersonated-access-token",
+					ExpireTime:  "2099-12-31T23:59:59Z",
+				})
+			},
+			expectError:   false,
+			expectedToken: "impersonated-access-token",
+		},
+		{
+			name: "successful impersonation with fractional-second expireTime",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				ServiceAccount:           "my-sa@my-project.iam.gserviceaccount.com",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "test-github-jwt-token",
+			stsHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+					AccessToken: "federated-access-token",
+					ExpiresIn:   3600,
+				})
+			},
+			iamHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpIAMGenerateAccessTokenResponse{
+					AccessToken: "impersonated-nano-token",
+					ExpireTime:  "2099-12-31T23:59:59.999999999Z",
+				})
+			},
+			expectError:   false,
+			expectedToken: "impersonated-nano-token",
+		},
+		{
+			name: "missing workload-identity-provider",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "",
+			},
+			githubToken: "test-github-jwt-token",
+			expectError: true,
+		},
+		{
+			name: "missing audience",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				Audience:                 "",
+			},
+			githubToken: "test-github-jwt-token",
+			expectError: true,
+		},
+		{
+			name: "missing GitHub token",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "",
+			expectError: true,
+		},
+		{
+			name: "STS returns 401",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "invalid-token",
+			stsHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"error":"invalid_grant"}`))
+			},
+			expectError: true,
+		},
+		{
+			name: "STS returns invalid JSON",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "test-github-jwt-token",
+			stsHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{invalid json`))
+			},
+			expectError: true,
+		},
+		{
+			name: "STS returns empty token",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "test-github-jwt-token",
+			stsHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+					AccessToken: "",
+					ExpiresIn:   3600,
+				})
+			},
+			expectError: true,
+		},
+		{
+			name: "STS token expires too soon (direct WIF)",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "test-github-jwt-token",
+			stsHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+					AccessToken: "federated-access-token",
+					ExpiresIn:   0,
+				})
+			},
+			expectError: true,
+		},
+		{
+			name: "STS token at exactly 5 minutes (direct WIF)",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "test-github-jwt-token",
+			stsHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+					AccessToken: "federated-access-token",
+					ExpiresIn:   300,
+				})
+			},
+			expectError: true,
+		},
+		{
+			name: "IAM returns 403",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				ServiceAccount:           "my-sa@my-project.iam.gserviceaccount.com",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "test-github-jwt-token",
+			stsHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+					AccessToken: "federated-access-token",
+					ExpiresIn:   3600,
+				})
+			},
+			iamHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				w.Write([]byte(`{"error":{"code":403,"message":"Permission denied"}}`))
+			},
+			expectError: true,
+		},
+		{
+			name: "IAM returns empty token",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				ServiceAccount:           "my-sa@my-project.iam.gserviceaccount.com",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "test-github-jwt-token",
+			stsHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+					AccessToken: "federated-access-token",
+					ExpiresIn:   3600,
+				})
+			},
+			iamHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpIAMGenerateAccessTokenResponse{
+					AccessToken: "",
+					ExpireTime:  "2099-12-31T23:59:59Z",
+				})
+			},
+			expectError: true,
+		},
+		{
+			name: "IAM token expires too soon",
+			params: GCPOIDCParameters{
+				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+				ServiceAccount:           "my-sa@my-project.iam.gserviceaccount.com",
+				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+			},
+			githubToken: "test-github-jwt-token",
+			stsHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+					AccessToken: "federated-access-token",
+					ExpiresIn:   3600,
+				})
+			},
+			iamHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(gcpIAMGenerateAccessTokenResponse{
+					AccessToken: "impersonated-access-token",
+					ExpireTime:  "2000-01-01T00:00:00Z",
+				})
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+
+			if tt.stsHandler != nil {
+				httpmock.RegisterResponder("POST", "https://sts.googleapis.com/v1/token",
+					httpmock.Responder(func(req *http.Request) (*http.Response, error) {
+						rr := httptest.NewRecorder()
+						tt.stsHandler(rr, req)
+						return rr.Result(), nil
+					}))
+			}
+
+			if tt.iamHandler != nil {
+				iamURL := fmt.Sprintf("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken", tt.params.ServiceAccount)
+				httpmock.RegisterResponder("POST", iamURL,
+					httpmock.Responder(func(req *http.Request) (*http.Response, error) {
+						rr := httptest.NewRecorder()
+						tt.iamHandler(rr, req)
+						return rr.Result(), nil
+					}))
+			}
+
+			gcpToken, err := GetGCPAccessToken(ctx, tt.params, tt.githubToken)
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, gcpToken)
+				assert.Equal(t, tt.expectedToken, gcpToken.Token)
+			}
+		})
+	}
+}
