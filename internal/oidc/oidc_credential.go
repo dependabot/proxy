@@ -3,16 +3,11 @@ package oidc
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"sync"
 	"time"
 
-	"github.com/elazarl/goproxy"
-
 	"github.com/dependabot/proxy/internal/config"
-	"github.com/dependabot/proxy/internal/helpers"
-	"github.com/dependabot/proxy/internal/logging"
 )
 
 type OIDCParameters interface {
@@ -202,41 +197,4 @@ func GetOrRefreshOIDCToken(cred *OIDCCredential, ctx context.Context) (string, e
 	cred.tokenExpiry = time.Now().Add(oidcAccessToken.ExpiresIn).Add(-time.Minute * 5) // refresh 5 minutes before expiry
 
 	return oidcAccessToken.Token, nil
-}
-
-// TryAuthOIDCRequestWithPrefix tries to authenticate the request using OIDC credentials if available
-func TryAuthOIDCRequestWithPrefix(mutex *sync.RWMutex, oidcCredentials map[string]*OIDCCredential, req *http.Request, ctx *goproxy.ProxyCtx) bool {
-	// Find matching credential while holding the lock, then release before token refresh
-	var matchedCred *OIDCCredential
-	if len(oidcCredentials) > 0 {
-		mutex.RLock()
-		for key, oidcCred := range oidcCredentials {
-			// Match by URL or host
-			if helpers.UrlMatchesRequest(req, key, true) || helpers.CheckHost(req, key) {
-				matchedCred = oidcCred
-				break
-			}
-		}
-		mutex.RUnlock()
-	}
-
-	if matchedCred != nil {
-		token, err := GetOrRefreshOIDCToken(matchedCred, req.Context())
-		if err != nil {
-			logging.RequestLogf(ctx, "* failed to get %s token via OIDC for %s: %v", matchedCred.Provider(), req.URL.Hostname(), err)
-		} else {
-			switch matchedCred.parameters.(type) {
-			case *CloudsmithOIDCParameters:
-				logging.RequestLogf(ctx, "* authenticating request with OIDC API key (host: %s)", req.URL.Hostname())
-				req.Header.Set("X-Api-Key", token)
-			default:
-				logging.RequestLogf(ctx, "* authenticating request with OIDC token (host: %s)", req.URL.Hostname())
-				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-			}
-
-			return true
-		}
-	}
-
-	return false
 }
