@@ -409,6 +409,64 @@ func TestOIDCRegistry_TryAuth_Cloudsmith_UsesAPIKey(t *testing.T) {
 	assert.Empty(t, req.Header.Get("Authorization"), "cloudsmith should not set Authorization")
 }
 
+func mockGCPOIDC(t *testing.T, token string) {
+	t.Helper()
+	httpmock.RegisterResponder("GET", "https://token.actions.example.com",
+		httpmock.NewStringResponder(200, `{"count": 1, "value": "sometoken"}`))
+	httpmock.RegisterResponder("POST", "https://sts.googleapis.com/v1/token",
+		httpmock.NewStringResponder(200, `{"access_token": "`+token+`", "expires_in": 3600, "token_type": "urn:ietf:params:oauth:token-type:access_token"}`))
+}
+
+func gcpCred(wip, url string) config.Credential {
+	return config.Credential{
+		"type":                       "test_registry",
+		"workload-identity-provider": wip,
+		"url":                        url,
+	}
+}
+
+func TestOIDCRegistry_TryAuth_GCP_UsesBearer(t *testing.T) {
+	setupOIDCEnv(t)
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	mockGCPOIDC(t, "__gcp_token__")
+
+	r := NewOIDCRegistry()
+
+	cred := gcpCred("projects/123/locations/global/workloadIdentityPools/pool/providers/prov", "https://us-central1-python.pkg.dev/my-project/my-repo/simple")
+	r.Register(cred, []string{"url"}, "test registry")
+
+	req := httptest.NewRequest("GET", "https://us-central1-python.pkg.dev/my-project/my-repo/simple/some-package", nil)
+	ok := r.TryAuth(req, nil)
+
+	assert.True(t, ok, "GCP OIDC should authenticate")
+	assert.Equal(t, "Bearer __gcp_token__", req.Header.Get("Authorization"), "GCP non-docker should use Bearer")
+	assert.Empty(t, req.Header.Get("X-Api-Key"), "GCP should not set X-Api-Key")
+}
+
+func TestOIDCRegistry_TryAuth_GCP_DockerUsesBasicAuth(t *testing.T) {
+	setupOIDCEnv(t)
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	mockGCPOIDC(t, "__gcp_token__")
+
+	r := NewOIDCRegistry()
+
+	cred := gcpCred("projects/123/locations/global/workloadIdentityPools/pool/providers/prov", "https://us-central1-docker.pkg.dev/my-project/my-repo")
+	r.Register(cred, []string{"url"}, "docker registry")
+
+	req := httptest.NewRequest("GET", "https://us-central1-docker.pkg.dev/my-project/my-repo/v2/some-image/manifests/latest", nil)
+	ok := r.TryAuth(req, nil)
+
+	assert.True(t, ok, "GCP OIDC should authenticate docker")
+	// Basic auth: oauth2accesstoken:<token>
+	user, pass, hasBasic := req.BasicAuth()
+	assert.True(t, hasBasic, "GCP docker should use Basic auth")
+	assert.Equal(t, "oauth2accesstoken", user, "GCP docker should use oauth2accesstoken as username")
+	assert.Equal(t, "__gcp_token__", pass, "GCP docker should use token as password")
+	assert.Empty(t, req.Header.Get("X-Api-Key"), "GCP should not set X-Api-Key")
+}
+
 func TestOIDCRegistry_Register_IndexURLField(t *testing.T) {
 	setupOIDCEnv(t)
 	r := NewOIDCRegistry()

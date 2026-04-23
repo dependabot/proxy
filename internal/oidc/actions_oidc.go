@@ -187,6 +187,32 @@ type cloudsmithTokenResponse struct {
 	Token string `json:"token"`
 }
 
+// GCP STS token exchange request body (camelCase per Google's gRPC-transcoded JSON convention)
+type gcpSTSTokenRequest struct {
+	Audience           string `json:"audience"`
+	GrantType          string `json:"grantType"`
+	RequestedTokenType string `json:"requestedTokenType"`
+	SubjectTokenType   string `json:"subjectTokenType"`
+	SubjectToken       string `json:"subjectToken"`
+	Scope              string `json:"scope"`
+}
+
+type gcpSTSTokenResponse struct {
+	AccessToken     string `json:"access_token"`
+	ExpiresIn       int    `json:"expires_in"`
+	TokenType       string `json:"token_type"`
+	IssuedTokenType string `json:"issued_token_type"`
+}
+
+type gcpIAMGenerateAccessTokenRequest struct {
+	Scope []string `json:"scope"`
+}
+
+type gcpIAMGenerateAccessTokenResponse struct {
+	AccessToken string `json:"accessToken"`
+	ExpireTime  string `json:"expireTime"` // RFC3339 (may include fractional seconds)
+}
+
 // OIDCAccessToken represents an access token with its expiry information
 type OIDCAccessToken struct {
 	Token     string
@@ -651,6 +677,160 @@ func GetCloudsmithAccessTokenForDevOps(ctx context.Context, params CloudsmithOID
 	}
 
 	return cloudsmithToken, nil
+}
+
+func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToken string) (*OIDCAccessToken, error) {
+	if params.WorkloadIdentityProvider == "" {
+		return nil, fmt.Errorf("workload-identity-provider is required")
+	}
+	if params.Audience == "" {
+		return nil, fmt.Errorf("audience is required")
+	}
+	if githubToken == "" {
+		return nil, fmt.Errorf("GitHub token is required")
+	}
+
+	// Step A: STS token exchange (always)
+	stsReqBody := gcpSTSTokenRequest{
+		Audience:           params.Audience,
+		GrantType:          "urn:ietf:params:oauth:grant-type:token-exchange",
+		RequestedTokenType: "urn:ietf:params:oauth:token-type:access_token",
+		SubjectTokenType:   "urn:ietf:params:oauth:token-type:jwt",
+		SubjectToken:       githubToken,
+		Scope:              "https://www.googleapis.com/auth/cloud-platform",
+	}
+
+	stsBodyJSON, err := json.Marshal(stsReqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal GCP STS request: %w", err)
+	}
+
+	stsReq, err := http.NewRequestWithContext(ctx, "POST", "https://sts.googleapis.com/v1/token", bytes.NewReader(stsBodyJSON))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCP STS request: %w", err)
+	}
+
+	stsReq.Header.Set("Content-Type", "application/json")
+	stsReq.Header.Set("Accept", "application/json")
+	stsReq.Header.Set("User-Agent", "dependabot-proxy/1.0")
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	stsResp, err := client.Do(stsReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute GCP STS request: %w", err)
+	}
+	defer stsResp.Body.Close()
+
+	stsBody, err := io.ReadAll(stsResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read GCP STS response body: %w", err)
+	}
+
+	if stsResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GCP STS returned status %d (audience: %s): %s", stsResp.StatusCode, params.Audience, string(stsBody))
+	}
+
+	var stsTokenResp gcpSTSTokenResponse
+	if err := json.Unmarshal(stsBody, &stsTokenResp); err != nil {
+		return nil, fmt.Errorf("failed to parse GCP STS response: %w", err)
+	}
+
+	if stsTokenResp.AccessToken == "" {
+		return nil, fmt.Errorf("GCP STS response does not contain an access token")
+	}
+
+	// If no service account, return the federated token directly (direct WIF)
+	if params.ServiceAccount == "" {
+		stsExpiry := time.Duration(stsTokenResp.ExpiresIn) * time.Second
+		if stsExpiry <= 5*time.Minute {
+			return nil, fmt.Errorf("GCP STS token expires too soon (%v remaining)", stsExpiry)
+		}
+		return &OIDCAccessToken{
+			Token:     stsTokenResp.AccessToken,
+			ExpiresIn: stsExpiry,
+		}, nil
+	}
+
+	// Step B: Service-account impersonation
+	iamReqBody := gcpIAMGenerateAccessTokenRequest{
+		Scope: []string{"https://www.googleapis.com/auth/cloud-platform"},
+	}
+
+	iamBodyJSON, err := json.Marshal(iamReqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal GCP IAM request: %w", err)
+	}
+
+	iamURL := fmt.Sprintf("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken", params.ServiceAccount)
+	iamReq, err := http.NewRequestWithContext(ctx, "POST", iamURL, bytes.NewReader(iamBodyJSON))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCP IAM request: %w", err)
+	}
+
+	iamReq.Header.Set("Content-Type", "application/json")
+	iamReq.Header.Set("Accept", "application/json")
+	iamReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", stsTokenResp.AccessToken))
+	iamReq.Header.Set("User-Agent", "dependabot-proxy/1.0")
+
+	iamResp, err := client.Do(iamReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute GCP IAM request: %w", err)
+	}
+	defer iamResp.Body.Close()
+
+	iamBody, err := io.ReadAll(iamResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read GCP IAM response body: %w", err)
+	}
+
+	if iamResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GCP IAM returned status %d (service-account: %s): %s", iamResp.StatusCode, params.ServiceAccount, string(iamBody))
+	}
+
+	var iamTokenResp gcpIAMGenerateAccessTokenResponse
+	if err := json.Unmarshal(iamBody, &iamTokenResp); err != nil {
+		return nil, fmt.Errorf("failed to parse GCP IAM response: %w", err)
+	}
+
+	if iamTokenResp.AccessToken == "" {
+		return nil, fmt.Errorf("GCP IAM response does not contain an access token")
+	}
+
+	expireTime, err := time.Parse(time.RFC3339Nano, iamTokenResp.ExpireTime)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse GCP IAM expireTime %q: %w", iamTokenResp.ExpireTime, err)
+	}
+
+	remaining := time.Until(expireTime)
+	if remaining <= 5*time.Minute {
+		return nil, fmt.Errorf("GCP IAM token expires too soon (%v remaining, service-account: %s)", remaining, params.ServiceAccount)
+	}
+
+	return &OIDCAccessToken{
+		Token:     iamTokenResp.AccessToken,
+		ExpiresIn: remaining,
+	}, nil
+}
+
+func GetGCPAccessTokenForDevOps(ctx context.Context, params GCPOIDCParameters) (*OIDCAccessToken, error) {
+	if !IsOIDCConfigured() {
+		return nil, fmt.Errorf("GitHub Actions OIDC is not configured")
+	}
+
+	// Get GitHub OIDC token
+	githubToken, err := GetToken(ctx, params.Audience)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GitHub OIDC token: %w", err)
+	}
+
+	gcpToken, err := GetGCPAccessToken(ctx, params, githubToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to exchange GitHub token for GCP token: %w", err)
+	}
+
+	return gcpToken, nil
 }
 
 func calculateContentSha256Header(payload []byte) string {
