@@ -386,54 +386,7 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			assert.Equal(t, tc.expectedParameters.Name(), actual.Provider())
 
 			// check parameters
-			switch p := actual.parameters.(type) {
-			case *AWSOIDCParameters:
-				expectedParams, ok := tc.expectedParameters.(*AWSOIDCParameters)
-				if !ok {
-					t.Fatalf("expected parameters of type AWSOIDCParameters, but got %T", tc.expectedParameters)
-				}
-				assert.Equal(t, expectedParams.Region, p.Region)
-				assert.Equal(t, expectedParams.AccountID, p.AccountID)
-				assert.Equal(t, expectedParams.RoleName, p.RoleName)
-				assert.Equal(t, expectedParams.Audience, p.Audience)
-				assert.Equal(t, expectedParams.Domain, p.Domain)
-				assert.Equal(t, expectedParams.DomainOwner, p.DomainOwner)
-			case *AzureOIDCParameters:
-				expectedParams, ok := tc.expectedParameters.(*AzureOIDCParameters)
-				if !ok {
-					t.Fatalf("expected parameters of type AzureOIDCParameters, but got %T", tc.expectedParameters)
-				}
-				assert.Equal(t, expectedParams.TenantID, p.TenantID)
-				assert.Equal(t, expectedParams.ClientID, p.ClientID)
-			case *JFrogOIDCParameters:
-				expectedParams, ok := tc.expectedParameters.(*JFrogOIDCParameters)
-				if !ok {
-					t.Fatalf("expected parameters of type JFrogOIDCParameters, but got %T", tc.expectedParameters)
-				}
-				assert.Equal(t, expectedParams.JFrogURL, p.JFrogURL)
-				assert.Equal(t, expectedParams.ProviderName, p.ProviderName)
-				assert.Equal(t, expectedParams.Audience, p.Audience)
-				assert.Equal(t, expectedParams.IdentityMappingName, p.IdentityMappingName)
-			case *CloudsmithOIDCParameters:
-				expectedParams, ok := tc.expectedParameters.(*CloudsmithOIDCParameters)
-				if !ok {
-					t.Fatalf("expected parameters of type CloudsmithOIDCParameters, but got %T", tc.expectedParameters)
-				}
-				assert.Equal(t, expectedParams.OrgName, p.OrgName)
-				assert.Equal(t, expectedParams.ServiceSlug, p.ServiceSlug)
-				assert.Equal(t, expectedParams.ApiHost, p.ApiHost)
-				assert.Equal(t, expectedParams.Audience, p.Audience)
-			case *GCPOIDCParameters:
-				expectedParams, ok := tc.expectedParameters.(*GCPOIDCParameters)
-				if !ok {
-					t.Fatalf("expected parameters of type GCPOIDCParameters, but got %T", tc.expectedParameters)
-				}
-				assert.Equal(t, expectedParams.WorkloadIdentityProvider, p.WorkloadIdentityProvider)
-				assert.Equal(t, expectedParams.ServiceAccount, p.ServiceAccount)
-				assert.Equal(t, expectedParams.Audience, p.Audience)
-			default:
-				t.Fatalf("unexpected parameters type %T", actual.parameters)
-			}
+			assert.Equal(t, tc.expectedParameters, actual.parameters)
 		})
 	}
 }
