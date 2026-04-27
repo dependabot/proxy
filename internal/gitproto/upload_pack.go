@@ -28,6 +28,8 @@ var inlineVolatileTokenRegex = regexp.MustCompile(` (?:agent|session-id)=[^ \r\n
 // the upstream response depends on them.
 var volatileStandalonePrefixes = [][]byte{[]byte("agent="), []byte("session-id=")}
 
+// hasVolatilePrefix reports whether payload begins with any prefix in
+// volatileStandalonePrefixes.
 func hasVolatilePrefix(payload []byte) bool {
 	for _, prefix := range volatileStandalonePrefixes {
 		if bytes.HasPrefix(payload, prefix) {

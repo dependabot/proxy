@@ -1,13 +1,12 @@
 package gitproto
 
-// pkt-line is git's smart-HTTP framing format. Each line begins with a
-// 4-hex-digit length (including itself), or is one of three special packets:
-// "0000" flush, "0001" delim (v2), "0002" response-end. Any length >= 4 is a
-// data packet whose payload is (length - 4) bytes.
-// See https://git-scm.com/docs/protocol-common#_pkt_line_format
-
-const hexDigits = "0123456789abcdef"
-
+// pktType is the kind of a single pkt-line: either a data packet or one of
+// the three special framing packets defined by git's smart-HTTP protocol.
+//
+// Each pkt-line on the wire begins with a 4-hex-digit length that includes
+// itself, or is one of: "0000" flush, "0001" delim (v2), "0002" response-end.
+// Any length >= 4 is a data packet whose payload is (length - 4) bytes.
+// See https://git-scm.com/docs/protocol-common#_pkt_line_format.
 type pktType int
 
 const (
@@ -17,11 +16,14 @@ const (
 	pktResponseEnd
 )
 
-// payload is set only when typ == pktData and excludes the length prefix.
+// packet is one parsed pkt-line. payload is set only when typ == pktData and
+// excludes the 4-byte length prefix.
 type packet struct {
 	typ     pktType
 	payload []byte
 }
+
+const hexDigits = "0123456789abcdef"
 
 // parseHex4 decodes a 4-byte ASCII hex prefix without allocating a string.
 func parseHex4(b []byte) (n int, ok bool) {
