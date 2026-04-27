@@ -40,10 +40,26 @@ func hasVolatilePrefix(payload []byte) bool {
 	return false
 }
 
-// IsUploadPackRequest reports whether r is a POST to a git-upload-pack
-// endpoint, i.e. a smart-HTTP fetch negotiation.
+// uploadPackContentType is the request Content-Type sent by all real git
+// clients on a smart-HTTP fetch. See https://git-scm.com/docs/http-protocol.
+const uploadPackContentType = "application/x-git-upload-pack-request"
+
+// IsUploadPackRequest reports whether r is a smart-HTTP git-upload-pack POST,
+// i.e. a fetch negotiation. It checks method, path suffix, and Content-Type
+// together so that a non-git POST to an arbitrary URL ending in
+// "/git-upload-pack" cannot accidentally be routed through pkt-line
+// normalization.
 func IsUploadPackRequest(r *http.Request) bool {
-	return r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-upload-pack")
+	if r.Method != http.MethodPost {
+		return false
+	}
+	if !strings.HasSuffix(r.URL.Path, "/git-upload-pack") {
+		return false
+	}
+	// Content-Type may include parameters (e.g. "; charset=utf-8"), though
+	// real git never sends them. Match on the media-type prefix.
+	ct := r.Header.Get("Content-Type")
+	return ct == uploadPackContentType || strings.HasPrefix(ct, uploadPackContentType+";")
 }
 
 // NormalizeUploadPackBody returns a normalized form of a git-upload-pack POST

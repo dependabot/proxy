@@ -15,20 +15,30 @@ func normalize(body string) string {
 }
 
 func TestIsUploadPackRequest(t *testing.T) {
+	const ct = "application/x-git-upload-pack-request"
 	cases := []struct {
-		name   string
-		method string
-		url    string
-		want   bool
+		name        string
+		method      string
+		url         string
+		contentType string
+		want        bool
 	}{
-		{"POST to upload-pack", http.MethodPost, "https://github.com/octocat/Hello-World.git/git-upload-pack", true},
-		{"GET to upload-pack URL", http.MethodGet, "https://github.com/octocat/Hello-World.git/git-upload-pack", false},
-		{"POST to other path", http.MethodPost, "https://github.com/octocat/Hello-World.git/info/refs", false},
-		{"POST to non-git path", http.MethodPost, "https://api.github.com/graphql", false},
+		{"real git POST", http.MethodPost, "https://github.com/octocat/Hello-World.git/git-upload-pack", ct, true},
+		{"real git POST with charset parameter", http.MethodPost, "https://github.com/octocat/Hello-World.git/git-upload-pack", ct + "; charset=utf-8", true},
+		{"GET to upload-pack URL", http.MethodGet, "https://github.com/octocat/Hello-World.git/git-upload-pack", ct, false},
+		{"POST to other git path (info/refs)", http.MethodPost, "https://github.com/octocat/Hello-World.git/info/refs", ct, false},
+		{"POST to non-git path", http.MethodPost, "https://api.github.com/graphql", "application/json", false},
+		{"POST to fake upload-pack path with wrong Content-Type", http.MethodPost, "https://example.com/foo/git-upload-pack", "application/json", false},
+		{"POST to upload-pack path with no Content-Type", http.MethodPost, "https://github.com/octocat/Hello-World.git/git-upload-pack", "", false},
+		{"path ends in git-upload-pack but no leading slash", http.MethodPost, "https://example.com/notgit-upload-pack", ct, false},
+		{"path has trailing segment after git-upload-pack", http.MethodPost, "https://github.com/foo.git/git-upload-pack/extra", ct, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.url, nil)
+			if tc.contentType != "" {
+				req.Header.Set("Content-Type", tc.contentType)
+			}
 			if got := IsUploadPackRequest(req); got != tc.want {
 				t.Errorf("got %v, want %v", got, tc.want)
 			}
