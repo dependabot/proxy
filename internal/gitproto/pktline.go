@@ -4,15 +4,17 @@ package gitproto
 // (git-upload-pack, git-receive-pack). Each line is prefixed with a 4-hex-digit
 // length that includes itself, or is a special packet:
 //
-//   - "0000" flush (stream boundary)
-//   - "0001" delim (section separator, protocol v2)
-//   - "0002" response-end
-//   - "0004"+ data packet with payload of (length - 4) bytes
+//   - "0000"          flush (stream boundary)
+//   - "0001"          delim (section separator, protocol v2)
+//   - "0002"          response-end
+//   - any length >= 4 data packet with payload of (length - 4) bytes
 //
 // See https://git-scm.com/docs/protocol-common#_pkt_line_format
 
 const hexDigits = "0123456789abcdef"
 
+// pktType distinguishes ordinary data packets from the three special framing
+// packets defined by the protocol (flush, delim, response-end).
 type pktType int
 
 const (
@@ -22,9 +24,11 @@ const (
 	pktResponseEnd
 )
 
+// packet is one parsed pkt-line. payload is set only when typ == pktData and
+// excludes the 4-byte length prefix.
 type packet struct {
 	typ     pktType
-	payload []byte // nil for non-data packets
+	payload []byte
 }
 
 // parseHex4 decodes a 4-byte ASCII hex prefix into its integer value without
@@ -114,6 +118,8 @@ func encodePktLine(packets []packet) []byte {
 	return buf
 }
 
+// encodedSize returns the exact wire size of packets, used to pre-allocate the
+// output buffer in encodePktLine without intermediate growth.
 func encodedSize(packets []packet) int {
 	size := 0
 	for _, p := range packets {

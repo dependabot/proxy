@@ -25,6 +25,8 @@ func TestIsUploadPackRequest(t *testing.T) {
 	}{
 		{"real git POST", http.MethodPost, "https://github.com/octocat/Hello-World.git/git-upload-pack", ct, true},
 		{"real git POST with charset parameter", http.MethodPost, "https://github.com/octocat/Hello-World.git/git-upload-pack", ct + "; charset=utf-8", true},
+		{"real git POST with uppercase media type", http.MethodPost, "https://github.com/octocat/Hello-World.git/git-upload-pack", "Application/X-Git-Upload-Pack-Request", true},
+		{"real git POST with extra whitespace around parameter", http.MethodPost, "https://github.com/octocat/Hello-World.git/git-upload-pack", ct + " ;   charset=utf-8", true},
 		{"GET to upload-pack URL", http.MethodGet, "https://github.com/octocat/Hello-World.git/git-upload-pack", ct, false},
 		{"POST to other git path (info/refs)", http.MethodPost, "https://github.com/octocat/Hello-World.git/info/refs", ct, false},
 		{"POST to non-git path", http.MethodPost, "https://api.github.com/graphql", "application/json", false},

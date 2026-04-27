@@ -8,10 +8,15 @@ package gitproto
 
 import (
 	"bytes"
+	"mime"
 	"net/http"
 	"regexp"
 	"strings"
 )
+
+// uploadPackContentType is the request Content-Type sent by all real git
+// clients on a smart-HTTP fetch. See https://git-scm.com/docs/http-protocol.
+const uploadPackContentType = "application/x-git-upload-pack-request"
 
 // inlineVolatileTokenRegex matches volatile inline capability tokens —
 // currently " agent=<version>" and " session-id=<uuid>" — that appear as
@@ -40,10 +45,6 @@ func hasVolatilePrefix(payload []byte) bool {
 	return false
 }
 
-// uploadPackContentType is the request Content-Type sent by all real git
-// clients on a smart-HTTP fetch. See https://git-scm.com/docs/http-protocol.
-const uploadPackContentType = "application/x-git-upload-pack-request"
-
 // IsUploadPackRequest reports whether r is a smart-HTTP git-upload-pack POST,
 // i.e. a fetch negotiation. It checks method, path suffix, and Content-Type
 // together so that a non-git POST to an arbitrary URL ending in
@@ -56,10 +57,11 @@ func IsUploadPackRequest(r *http.Request) bool {
 	if !strings.HasSuffix(r.URL.Path, "/git-upload-pack") {
 		return false
 	}
-	// Content-Type may include parameters (e.g. "; charset=utf-8"), though
-	// real git never sends them. Match on the media-type prefix.
-	ct := r.Header.Get("Content-Type")
-	return ct == uploadPackContentType || strings.HasPrefix(ct, uploadPackContentType+";")
+	// Per RFC 7231 §3.1.1.1 media types are case-insensitive and may carry
+	// optional parameters and surrounding whitespace; mime.ParseMediaType
+	// normalizes all of that to the canonical lowercase media type.
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return err == nil && mediaType == uploadPackContentType
 }
 
 // NormalizeUploadPackBody returns a normalized form of a git-upload-pack POST
