@@ -447,6 +447,26 @@ func Test_key(t *testing.T) {
 			t.Error("Identical capabilities with only agent= difference should produce the same cache key")
 		}
 	})
+
+	t.Run("git-upload-pack: malformed body falls back to full-body hash", func(t *testing.T) {
+		// Not valid pkt-line data (no 4-hex length prefix). normalizeGitBody must
+		// return the original bytes so that two different malformed bodies hash to
+		// different keys (no collisions from re-encoding).
+		body1 := "this is not pkt-line data"
+		body2 := "this is also not pkt-line data"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1.BodyHash == "" || key2.BodyHash == "" {
+			t.Error("malformed body should still produce a body hash")
+		}
+		if key1 == key2 {
+			t.Error("different malformed bodies must not collide on the same cache key")
+		}
+	})
 }
 
 type BufferWithClose struct {

@@ -39,22 +39,25 @@ type Packet struct {
 }
 
 // Parse parses a pkt-line byte stream into a slice of packets.
-// If the stream contains malformed data (bad length prefix, truncated packet),
-// the remainder is returned as a single Data packet so callers can degrade
-// gracefully rather than losing data.
-func Parse(data []byte) []Packet {
-	var packets []Packet
+//
+// The returned ok flag is true when the entire stream was consumed as
+// well-formed pkt-line data. If the stream contains malformed data (bad
+// length prefix, truncated packet), ok is false and the remainder of the
+// stream is returned as a final Data packet containing the unparsed bytes
+// verbatim, so callers can degrade gracefully rather than losing data.
+func Parse(data []byte) (packets []Packet, ok bool) {
 	for len(data) > 0 {
 		if len(data) < 4 {
 			packets = append(packets, Packet{Type: Data, Payload: data})
-			break
+			return packets, false
 		}
 
-		length, err := strconv.ParseUint(string(data[:4]), 16, 16)
+		length64, err := strconv.ParseUint(string(data[:4]), 16, 16)
 		if err != nil {
 			packets = append(packets, Packet{Type: Data, Payload: data})
-			break
+			return packets, false
 		}
+		length := int(length64)
 
 		switch {
 		case length == 0:
@@ -71,17 +74,16 @@ func Parse(data []byte) []Packet {
 			packets = append(packets, Packet{Type: Data, Payload: data[:4]})
 			data = data[4:]
 		default:
-			if int(length) > len(data) {
-				// Truncated packet; include remainder as-is
+			if length > len(data) {
+				// Truncated packet; include remainder as-is.
 				packets = append(packets, Packet{Type: Data, Payload: data})
-				data = nil
-			} else {
-				packets = append(packets, Packet{Type: Data, Payload: data[4:length]})
-				data = data[length:]
+				return packets, false
 			}
+			packets = append(packets, Packet{Type: Data, Payload: data[4:length]})
+			data = data[length:]
 		}
 	}
-	return packets
+	return packets, true
 }
 
 // Encode serializes a slice of packets back into the pkt-line wire format.

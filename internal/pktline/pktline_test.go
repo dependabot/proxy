@@ -5,22 +5,51 @@ import (
 	"testing"
 )
 
+func TestParseEmptyInput(t *testing.T) {
+	packets, ok := Parse(nil)
+	if !ok {
+		t.Error("expected ok=true for empty input")
+	}
+	if len(packets) != 0 {
+		t.Fatalf("expected 0 packets, got %d", len(packets))
+	}
+}
+
+func TestParseReservedLength3(t *testing.T) {
+	// Length 0x0003 is reserved; we treat the 4 prefix bytes as opaque data
+	// and continue parsing.
+	packets, ok := Parse([]byte("0003" + "0000"))
+	if !ok {
+		t.Error("expected ok=true; reserved length is treated as opaque, not an error")
+	}
+	if len(packets) != 2 {
+		t.Fatalf("expected 2 packets, got %d", len(packets))
+	}
+	if packets[0].Type != Data || string(packets[0].Payload) != "0003" {
+		t.Errorf("packet 0 should be Data with payload %q, got type=%v payload=%q",
+			"0003", packets[0].Type, string(packets[0].Payload))
+	}
+	if packets[1].Type != Flush {
+		t.Error("packet 1 should be Flush")
+	}
+}
+
 func TestParseFlush(t *testing.T) {
-	packets := Parse([]byte("0000"))
+	packets, _ := Parse([]byte("0000"))
 	if len(packets) != 1 || packets[0].Type != Flush {
 		t.Fatal("expected single Flush packet")
 	}
 }
 
 func TestParseDelim(t *testing.T) {
-	packets := Parse([]byte("0001"))
+	packets, _ := Parse([]byte("0001"))
 	if len(packets) != 1 || packets[0].Type != Delim {
 		t.Fatal("expected single Delim packet")
 	}
 }
 
 func TestParseResponseEnd(t *testing.T) {
-	packets := Parse([]byte("0002"))
+	packets, _ := Parse([]byte("0002"))
 	if len(packets) != 1 || packets[0].Type != ResponseEnd {
 		t.Fatal("expected single ResponseEnd packet")
 	}
@@ -28,7 +57,7 @@ func TestParseResponseEnd(t *testing.T) {
 
 func TestParseDataPacket(t *testing.T) {
 	// "000ahello\n" = length 10 (0x000a), payload "hello\n"
-	packets := Parse([]byte("000ahello\n"))
+	packets, _ := Parse([]byte("000ahello\n"))
 	if len(packets) != 1 {
 		t.Fatalf("expected 1 packet, got %d", len(packets))
 	}
@@ -43,7 +72,7 @@ func TestParseDataPacket(t *testing.T) {
 func TestParseMultiplePackets(t *testing.T) {
 	// Two data packets + flush
 	input := "000ahello\n" + "000aworld\n" + "0000"
-	packets := Parse([]byte(input))
+	packets, _ := Parse([]byte(input))
 	if len(packets) != 3 {
 		t.Fatalf("expected 3 packets, got %d", len(packets))
 	}
@@ -59,8 +88,11 @@ func TestParseMultiplePackets(t *testing.T) {
 }
 
 func TestParseMalformedLength(t *testing.T) {
-	// "gggg" is not valid hex — should return as raw data
-	packets := Parse([]byte("gggghello"))
+	// "gggg" is not valid hex — should return as raw data with ok=false
+	packets, ok := Parse([]byte("gggghello"))
+	if ok {
+		t.Error("expected ok=false for malformed input")
+	}
 	if len(packets) != 1 || packets[0].Type != Data {
 		t.Fatal("expected single raw Data packet for malformed input")
 	}
@@ -70,8 +102,11 @@ func TestParseMalformedLength(t *testing.T) {
 }
 
 func TestParseTruncatedPacket(t *testing.T) {
-	// Claims length 0x0020 (32 bytes) but only has 10 bytes total
-	packets := Parse([]byte("0020short"))
+	// Claims length 0x0020 (32 bytes) but only has 9 bytes total
+	packets, ok := Parse([]byte("0020short"))
+	if ok {
+		t.Error("expected ok=false for truncated input")
+	}
 	if len(packets) != 1 || packets[0].Type != Data {
 		t.Fatal("expected single raw Data packet for truncated input")
 	}
@@ -84,7 +119,7 @@ func TestParseRealV1Body(t *testing.T) {
 		"0000" +
 		"0032have 553c2077f0edc3d5dc5d17262f6aa498e69d6f8e\n" +
 		"0009done\n"
-	packets := Parse([]byte(input))
+	packets, _ := Parse([]byte(input))
 	if len(packets) != 5 {
 		t.Fatalf("expected 5 packets, got %d", len(packets))
 	}
@@ -114,7 +149,7 @@ func TestParseRealV2Body(t *testing.T) {
 		"0032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n" +
 		"0009done\n" +
 		"0000"
-	packets := Parse([]byte(input))
+	packets, _ := Parse([]byte(input))
 	if len(packets) != 7 {
 		t.Fatalf("expected 7 packets, got %d", len(packets))
 	}
@@ -134,7 +169,7 @@ func TestParseRealV2Body(t *testing.T) {
 
 func TestEncodeRoundTrip(t *testing.T) {
 	input := []byte("000ahello\n" + "0000" + "0001" + "000aworld\n" + "0002")
-	packets := Parse(input)
+	packets, _ := Parse(input)
 	output := Encode(packets)
 	if !bytes.Equal(input, output) {
 		t.Fatalf("round-trip failed:\n  input:  %q\n  output: %q", input, output)

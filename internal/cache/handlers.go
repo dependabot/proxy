@@ -86,8 +86,9 @@ func isGitUploadPack(r *http.Request) bool {
 //     with recomputed pkt-line length prefixes
 //   - Special packets (flush 0000, delim 0001, response-end 0002) are preserved
 //
-// If the body is not valid pkt-line data, it is included as-is so the hash falls
-// back to full-body behavior (cache miss, not corruption).
+// If the body is not valid pkt-line data, the original bytes are returned
+// unchanged so the hash falls back to full-body behavior (cache miss, not
+// corruption).
 //
 // Safety assumption: Dependabot updaters run in clean ephemeral containers with
 // no pre-existing git objects, so "have" negotiation state is effectively
@@ -96,7 +97,10 @@ func isGitUploadPack(r *http.Request) bool {
 // because the server response does not depend on local object state when haves
 // are empty or near-empty.
 func normalizeGitBody(data []byte) []byte {
-	packets := pktline.Parse(data)
+	packets, ok := pktline.Parse(data)
+	if !ok {
+		return data
+	}
 	var filtered []pktline.Packet
 	for _, p := range packets {
 		if p.Type != pktline.Data {
