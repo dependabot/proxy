@@ -8,7 +8,8 @@ import (
 	"testing"
 )
 
-// hashableKey condenses a normalized body to a comparable string for tests.
+// normalize is a test helper that runs NormalizeUploadPackBody and returns the
+// result as a string for direct comparison.
 func normalize(body string) string {
 	return string(NormalizeUploadPackBody([]byte(body)))
 }
@@ -23,7 +24,7 @@ func TestIsUploadPackRequest(t *testing.T) {
 		{"POST to upload-pack", http.MethodPost, "https://github.com/octocat/Hello-World.git/git-upload-pack", true},
 		{"GET to upload-pack URL", http.MethodGet, "https://github.com/octocat/Hello-World.git/git-upload-pack", false},
 		{"POST to other path", http.MethodPost, "https://github.com/octocat/Hello-World.git/info/refs", false},
-		{"POST to non-git host", http.MethodPost, "https://api.github.com/graphql", false},
+		{"POST to non-git path", http.MethodPost, "https://api.github.com/graphql", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -42,7 +43,8 @@ func TestNormalizeUploadPackBody(t *testing.T) {
 		oidA = "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d"
 		oidB = "b1b3f9723831141a31a1a7252a213e216ea76e56"
 		oidC = "b3cbd5bbd7e81436d2eee04537ea2b4c0cad4cdf"
-		// A made-up have OID; have content is irrelevant since these get dropped.
+		// have OIDs are arbitrary — these pkt-lines are dropped during
+		// normalization, so their content is irrelevant to the test.
 		oidH1 = "553c2077f0edc3d5dc5d17262f6aa498e69d6f8e"
 		oidH2 = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 	)

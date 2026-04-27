@@ -1,9 +1,6 @@
 package gitproto
 
-import (
-	"fmt"
-	"strconv"
-)
+import "strconv"
 
 // pkt-line is the framing format used by the git smart-HTTP protocol
 // (git-upload-pack, git-receive-pack). Each line is prefixed with a 4-hex-digit
@@ -16,6 +13,8 @@ import (
 //
 // See https://git-scm.com/docs/protocol-common#_pkt_line_format
 
+const hexDigits = "0123456789abcdef"
+
 type pktType int
 
 const (
@@ -27,58 +26,54 @@ const (
 
 type packet struct {
 	typ     pktType
-	payload []byte // nil for non-Data packets
+	payload []byte // nil for non-data packets
 }
 
-// parsePktLine parses a pkt-line byte stream into packets. The returned ok flag
-// is false when the stream contains malformed or truncated data; the unparsed
-// remainder is appended as a final Data packet so callers can degrade
-// gracefully (e.g., fall back to hashing the raw input).
+// parsePktLine parses a pkt-line byte stream into packets. The returned ok
+// flag is false when the stream contains malformed or truncated data, in
+// which case the packets slice is nil and callers should fall back to
+// treating the original input opaquely (e.g., hashing it whole).
 func parsePktLine(data []byte) (packets []packet, ok bool) {
 	for len(data) > 0 {
 		if len(data) < 4 {
-			packets = append(packets, packet{typ: pktData, payload: data})
-			return packets, false
+			return nil, false
 		}
-		length64, err := strconv.ParseUint(string(data[:4]), 16, 16)
+		parsed, err := strconv.ParseUint(string(data[:4]), 16, 16)
 		if err != nil {
-			packets = append(packets, packet{typ: pktData, payload: data})
-			return packets, false
+			return nil, false
 		}
-		length := int(length64)
-		switch {
-		case length == 0:
+		n := int(parsed)
+		switch n {
+		case 0:
 			packets = append(packets, packet{typ: pktFlush})
 			data = data[4:]
-		case length == 1:
+		case 1:
 			packets = append(packets, packet{typ: pktDelim})
 			data = data[4:]
-		case length == 2:
+		case 2:
 			packets = append(packets, packet{typ: pktResponseEnd})
 			data = data[4:]
-		case length == 3:
-			// Reserved by the spec; not used by real git. Treat as malformed
-			// so callers fall back to full-input behaviour.
-			packets = append(packets, packet{typ: pktData, payload: data})
-			return packets, false
+		case 3:
+			// Reserved by the spec; not used by real git. Treat as
+			// malformed so callers fall back to full-input behaviour.
+			return nil, false
 		default:
-			if length > len(data) {
-				packets = append(packets, packet{typ: pktData, payload: data})
-				return packets, false
+			if n > len(data) {
+				return nil, false
 			}
-			packets = append(packets, packet{typ: pktData, payload: data[4:length]})
-			data = data[length:]
+			packets = append(packets, packet{typ: pktData, payload: data[4:n]})
+			data = data[n:]
 		}
 	}
 	return packets, true
 }
 
 // encodePktLine serializes packets back into the pkt-line wire format.
-// Re-encoding recomputes each Data packet's length prefix, which is what makes
-// upstream normalization correct across requests whose data payloads differ
-// only in length (e.g. different agent string lengths).
+// Re-encoding recomputes each data packet's length prefix, which is what
+// makes upstream normalization correct across requests whose payloads
+// differ only in length (e.g. different agent string lengths).
 func encodePktLine(packets []packet) []byte {
-	var buf []byte
+	buf := make([]byte, 0, encodedSize(packets))
 	for _, p := range packets {
 		switch p.typ {
 		case pktFlush:
@@ -88,9 +83,26 @@ func encodePktLine(packets []packet) []byte {
 		case pktResponseEnd:
 			buf = append(buf, "0002"...)
 		case pktData:
-			buf = append(buf, fmt.Sprintf("%04x", 4+len(p.payload))...)
+			n := 4 + len(p.payload)
+			buf = append(buf,
+				hexDigits[(n>>12)&0xf],
+				hexDigits[(n>>8)&0xf],
+				hexDigits[(n>>4)&0xf],
+				hexDigits[n&0xf],
+			)
 			buf = append(buf, p.payload...)
 		}
 	}
 	return buf
+}
+
+func encodedSize(packets []packet) int {
+	size := 0
+	for _, p := range packets {
+		size += 4
+		if p.typ == pktData {
+			size += len(p.payload)
+		}
+	}
+	return size
 }
