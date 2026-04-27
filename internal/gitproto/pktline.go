@@ -1,7 +1,5 @@
 package gitproto
 
-import "strconv"
-
 // pkt-line is the framing format used by the git smart-HTTP protocol
 // (git-upload-pack, git-receive-pack). Each line is prefixed with a 4-hex-digit
 // length that includes itself, or is a special packet:
@@ -29,6 +27,27 @@ type packet struct {
 	payload []byte // nil for non-data packets
 }
 
+// parseHex4 decodes a 4-byte ASCII hex prefix into its integer value without
+// allocating an intermediate string. Returns ok=false on any non-hex byte.
+func parseHex4(b []byte) (n int, ok bool) {
+	for i := 0; i < 4; i++ {
+		c := b[i]
+		var v int
+		switch {
+		case c >= '0' && c <= '9':
+			v = int(c - '0')
+		case c >= 'a' && c <= 'f':
+			v = int(c-'a') + 10
+		case c >= 'A' && c <= 'F':
+			v = int(c-'A') + 10
+		default:
+			return 0, false
+		}
+		n = n<<4 | v
+	}
+	return n, true
+}
+
 // parsePktLine parses a pkt-line byte stream into packets. The returned ok
 // flag is false when the stream contains malformed or truncated data, in
 // which case the packets slice is nil and callers should fall back to
@@ -38,11 +57,10 @@ func parsePktLine(data []byte) (packets []packet, ok bool) {
 		if len(data) < 4 {
 			return nil, false
 		}
-		parsed, err := strconv.ParseUint(string(data[:4]), 16, 16)
-		if err != nil {
+		n, ok := parseHex4(data[:4])
+		if !ok {
 			return nil, false
 		}
-		n := int(parsed)
 		switch n {
 		case 0:
 			packets = append(packets, packet{typ: pktFlush})
