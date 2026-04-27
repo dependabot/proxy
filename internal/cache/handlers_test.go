@@ -246,70 +246,59 @@ func Test_key(t *testing.T) {
 		}
 	})
 
-	// Integration check: git-upload-pack POSTs are routed through
-	// gitproto.NormalizeUploadPackBody before hashing. Edge-case behaviour of
-	// the normalizer itself is exercised in internal/gitproto.
-	t.Run("git-upload-pack body is normalized before hashing", func(t *testing.T) {
-		const url = "https://github.com/octocat/Hello-World.git/git-upload-pack"
-		const ct = "application/x-git-upload-pack-request"
-		// Two bodies that differ only in volatile fields (have line + agent).
+	// Integration tests for the gitproto hookup. Edge-case behaviour of the
+	// normalizer itself lives in internal/gitproto.
+	const upUrl = "https://github.com/octocat/Hello-World.git/git-upload-pack"
+	const upCT = "application/x-git-upload-pack-request"
+	mkUpReq := func(url, ct, body string) *http.Request {
+		r := httptest.NewRequest("POST", url, strings.NewReader(body))
+		if ct != "" {
+			r.Header.Set("Content-Type", ct)
+		}
+		return r
+	}
+
+	t.Run("git-upload-pack: agent= drift collapses to one key", func(t *testing.T) {
 		body1 := "0080want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d multi_ack_detailed no-done side-band-64k thin-pack ofs-delta agent=git/2.43.0\n" +
 			"0032have 553c2077f0edc3d5dc5d17262f6aa498e69d6f8e\n0009done\n"
 		body2 := "0080want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d multi_ack_detailed no-done side-band-64k thin-pack ofs-delta agent=git/2.53.0\n" +
-			"0032have a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\n0009done\n"
-
-		mkReq := func(body string) *http.Request {
-			r := httptest.NewRequest("POST", url, strings.NewReader(body))
-			r.Header.Set("Content-Type", ct)
-			return r
-		}
-		if key(mkReq(body1)) != key(mkReq(body2)) {
-			t.Error("git-upload-pack POSTs differing only in have/agent must produce the same cache key")
+			"0032have 553c2077f0edc3d5dc5d17262f6aa498e69d6f8e\n0009done\n"
+		if key(mkUpReq(upUrl, upCT, body1)) != key(mkUpReq(upUrl, upCT, body2)) {
+			t.Error("agent-only difference must collapse")
 		}
 	})
 
-	t.Run("malformed git-upload-pack body falls back to raw-body hashing", func(t *testing.T) {
-		// Even with the right URL, method, and Content-Type, a body that fails
-		// pkt-line parsing must produce distinct cache keys for distinct bytes
-		// (cache miss is acceptable; collision is not).
-		const url = "https://github.com/octocat/Hello-World.git/git-upload-pack"
-		const ct = "application/x-git-upload-pack-request"
-		mkReq := func(body string) *http.Request {
-			r := httptest.NewRequest("POST", url, strings.NewReader(body))
-			r.Header.Set("Content-Type", ct)
-			return r
+	t.Run("git-upload-pack: different haves hash distinctly", func(t *testing.T) {
+		body1 := "0032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n0000" +
+			"0032have 553c2077f0edc3d5dc5d17262f6aa498e69d6f8e\n0009done\n"
+		body2 := "0032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n0000" +
+			"0032have a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\n0009done\n"
+		if key(mkUpReq(upUrl, upCT, body1)) == key(mkUpReq(upUrl, upCT, body2)) {
+			t.Error("haves shape the upstream pack and must not collapse")
 		}
-		if key(mkReq("garbage one")) == key(mkReq("garbage two")) {
+	})
+
+	t.Run("git-upload-pack: malformed body falls back to raw hashing", func(t *testing.T) {
+		if key(mkUpReq(upUrl, upCT, "garbage one")) == key(mkUpReq(upUrl, upCT, "garbage two")) {
 			t.Error("malformed bodies must hash distinctly")
 		}
 	})
 
-	t.Run("non-git POST with similar substrings is not normalized", func(t *testing.T) {
-		// Confirms the gitproto integration is gated by IsUploadPackRequest.
-		body1 := `{"q":"have stuff agent=foo"}`
-		body2 := `{"q":"have other agent=bar"}`
-
-		k1 := key(httptest.NewRequest("POST", "https://api.github.com/graphql", strings.NewReader(body1)))
-		k2 := key(httptest.NewRequest("POST", "https://api.github.com/graphql", strings.NewReader(body2)))
+	t.Run("non-git POST is not normalized even with similar substrings", func(t *testing.T) {
+		const u = "https://api.github.com/graphql"
+		k1 := key(httptest.NewRequest("POST", u, strings.NewReader(`{"q":"have stuff agent=foo"}`)))
+		k2 := key(httptest.NewRequest("POST", u, strings.NewReader(`{"q":"have other agent=bar"}`)))
 		if k1 == k2 {
 			t.Error("non-git POSTs must not be normalized")
 		}
 	})
 
-	t.Run("POST to fake /git-upload-pack URL without Content-Type is not normalized", func(t *testing.T) {
-		// Defense in depth: the Content-Type gate prevents non-git traffic that
-		// happens to share the path suffix from being routed through pkt-line
-		// normalization.
-		const url = "https://example.com/foo/git-upload-pack"
-		// Bodies that, if normalized, would collide because they only differ in
-		// would-be "have"/"agent" tokens.
+	t.Run("upload-pack path without Content-Type is not normalized", func(t *testing.T) {
+		const u = "https://example.com/foo/git-upload-pack"
 		body1 := "0032have 553c2077f0edc3d5dc5d17262f6aa498e69d6f8e\n0009done\n"
 		body2 := "0032have a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\n0009done\n"
-
-		k1 := key(httptest.NewRequest("POST", url, strings.NewReader(body1)))
-		k2 := key(httptest.NewRequest("POST", url, strings.NewReader(body2)))
-		if k1 == k2 {
-			t.Error("non-git POST without Content-Type must not be normalized")
+		if key(mkUpReq(u, "", body1)) == key(mkUpReq(u, "", body2)) {
+			t.Error("missing Content-Type must skip normalization")
 		}
 	})
 }

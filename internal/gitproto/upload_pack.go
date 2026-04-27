@@ -1,9 +1,7 @@
-// Package gitproto provides helpers for working with the git smart-HTTP wire
-// protocol, in support of the proxy's disk cache.
+// Package gitproto provides helpers for stabilizing git smart-HTTP cache keys.
 //
-// The exported surface is intentionally narrow: callers should only need
-// IsUploadPackRequest and NormalizeUploadPackBody. The pkt-line framing format
-// is an internal implementation detail.
+// Only IsUploadPackRequest and NormalizeUploadPackBody are exported; the
+// pkt-line framing parser is an implementation detail.
 package gitproto
 
 import (
@@ -14,28 +12,22 @@ import (
 	"strings"
 )
 
-// uploadPackContentType is the request Content-Type sent by all real git
-// clients on a smart-HTTP fetch. See https://git-scm.com/docs/http-protocol.
+// uploadPackContentType is the media type real git clients send on a fetch.
+// See https://git-scm.com/docs/http-protocol.
 const uploadPackContentType = "application/x-git-upload-pack-request"
 
-// inlineVolatileTokenRegex matches volatile inline capability tokens —
-// currently " agent=<version>" and " session-id=<uuid>" — that appear as
-// trailing capabilities on a v1 upload-pack want line. Real git always emits
-// these after a leading space, so the leading-space anchor distinguishes them
-// from a payload that merely starts with the same prefix.
+// inlineVolatileTokenRegex matches " agent=…" / " session-id=…" tokens
+// trailing a v1 capability list. The leading space anchors the match so a
+// payload that merely starts with the same text is not affected.
 var inlineVolatileTokenRegex = regexp.MustCompile(` (?:agent|session-id)=[^ \r\n]*`)
 
 // volatileStandalonePrefixes lists payload prefixes whose entire pkt-line is
-// dropped from the normalized body. These are negotiation or capability
-// lines that vary between semantically identical requests:
+// dropped: per-process v2 capability lines that don't influence the pack.
 //
-//   - "have "       v1 + v2 local object negotiation state, varies per client
-//   - "agent="      v2 client version capability
-//   - "session-id=" v2 trace2 session identifier (Git 2.36+), unique per invocation
-var volatileStandalonePrefixes = [][]byte{[]byte("have "), []byte("agent="), []byte("session-id=")}
+// "have" lines are intentionally NOT here — they drive object negotiation and
+// the upstream response depends on them.
+var volatileStandalonePrefixes = [][]byte{[]byte("agent="), []byte("session-id=")}
 
-// hasVolatilePrefix reports whether payload begins with any prefix in
-// volatileStandalonePrefixes.
 func hasVolatilePrefix(payload []byte) bool {
 	for _, prefix := range volatileStandalonePrefixes {
 		if bytes.HasPrefix(payload, prefix) {
@@ -45,11 +37,9 @@ func hasVolatilePrefix(payload []byte) bool {
 	return false
 }
 
-// IsUploadPackRequest reports whether r is a smart-HTTP git-upload-pack POST,
-// i.e. a fetch negotiation. It checks method, path suffix, and Content-Type
-// together so that a non-git POST to an arbitrary URL ending in
-// "/git-upload-pack" cannot accidentally be routed through pkt-line
-// normalization.
+// IsUploadPackRequest reports whether r is a smart-HTTP git-upload-pack POST.
+// All three of method, path suffix, and Content-Type must match so that an
+// unrelated POST sharing the URL suffix isn't routed through normalization.
 func IsUploadPackRequest(r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		return false
@@ -57,40 +47,27 @@ func IsUploadPackRequest(r *http.Request) bool {
 	if !strings.HasSuffix(r.URL.Path, "/git-upload-pack") {
 		return false
 	}
-	// Per RFC 7231 §3.1.1.1 media types are case-insensitive and may carry
-	// optional parameters and surrounding whitespace; mime.ParseMediaType
-	// normalizes all of that to the canonical lowercase media type.
+	// mime.ParseMediaType handles RFC 7231 case-insensitivity and parameter
+	// whitespace; we only care about the canonical media type.
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	return err == nil && mediaType == uploadPackContentType
 }
 
-// NormalizeUploadPackBody returns a normalized form of a git-upload-pack POST
-// body, suitable for use as a stable cache-key input.
+// NormalizeUploadPackBody returns a stable cache-key input derived from a
+// git-upload-pack POST body. The output is hash input only — never sent on
+// the wire.
 //
-// The output is opaque hash input — not intended to be sent on the wire.
+// Stripped (per-process noise that doesn't shape the pack):
+//   - standalone "agent=" / "session-id=" pkt-lines (v2 capabilities)
+//   - inline " agent=" / " session-id=" tokens on v1 want lines
 //
-// Normalization removes only fields that vary between semantically identical
-// requests:
+// Preserved (everything that can change the upstream response): wants, haves,
+// capabilities, command=, deepen/shallow, filter, ref-prefix, object-format,
+// and all framing packets. Re-encoding recomputes pkt-line length prefixes,
+// so requests differing only in a stripped value's length still hash equal.
 //
-//   - "have" pkt-lines (local object negotiation state, varies per client)
-//   - Standalone "agent=" pkt-lines (protocol v2 client version)
-//   - Standalone "session-id=" pkt-lines (protocol v2 trace2 session id, Git 2.36+)
-//   - Inline " agent=" and " session-id=" tokens within v1 capability lines
-//
-// All response-shaping fields (want, capabilities, command=, deepen, filter,
-// shallow, ref-prefix, object-format, ...) are preserved, and special framing
-// packets (flush, delim, response-end) are preserved verbatim. Each retained
-// data packet is re-emitted with a recomputed length prefix, so two requests
-// that differ only in the length of a volatile field still hash identically.
-//
-// If the body is not valid pkt-line data, it is returned unchanged so callers
-// fall back to full-body hashing (cache miss, never collision).
-//
-// Safety contract: this is safe to use as a cache key in environments where
-// "have" sets are stable across runs (e.g. ephemeral containers with no
-// pre-existing git objects, as used by Dependabot updaters). Under that
-// assumption an upstream response generated for one normalized request body
-// is valid for any request that normalizes to the same bytes.
+// Malformed input is returned unchanged so callers fall back to opaque
+// hashing (cache miss is acceptable; collision is not).
 func NormalizeUploadPackBody(data []byte) []byte {
 	packets, ok := parsePktLine(data)
 	if !ok {
@@ -105,8 +82,7 @@ func NormalizeUploadPackBody(data []byte) []byte {
 		if hasVolatilePrefix(p.payload) {
 			continue
 		}
-		// Match-then-Replace avoids an allocation on the common no-match path
-		// (most pkt-lines do not carry inline capability tokens).
+		// Match-then-Replace skips the alloc on the common no-match path.
 		if inlineVolatileTokenRegex.Match(p.payload) {
 			cleaned := inlineVolatileTokenRegex.ReplaceAll(p.payload, nil)
 			filtered = append(filtered, packet{typ: pktData, payload: cleaned})

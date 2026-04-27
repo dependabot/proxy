@@ -1,20 +1,13 @@
 package gitproto
 
-// pkt-line is the framing format used by the git smart-HTTP protocol
-// (git-upload-pack, git-receive-pack). Each line is prefixed with a 4-hex-digit
-// length that includes itself, or is a special packet:
-//
-//   - "0000"          flush (stream boundary)
-//   - "0001"          delim (section separator, protocol v2)
-//   - "0002"          response-end
-//   - any length >= 4 data packet with payload of (length - 4) bytes
-//
+// pkt-line is git's smart-HTTP framing format. Each line begins with a
+// 4-hex-digit length (including itself), or is one of three special packets:
+// "0000" flush, "0001" delim (v2), "0002" response-end. Any length >= 4 is a
+// data packet whose payload is (length - 4) bytes.
 // See https://git-scm.com/docs/protocol-common#_pkt_line_format
 
 const hexDigits = "0123456789abcdef"
 
-// pktType distinguishes ordinary data packets from the three special framing
-// packets defined by the protocol (flush, delim, response-end).
 type pktType int
 
 const (
@@ -24,15 +17,13 @@ const (
 	pktResponseEnd
 )
 
-// packet is one parsed pkt-line. payload is set only when typ == pktData and
-// excludes the 4-byte length prefix.
+// payload is set only when typ == pktData and excludes the length prefix.
 type packet struct {
 	typ     pktType
 	payload []byte
 }
 
-// parseHex4 decodes a 4-byte ASCII hex prefix into its integer value without
-// allocating an intermediate string. Returns ok=false on any non-hex byte.
+// parseHex4 decodes a 4-byte ASCII hex prefix without allocating a string.
 func parseHex4(b []byte) (n int, ok bool) {
 	for i := 0; i < 4; i++ {
 		c := b[i]
@@ -52,10 +43,8 @@ func parseHex4(b []byte) (n int, ok bool) {
 	return n, true
 }
 
-// parsePktLine parses a pkt-line byte stream into packets. The returned ok
-// flag is false when the stream contains malformed or truncated data, in
-// which case the packets slice is nil and callers should fall back to
-// treating the original input opaquely (e.g., hashing it whole).
+// parsePktLine returns ok=false on malformed or truncated input so callers
+// can fall back to opaque hashing of the original bytes.
 func parsePktLine(data []byte) (packets []packet, ok bool) {
 	for len(data) > 0 {
 		if len(data) < 4 {
@@ -76,8 +65,7 @@ func parsePktLine(data []byte) (packets []packet, ok bool) {
 			packets = append(packets, packet{typ: pktResponseEnd})
 			data = data[4:]
 		case 3:
-			// Reserved by the spec; not used by real git. Treat as
-			// malformed so callers fall back to full-input behaviour.
+			// Reserved; not used by real git. Treat as malformed.
 			return nil, false
 		default:
 			if n > len(data) {
@@ -90,10 +78,8 @@ func parsePktLine(data []byte) (packets []packet, ok bool) {
 	return packets, true
 }
 
-// encodePktLine serializes packets back into the pkt-line wire format.
-// Re-encoding recomputes each data packet's length prefix, which is what
-// makes upstream normalization correct across requests whose payloads
-// differ only in length (e.g. different agent string lengths).
+// encodePktLine recomputes each data packet's length prefix, which is what
+// makes normalization stable across payloads of differing length.
 func encodePktLine(packets []packet) []byte {
 	buf := make([]byte, 0, encodedSize(packets))
 	for _, p := range packets {
@@ -118,8 +104,6 @@ func encodePktLine(packets []packet) []byte {
 	return buf
 }
 
-// encodedSize returns the exact wire size of packets, used to pre-allocate the
-// output buffer in encodePktLine without intermediate growth.
 func encodedSize(packets []packet) int {
 	size := 0
 	for _, p := range packets {
