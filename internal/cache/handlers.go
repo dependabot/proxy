@@ -12,16 +12,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/elazarl/goproxy"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
-	"github.com/dependabot/proxy/internal/pktline"
-
 	"github.com/dependabot/proxy/internal/ctxdata"
+	"github.com/dependabot/proxy/internal/gitproto"
 )
 
 // DB contains the metadata of the disk cache
@@ -65,67 +63,6 @@ var ignoreHeaders = map[string]struct{}{
 	"X-Pub-Session-Id":  {},
 }
 
-// gitInlineAgentRegex matches the volatile inline "agent=" capability token
-// in v1 want lines (e.g., " agent=git/2.43.0-Linux"). Real git always emits
-// agent= as a trailing capability after a leading space.
-var gitInlineAgentRegex = regexp.MustCompile(` agent=[^ \r\n]*`)
-
-// isGitUploadPack returns true if the request is a POST to a git-upload-pack endpoint.
-func isGitUploadPack(r *http.Request) bool {
-	return r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/git-upload-pack")
-}
-
-// normalizeGitBody parses the pkt-line stream from a git-upload-pack POST body
-// and rebuilds it with volatile fields removed, producing a stable cache key.
-//
-// Specifically:
-//   - "have" lines are dropped (local negotiation state that varies between clients)
-//   - Standalone "agent=" pkt-lines (v2) are dropped
-//   - Inline " agent=" tokens in v1 capability lines are stripped
-//   - All other lines (want, deepen, filter, command, shallow, etc.) are preserved
-//     with recomputed pkt-line length prefixes
-//   - Special packets (flush 0000, delim 0001, response-end 0002) are preserved
-//
-// If the body is not valid pkt-line data, the original bytes are returned
-// unchanged so the hash falls back to full-body behavior (cache miss, not
-// corruption).
-//
-// Safety assumption: Dependabot updaters run in clean ephemeral containers with
-// no pre-existing git objects, so "have" negotiation state is effectively
-// identical across runs for any ecosystem that uses git-upload-pack (nix, bundler
-// git sources, Go modules, git submodules, etc.). Stripping "have" lines is safe
-// because the server response does not depend on local object state when haves
-// are empty or near-empty.
-func normalizeGitBody(data []byte) []byte {
-	packets, ok := pktline.Parse(data)
-	if !ok {
-		return data
-	}
-	var filtered []pktline.Packet
-	for _, p := range packets {
-		if p.Type != pktline.Data {
-			filtered = append(filtered, p)
-			continue
-		}
-		payload := string(p.Payload)
-
-		// Drop "have" lines
-		if strings.HasPrefix(payload, "have ") {
-			continue
-		}
-
-		// Drop standalone "agent=" pkt-lines (v2)
-		if strings.HasPrefix(payload, "agent=") {
-			continue
-		}
-
-		// Strip inline " agent=" tokens from v1 capability lines
-		cleaned := gitInlineAgentRegex.ReplaceAllString(payload, "")
-		filtered = append(filtered, pktline.Packet{Type: pktline.Data, Payload: []byte(cleaned)})
-	}
-	return pktline.Encode(filtered)
-}
-
 // generates the key used in the DB, includes a hash of the body
 func key(r *http.Request) Key {
 	data, _ := io.ReadAll(r.Body)
@@ -162,8 +99,8 @@ func key(r *http.Request) Key {
 	}
 	if len(data) > 0 {
 		hashData := data
-		if isGitUploadPack(r) {
-			hashData = normalizeGitBody(data)
+		if gitproto.IsUploadPackRequest(r) {
+			hashData = gitproto.NormalizeUploadPackBody(data)
 		}
 		hash := sha256.New()
 		hash.Write(hashData)
