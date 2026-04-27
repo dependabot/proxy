@@ -245,6 +245,208 @@ func Test_key(t *testing.T) {
 			t.Error("headerHash should be blank, got", key.HeaderHash)
 		}
 	})
+
+	t.Run("git-upload-pack: same wants, different haves produce same key", func(t *testing.T) {
+		// Real protocol v1 format: want lines with capabilities, followed by have lines
+		// OIDs from github.com/octocat/Hello-World
+		body1 := "0080want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d multi_ack_detailed no-done side-band-64k thin-pack ofs-delta agent=git/2.43.0\n" +
+			"0032want b1b3f9723831141a31a1a7252a213e216ea76e56\n0000" +
+			"0032have 553c2077f0edc3d5dc5d17262f6aa498e69d6f8e\n0009done\n"
+		body2 := "0080want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d multi_ack_detailed no-done side-band-64k thin-pack ofs-delta agent=git/2.43.0\n" +
+			"0032want b1b3f9723831141a31a1a7252a213e216ea76e56\n0000" +
+			"0032have a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\n0009done\n"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 != key2 {
+			t.Error("Same wants with different haves should produce the same cache key")
+		}
+	})
+
+	t.Run("git-upload-pack: different wants produce different keys", func(t *testing.T) {
+		// Two requests wanting different refs from the same repo
+		body1 := "0032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n00000009done\n"
+		body2 := "0032want b3cbd5bbd7e81436d2eee04537ea2b4c0cad4cdf\n00000009done\n"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 == key2 {
+			t.Error("Different wants should produce different cache keys")
+		}
+	})
+
+	t.Run("git-upload-pack: different agent strings produce same key", func(t *testing.T) {
+		// Use different-length agent strings to verify pkt-line length prefixes are also normalized
+		body1 := "00a3want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d multi_ack_detailed no-done side-band-64k thin-pack no-progress ofs-delta deepen-since deepen-not agent=git/2.9.5\n00000009done\n"
+		body2 := "00aawant 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d multi_ack_detailed no-done side-band-64k thin-pack no-progress ofs-delta deepen-since deepen-not agent=git/2.43.0-Linux\n00000009done\n"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 != key2 {
+			t.Error("Different agent strings should produce the same cache key")
+		}
+	})
+
+	t.Run("git-upload-pack: non-git-upload-pack POST still uses full body hash", func(t *testing.T) {
+		body1 := `{"query":"{ viewer { login } }"}`
+		body2 := `{"query":"{ repository(owner:\"octocat\") { name } }"}`
+
+		req1 := httptest.NewRequest("POST", "https://api.github.com/graphql", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://api.github.com/graphql", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 == key2 {
+			t.Error("Non-git-upload-pack POST should use full body hash")
+		}
+	})
+
+	t.Run("git-upload-pack: GET to git-upload-pack URL is not normalized", func(t *testing.T) {
+		body1 := "body with have 553c2077f0edc3d5dc5d17262f6aa498e69d6f8e in it"
+		body2 := "body with have b3cbd5bbd7e81436d2eee04537ea2b4c0cad4cdf in it"
+
+		req1 := httptest.NewRequest("GET", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("GET", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 == key2 {
+			t.Error("GET requests should not have body normalization")
+		}
+	})
+
+	t.Run("git-upload-pack: protocol v2 ls-refs with no want lines still contributes to body hash", func(t *testing.T) {
+		// Real protocol v2 ls-refs commands have no want lines
+		body1 := "0014command=ls-refs\n0015agent=git/2.43.0\n001bref-prefix refs/heads/\n0000"
+		body2 := "0014command=ls-refs\n0015agent=git/2.43.0\n001aref-prefix refs/tags/\n0000"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1.BodyHash == "" {
+			t.Error("git-upload-pack POST with no want lines should still include a body hash")
+		}
+		if key2.BodyHash == "" {
+			t.Error("git-upload-pack POST with no want lines should still include a body hash")
+		}
+		if key1 == key2 {
+			t.Error("Different non-want git-upload-pack requests should produce different cache keys")
+		}
+	})
+
+	t.Run("git-upload-pack: protocol v2 fetch same wants different agent produces same key", func(t *testing.T) {
+		// Real protocol v2 fetch command as seen in shallow clones
+		body1 := "0012command=fetch\n001bagent=git/2.43.0-Linux\n0001000ddeepen 1\n0032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n0009done\n0000"
+		body2 := "0012command=fetch\n001bagent=git/2.53.0-Linux\n0001000ddeepen 1\n0032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n0009done\n0000"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 != key2 {
+			t.Error("Same wants with different agent versions in v2 fetch should produce the same cache key")
+		}
+	})
+
+	t.Run("git-upload-pack: different deepen values produce different keys", func(t *testing.T) {
+		body1 := "0012command=fetch\n001bagent=git/2.43.0-Linux\n0001000ddeepen 1\n0032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n0009done\n0000"
+		body2 := "0012command=fetch\n001bagent=git/2.43.0-Linux\n0001000ddeepen 2\n0032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n0009done\n0000"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 == key2 {
+			t.Error("Same wants with different deepen values should produce different cache keys")
+		}
+	})
+
+	t.Run("git-upload-pack: different filter values produce different keys", func(t *testing.T) {
+		body1 := "0012command=fetch\n001bagent=git/2.43.0-Linux\n00010015filter blob:none\n0032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n0009done\n0000"
+		body2 := "0012command=fetch\n001bagent=git/2.43.0-Linux\n00010012filter tree:0\n0032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n0009done\n0000"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 == key2 {
+			t.Error("Same wants with different filter values should produce different cache keys")
+		}
+	})
+
+	t.Run("git-upload-pack: shallow vs full clone produce different keys", func(t *testing.T) {
+		// Shallow clone with deepen
+		body1 := "0012command=fetch\n001bagent=git/2.43.0-Linux\n0001000ddeepen 1\n0032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n0009done\n0000"
+		// Full clone without deepen
+		body2 := "0012command=fetch\n001bagent=git/2.43.0-Linux\n00010032want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\n0009done\n0000"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 == key2 {
+			t.Error("Shallow clone with deepen and full clone should produce different cache keys")
+		}
+	})
+
+	t.Run("git-upload-pack: protocol v2 ls-refs same prefix different agent produces same key", func(t *testing.T) {
+		body1 := "0014command=ls-refs\n0015agent=git/2.43.0\n001bref-prefix refs/heads/\n0000"
+		body2 := "0014command=ls-refs\n0015agent=git/2.53.0\n001bref-prefix refs/heads/\n0000"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 != key2 {
+			t.Error("Same ls-refs with different agent should produce the same cache key")
+		}
+	})
+
+	t.Run("git-upload-pack: different non-agent capabilities produce different keys", func(t *testing.T) {
+		// Capabilities like thin-pack affect response encoding and must remain in the hash
+		body1 := "0080want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d multi_ack_detailed no-done side-band-64k thin-pack ofs-delta agent=git/2.43.0\n00000009done\n"
+		body2 := "0076want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d multi_ack_detailed no-done side-band-64k ofs-delta agent=git/2.43.0\n00000009done\n"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 == key2 {
+			t.Error("Different non-agent capabilities should produce different cache keys")
+		}
+	})
+
+	t.Run("git-upload-pack: v1 agent-only difference with identical capabilities produces same key", func(t *testing.T) {
+		// Only the agent= suffix differs; all other capabilities are identical
+		body1 := "0080want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d multi_ack_detailed no-done side-band-64k thin-pack ofs-delta agent=git/2.43.0\n00000009done\n"
+		body2 := "0080want 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d multi_ack_detailed no-done side-band-64k thin-pack ofs-delta agent=git/2.53.0\n00000009done\n"
+
+		req1 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body1))
+		req2 := httptest.NewRequest("POST", "https://github.com/octocat/Hello-World.git/git-upload-pack", strings.NewReader(body2))
+
+		key1 := key(req1)
+		key2 := key(req2)
+		if key1 != key2 {
+			t.Error("Identical capabilities with only agent= difference should produce the same cache key")
+		}
+	})
 }
 
 type BufferWithClose struct {
