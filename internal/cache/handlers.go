@@ -19,6 +19,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/dependabot/proxy/internal/ctxdata"
+	"github.com/dependabot/proxy/internal/gitproto"
 )
 
 // DB contains the metadata of the disk cache
@@ -97,8 +98,12 @@ func key(r *http.Request) Key {
 		k.HeaderHash = hex.EncodeToString(headerHash.Sum(nil))
 	}
 	if len(data) > 0 {
+		hashData := data
+		if gitproto.IsUploadPackRequest(r) {
+			hashData = gitproto.NormalizeUploadPackBody(data)
+		}
 		hash := sha256.New()
-		hash.Write(data)
+		hash.Write(hashData)
 		k.BodyHash = hex.EncodeToString(hash.Sum(nil))
 	}
 	return k
