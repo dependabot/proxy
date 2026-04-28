@@ -95,7 +95,13 @@ func (h *PythonIndexHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 	// Fall back to static credentials
 	for _, cred := range h.credentials {
 		indexURL := simpleSuffixRe.ReplaceAllString(cred.indexURL, "/")
-		if !helpers.UrlMatchesRequest(req, indexURL, true) && !helpers.CheckHost(req, cred.host) {
+		// Apply credentials if:
+		// 1. URL matches with path (e.g., /pypi/...), OR
+		// 2. Host:port matches (regardless of path), OR
+		// 3. Explicit host field matches
+		if !helpers.UrlMatchesRequest(req, indexURL, true) && 
+			!helpers.UrlMatchesRequest(req, indexURL, false) && 
+			!helpers.CheckHost(req, cred.host) {
 			continue
 		}
 
