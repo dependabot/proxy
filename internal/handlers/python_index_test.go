@@ -104,4 +104,11 @@ func TestPythonIndexHandler(t *testing.T) {
 	req = httptest.NewRequest("GET", "https://PKGS.dev.azure.com/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "azure devops case insensitive registry request")
+
+	// Package download on completely different path on same host
+	// Simulates: config pypi.cyco.fun/pypi, but request to pypi.cyco.fun/packages/...
+	// Using corp.deltaforce.com which has / as the index path
+	req = httptest.NewRequest("GET", "https://corp.deltaforce.com/packages/somepkg/1.0/wheel.whl", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "cert registry with package download on different path")
 }
