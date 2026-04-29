@@ -118,6 +118,9 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 	terraformRegistryHandler := handlers.NewTerraformRegistryHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(terraformRegistryHandler.HandleRequest)
 
+	openTofuRegistryHandler := handlers.NewOpenTofuRegistryHandler(cfg.Credentials)
+	proxy.OnRequest().DoFunc(openTofuRegistryHandler.HandleRequest)
+
 	pubRepositoryHandler := handlers.NewPubRepositoryHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(pubRepositoryHandler.HandleRequest)
 
