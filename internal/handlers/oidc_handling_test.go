@@ -26,1560 +26,378 @@ type mockHttpRequest struct {
 	response string
 }
 
-func TestOIDCURLsAreAuthenticated(t *testing.T) {
-	testTenantId := "12345678-1234-1234-1234-123456789012"
-	testClientId := "87654321-4321-4321-4321-210987654321"
-	testRegion := "us-east-1"
-	testCases := []struct {
-		name               string
-		provider           string
-		handlerFactory     func(creds config.Credentials) oidcHandler
-		credentials        config.Credentials
-		urlMocks           []mockHttpRequest
-		expectedLogLines   []string
-		urlsToAuthenticate []string
-	}{
-		//
-		// Cargo
-		//
-		{
-			name:     "Cargo",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewCargoRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "cargo_registry",
-					"url":          "https://cargo.example.com/packages",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for cargo registry: https://cargo.example.com/packages",
-			},
-			urlsToAuthenticate: []string{
-				"https://cargo.example.com/packages/some-package",
-			},
-		},
-		{
-			name:     "Cargo",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewCargoRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "cargo_registry",
-					"url":       "https://cargo.example.com/packages",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for cargo registry: https://cargo.example.com/packages",
-			},
-			urlsToAuthenticate: []string{
-				"https://cargo.example.com/packages/some-package",
-			},
-		},
-		{
-			name:     "Cargo",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewCargoRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "cargo_registry",
-					"url":                      "https://jfrog.example.com/packages",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for cargo registry: https://jfrog.example.com/packages",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/packages/some-package",
-			},
-		},
-		{
-			name:     "Cargo",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewCargoRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "cargo_registry",
-					"url":          "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for cargo registry: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "Cargo",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewCargoRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "cargo_registry",
-					"url":                        "https://us-central1-cargo.pkg.dev/my-project/my-repo",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for cargo registry: https://us-central1-cargo.pkg.dev/my-project/my-repo",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-cargo.pkg.dev/my-project/my-repo/some-package",
-			},
-		},
-		//
-		// Composer
-		//
-		{
-			name:     "Composer",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewComposerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "composer_repository",
-					"registry":     "https://composer.example.com",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for composer repository: https://composer.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://composer.example.com/some-package",
-			},
-		},
-		{
-			name:     "Composer",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewComposerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "composer_repository",
-					"registry":  "https://composer.example.com",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for composer repository: https://composer.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://composer.example.com/some-package",
-			},
-		},
-		{
-			name:     "Composer",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewComposerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "composer_repository",
-					"registry":                 "https://jfrog.example.com",
-					"url":                      "https://jfrog.example.com",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for composer repository: https://jfrog.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/some-package",
-			},
-		},
-		{
-			name:     "Composer",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewComposerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "composer_repository",
-					"registry":     "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for composer repository: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "Composer",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewComposerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "composer_repository",
-					"registry":                   "https://us-central1-composer.pkg.dev/my-project/my-repo",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for composer repository: https://us-central1-composer.pkg.dev/my-project/my-repo",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-composer.pkg.dev/my-project/my-repo/some-package",
-			},
-		},
+const (
+	testRegion   = "us-east-1"
+	testTenantID = "12345678-1234-1234-1234-123456789012"
+	testClientID = "87654321-4321-4321-4321-210987654321"
+)
 
-		//
-		// Docker
-		//
-		{
-			name:     "Docker",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "docker_registry",
-					"registry":     "https://docker.example.com",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for docker registry: https://docker.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://docker.example.com/some-package",
-			},
-		},
-		{
-			name:     "Docker",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "docker_registry",
-					"registry":  "https://docker.example.com",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for docker registry: https://docker.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://docker.example.com/some-package",
-			},
-		},
-		{
-			name:     "Docker with URL",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "docker_registry",
-					"url":                      "https://jfrog.example.com",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for docker registry: jfrog.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/some-package",
-			},
-		},
-		{
-			name:     "Docker",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "docker_registry",
-					"registry":     "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for docker registry: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "Docker",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "docker_registry",
-					"registry":                   "https://us-central1-docker.pkg.dev",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for docker registry: https://us-central1-docker.pkg.dev",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-docker.pkg.dev/some-package",
-			},
-		},
-		//
-		// Go proxy
-		//
-		{
-			name:     "Go proxy",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewGoProxyServerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "goproxy_server",
-					"url":          "https://goproxy.example.com",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for goproxy server: https://goproxy.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://goproxy.example.com/packages/some-package",
-			},
-		},
-		{
-			name:     "Go proxy with host",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewGoProxyServerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "goproxy_server",
-					"host":      "goproxy.example.com",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for goproxy server: goproxy.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://goproxy.example.com/packages/some-package",
-			},
-		},
-		{
-			name:     "Go proxy",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewGoProxyServerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "goproxy_server",
-					"url":                      "https://jfrog.example.com",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for goproxy server: https://jfrog.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/packages/some-package",
-			},
-		},
-		{
-			name:     "Go proxy",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewGoProxyServerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "goproxy_server",
-					"url":          "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for goproxy server: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "Go proxy",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewGoProxyServerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "goproxy_server",
-					"url":                        "https://us-central1-go.pkg.dev/my-project/my-repo",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for goproxy server: https://us-central1-go.pkg.dev/my-project/my-repo",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-go.pkg.dev/my-project/my-repo/some-package",
-			},
-		},
-		//
-		// Helm
-		//
-		{
-			name:     "Helm registry",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHelmRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "helm_registry",
-					"registry":     "https://helm.example.com",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for helm registry: https://helm.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://helm.example.com/some-package",
-			},
-		},
-		{
-			name:     "Helm registry",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHelmRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "helm_registry",
-					"registry":  "https://helm.example.com",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for helm registry: https://helm.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://helm.example.com/some-package",
-			},
-		},
-		{
-			name:     "Helm registry with url",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHelmRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "helm_registry",
-					"url":                      "https://jfrog.example.com",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for helm registry: jfrog.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/some-package",
-			},
-		},
-		{
-			name:     "Helm registry",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHelmRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "helm_registry",
-					"registry":     "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for helm registry: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "Helm registry",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHelmRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "helm_registry",
-					"registry":                   "https://us-central1-helm.pkg.dev/my-project/my-repo",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for helm registry: https://us-central1-helm.pkg.dev/my-project/my-repo",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-helm.pkg.dev/my-project/my-repo/some-package",
-			},
-		},
-		//
-		// Hex
-		//
-		{
-			name:     "Hex",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHexRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "hex_repository",
-					"url":          "https://hex.example.com",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for hex repository: https://hex.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://hex.example.com/some-package",
-			},
-		},
-		{
-			name:     "Hex",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHexRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "hex_repository",
-					"url":       "https://hex.example.com",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for hex repository: https://hex.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://hex.example.com/some-package",
-			},
-		},
-		{
-			name:     "Hex",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHexRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "hex_repository",
-					"url":                      "https://jfrog.example.com",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for hex repository: https://jfrog.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/some-package",
-			},
-		},
-		{
-			name:     "Hex",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHexRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "hex_repository",
-					"url":          "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for hex repository: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "Hex",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHexRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "hex_repository",
-					"url":                        "https://us-central1-hex.pkg.dev/my-project/my-repo",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for hex repository: https://us-central1-hex.pkg.dev/my-project/my-repo",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-hex.pkg.dev/my-project/my-repo/some-package",
-			},
-		},
-		//
-		// Maven
-		//
-		{
-			name:     "Maven",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewMavenRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "maven_repository",
-					"url":          "https://maven.example.com/packages",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for maven repository: https://maven.example.com/packages",
-			},
-			urlsToAuthenticate: []string{
-				"https://maven.example.com/packages/some-package",
-			},
-		},
-		{
-			name:     "Maven",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewMavenRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "maven_repository",
-					"url":       "https://maven.example.com/packages",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for maven repository: https://maven.example.com/packages",
-			},
-			urlsToAuthenticate: []string{
-				"https://maven.example.com/packages/some-package",
-			},
-		},
-		{
-			name:     "Maven",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewMavenRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "maven_repository",
-					"url":                      "https://jfrog.example.com/packages",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for maven repository: https://jfrog.example.com/packages",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/packages/some-package",
-			},
-		},
-		{
-			name:     "Maven",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewMavenRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "maven_repository",
-					"url":          "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for maven repository: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "Maven",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewMavenRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "maven_repository",
-					"url":                        "https://us-central1-maven.pkg.dev/my-project/my-repo",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for maven repository: https://us-central1-maven.pkg.dev/my-project/my-repo",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-maven.pkg.dev/my-project/my-repo/some-package",
-			},
-		},
-		//
-		// NPM
-		//
-		{
-			name:     "NPM",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNPMRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "npm_registry",
-					"url":          "https://npm.example.com",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for npm registry: https://npm.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://npm.example.com/some-package",
-			},
-		},
-		{
-			name:     "NPM",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNPMRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "npm_registry",
-					"url":       "https://npm.example.com",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for npm registry: https://npm.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://npm.example.com/some-package",
-			},
-		},
-		{
-			name:     "NPM",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNPMRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "npm_registry",
-					"url":                      "https://jfrog.example.com",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for npm registry: https://jfrog.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/some-package",
-			},
-		},
-		{
-			name:     "NPM",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNPMRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "npm_registry",
-					"url":          "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for npm registry: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "NPM",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNPMRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "npm_registry",
-					"url":                        "https://us-central1-npm.pkg.dev/my-project/my-repo",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for npm registry: https://us-central1-npm.pkg.dev/my-project/my-repo",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-npm.pkg.dev/my-project/my-repo/some-package",
-			},
-		},
-		//
-		// NuGet
-		//
-		{
-			name:     "NuGet",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "nuget_feed",
-					"url":          "https://nuget.example.com/index.json",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{
-				{
-					verb:     "GET",
-					url:      "https://nuget.example.com/index.json",
-					response: `{"version":"3.0.0","resources":[{"@id":"https://nuget.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
-				},
-			},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for nuget feed: https://nuget.example.com/index.json",
-				"registered aws OIDC credentials for nuget resource: https://nuget.example.com/v3/packages",
-			},
-			urlsToAuthenticate: []string{
-				"https://nuget.example.com/index.json",                          // base url
-				"https://nuget.example.com/v3/packages/some.package/index.json", // package url
-			},
-		},
-		{
-			name:     "NuGet",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "nuget_feed",
-					"url":       "https://nuget.example.com/index.json",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{
-				{
-					verb:     "GET",
-					url:      "https://nuget.example.com/index.json",
-					response: `{"version":"3.0.0","resources":[{"@id":"https://nuget.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
-				},
-			},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for nuget feed: https://nuget.example.com/index.json",
-				"registered azure OIDC credentials for nuget resource: https://nuget.example.com/v3/packages",
-			},
-			urlsToAuthenticate: []string{
-				"https://nuget.example.com/index.json",                          // base url
-				"https://nuget.example.com/v3/packages/some.package/index.json", // package url
-			},
-		},
-		{
-			name:     "NuGet",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "nuget_feed",
-					"url":                      "https://jfrog.example.com/index.json",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{
-				{
-					verb:     "GET",
-					url:      "https://jfrog.example.com/index.json",
-					response: `{"version":"3.0.0","resources":[{"@id":"https://jfrog.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
-				},
-			},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for nuget feed: https://jfrog.example.com/index.json",
-				"registered jfrog OIDC credentials for nuget resource: https://jfrog.example.com/v3/packages",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/index.json",                          // base url
-				"https://jfrog.example.com/v3/packages/some.package/index.json", // package url
-			},
-		},
-		{
-			name:     "NuGet",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "nuget_feed",
-					"url":          "https://cloudsmith.example.com/v3/index.json",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{
-				{
-					verb:     "GET",
-					url:      "https://cloudsmith.example.com/v3/index.json",
-					response: `{"version":"3.0.0","resources":[{"@id":"https://cloudsmith.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
-				},
-			},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for nuget feed: https://cloudsmith.example.com/v3/index.json",
-				"registered cloudsmith OIDC credentials for nuget resource: https://cloudsmith.example.com/v3/packages",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/v3/index.json",                       // base url
-				"https://cloudsmith.example.com/v3/packages/some.package/index.json", // package url
-			},
-		},
-		{
-			name:     "NuGet",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "nuget_feed",
-					"url":                        "https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{
-				{
-					verb:     "GET",
-					url:      "https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
-					response: `{"version":"3.0.0","resources":[{"@id":"https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
-				},
-			},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for nuget feed: https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
-				"registered gcp OIDC credentials for nuget resource: https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",                          // base url
-				"https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages/some.package/index.json", // package url
-			},
-		},
-		//
-		// Pub
-		//
-		{
-			name:     "Pub",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPubRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "pub_repository",
-					"url":          "https://pub.example.com",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for pub repository: https://pub.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://pub.example.com/some-package",
-			},
-		},
-		{
-			name:     "Pub",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPubRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "pub_repository",
-					"url":       "https://pub.example.com",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for pub repository: https://pub.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://pub.example.com/some-package",
-			},
-		},
-		{
-			name:     "Pub",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPubRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "pub_repository",
-					"url":                      "https://jfrog.example.com",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for pub repository: https://jfrog.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/some-package",
-			},
-		},
-		{
-			name:     "Pub",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPubRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "pub_repository",
-					"url":          "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for pub repository: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "Pub",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPubRepositoryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "pub_repository",
-					"url":                        "https://us-central1-pub.pkg.dev/my-project/my-repo",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for pub repository: https://us-central1-pub.pkg.dev/my-project/my-repo",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-pub.pkg.dev/my-project/my-repo/some-package",
-			},
-		},
-		//
-		// Python
-		//
-		{
-			name:     "Python",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPythonIndexHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "python_index",
-					"url":          "https://python.example.com",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for python index: https://python.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://python.example.com/some-package",
-			},
-		},
-		{
-			name:     "Python",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPythonIndexHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "python_index",
-					"url":       "https://python.example.com",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for python index: https://python.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://python.example.com/some-package",
-			},
-		},
-		{
-			name:     "Python",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPythonIndexHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "python_index",
-					"url":                      "https://jfrog.example.com",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for python index: https://jfrog.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/some-package",
-			},
-		},
-		{
-			name:     "Python",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPythonIndexHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "python_index",
-					"url":          "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for python index: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "Python",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPythonIndexHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "python_index",
-					"index-url":                  "https://us-central1-python.pkg.dev/my-project/my-repo/simple",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for python index: https://us-central1-python.pkg.dev/my-project/my-repo/",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-python.pkg.dev/my-project/my-repo/simple/some-package",
-			},
-		},
-		//
-		// RubyGems
-		//
-		{
-			name:     "RubyGems",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewRubyGemsServerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "rubygems_server",
-					"host":         "https://rubygems.example.com",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for rubygems server: https://rubygems.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://rubygems.example.com/some-package",
-			},
-		},
-		{
-			name:     "RubyGems",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewRubyGemsServerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "rubygems_server",
-					"host":      "https://rubygems.example.com",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for rubygems server: https://rubygems.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://rubygems.example.com/some-package",
-			},
-		},
-		{
-			name:     "RubyGems",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewRubyGemsServerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "rubygems_server",
-					"url":                      "https://jfrog.example.com",
-					"host":                     "https://jfrog.example.com",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for rubygems server: https://jfrog.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/some-package",
-			},
-		},
-		{
-			name:     "RubyGems",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewRubyGemsServerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "rubygems_server",
-					"url":          "https://cloudsmith.example.com",
-					"host":         "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for rubygems server: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "RubyGems",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewRubyGemsServerHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "rubygems_server",
-					"url":                        "https://us-central1-ruby.pkg.dev/my-project/my-repo",
-					"host":                       "https://us-central1-ruby.pkg.dev/my-project/my-repo",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for rubygems server: https://us-central1-ruby.pkg.dev/my-project/my-repo",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-ruby.pkg.dev/my-project/my-repo/some-package",
-			},
-		},
-		//
-		// Terraform
-		//
-		{
-			name:     "Terraform",
-			provider: "aws",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewTerraformRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "terraform_registry",
-					"url":          "https://terraform.example.com",
-					"aws-region":   testRegion,
-					"account-id":   "123456789012",
-					"role-name":    "MyRole",
-					"domain":       "my-domain",
-					"domain-owner": "9876543210",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered aws OIDC credentials for terraform registry: https://terraform.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://terraform.example.com/some-package",
-			},
-		},
-		{
-			name:     "Terraform with host",
-			provider: "azure",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewTerraformRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":      "terraform_registry",
-					"host":      "https://terraform.example.com",
-					"tenant-id": testTenantId,
-					"client-id": testClientId,
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered azure OIDC credentials for terraform registry: https://terraform.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://terraform.example.com/some-package",
-			},
-		},
-		{
-			name:     "Terraform",
-			provider: "jfrog",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewTerraformRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                     "terraform_registry",
-					"url":                      "https://jfrog.example.com",
-					"jfrog-oidc-provider-name": "proxy-test",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for terraform registry: https://jfrog.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/some-package",
-			},
-		},
-		{
-			name:     "Terraform",
-			provider: "cloudsmith",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewTerraformRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":         "terraform_registry",
-					"url":          "https://cloudsmith.example.com",
-					"namespace":    "space",
-					"service-slug": "repo",
-					"audience":     "my-audience",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered cloudsmith OIDC credentials for terraform registry: https://cloudsmith.example.com",
-			},
-			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
-			},
-		},
-		{
-			name:     "Terraform",
-			provider: "gcp",
-			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewTerraformRegistryHandler(creds)
-			},
-			credentials: config.Credentials{
-				config.Credential{
-					"type":                       "terraform_registry",
-					"url":                        "https://us-central1-terraform.pkg.dev/my-project/my-repo",
-					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
-				},
-			},
-			urlMocks: []mockHttpRequest{},
-			expectedLogLines: []string{
-				"registered gcp OIDC credentials for terraform registry: https://us-central1-terraform.pkg.dev/my-project/my-repo",
-			},
-			urlsToAuthenticate: []string{
-				"https://us-central1-terraform.pkg.dev/my-project/my-repo/some-package",
-			},
-		},
+// oidcProviderFields returns the OIDC-specific credential fields for each provider.
+// These are identical across all ecosystems — only the URL/registry/host fields vary.
+func oidcProviderFields(provider string) map[string]string {
+	switch provider {
+	case "aws":
+		return map[string]string{
+			"aws-region":   testRegion,
+			"account-id":   "123456789012",
+			"role-name":    "MyRole",
+			"domain":       "my-domain",
+			"domain-owner": "9876543210",
+		}
+	case "azure":
+		return map[string]string{
+			"tenant-id": testTenantID,
+			"client-id": testClientID,
+		}
+	case "jfrog":
+		return map[string]string{
+			"jfrog-oidc-provider-name": "proxy-test",
+		}
+	case "cloudsmith":
+		return map[string]string{
+			"namespace":    "space",
+			"service-slug": "repo",
+			"audience":     "my-audience",
+		}
+	case "gcp":
+		return map[string]string{
+			"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+		}
+	default:
+		panic("unknown provider: " + provider)
 	}
+}
+
+// providerVariant defines what varies for each OIDC provider within an ecosystem.
+type providerVariant struct {
+	provider   string
+	testName   string            // optional override for the test name (e.g., "Docker with URL")
+	credFields map[string]string // ecosystem-specific fields (type + URL key)
+	// If nil, generated as "registered {provider} OIDC credentials for {logLabel}: {first URL value}"
+	expectedLogLines []string
+	// If nil, generated as first URL value + "/some-package"
+	urlsToAuthenticate []string
+	urlMocks           []mockHttpRequest
+}
+
+// oidcTestCase is the same struct used by the test runner.
+type oidcTestCase struct {
+	name               string
+	provider           string
+	handlerFactory     func(creds config.Credentials) oidcHandler
+	credentials        config.Credentials
+	urlMocks           []mockHttpRequest
+	expectedLogLines   []string
+	urlsToAuthenticate []string
+}
+
+// buildEcosystemCases generates test cases for an ecosystem across all providers.
+func buildEcosystemCases(
+	defaultName string,
+	factory func(config.Credentials) oidcHandler,
+	logLabel string,
+	variants []providerVariant,
+) []oidcTestCase {
+	cases := make([]oidcTestCase, 0, len(variants))
+	for _, v := range variants {
+		// Build credential by merging ecosystem fields + provider fields
+		cred := config.Credential{}
+		for k, val := range v.credFields {
+			cred[k] = val
+		}
+		for k, val := range oidcProviderFields(v.provider) {
+			cred[k] = val
+		}
+
+		name := defaultName
+		if v.testName != "" {
+			name = v.testName
+		}
+
+		// Derive expected log lines if not explicit
+		logLines := v.expectedLogLines
+		if logLines == nil {
+			// Find the first URL-like value from credFields (skip "type")
+			target := firstURLValue(v.credFields)
+			logLines = []string{
+				fmt.Sprintf("registered %s OIDC credentials for %s: %s", v.provider, logLabel, target),
+			}
+		}
+
+		// Derive auth URLs if not explicit
+		authURLs := v.urlsToAuthenticate
+		if authURLs == nil {
+			target := firstURLValue(v.credFields)
+			authURLs = []string{target + "/some-package"}
+		}
+
+		cases = append(cases, oidcTestCase{
+			name:               name,
+			provider:           v.provider,
+			handlerFactory:     factory,
+			credentials:        config.Credentials{cred},
+			urlMocks:           v.urlMocks,
+			expectedLogLines:   logLines,
+			urlsToAuthenticate: authURLs,
+		})
+	}
+	return cases
+}
+
+// firstURLValue returns the first URL-like credential field value (skips "type").
+func firstURLValue(fields map[string]string) string {
+	// Check common URL keys in priority order
+	for _, key := range []string{"url", "registry", "host", "index-url"} {
+		if v, ok := fields[key]; ok {
+			return v
+		}
+	}
+	return ""
+}
+
+func TestOIDCURLsAreAuthenticated(t *testing.T) {
+	var testCases []oidcTestCase
+
+	// Cargo
+	testCases = append(testCases, buildEcosystemCases("Cargo",
+		func(creds config.Credentials) oidcHandler { return NewCargoRegistryHandler(creds) },
+		"cargo registry",
+		[]providerVariant{
+			{provider: "aws", credFields: map[string]string{"type": "cargo_registry", "url": "https://cargo.example.com/packages"}},
+			{provider: "azure", credFields: map[string]string{"type": "cargo_registry", "url": "https://cargo.example.com/packages"}},
+			{provider: "jfrog", credFields: map[string]string{"type": "cargo_registry", "url": "https://jfrog.example.com/packages"}},
+			{provider: "cloudsmith", credFields: map[string]string{"type": "cargo_registry", "url": "https://cloudsmith.example.com"}},
+			{provider: "gcp", credFields: map[string]string{"type": "cargo_registry", "url": "https://us-central1-cargo.pkg.dev/my-project/my-repo"}},
+		},
+	)...)
+
+	// Composer
+	testCases = append(testCases, buildEcosystemCases("Composer",
+		func(creds config.Credentials) oidcHandler { return NewComposerHandler(creds) },
+		"composer repository",
+		[]providerVariant{
+			{provider: "aws", credFields: map[string]string{"type": "composer_repository", "registry": "https://composer.example.com"}},
+			{provider: "azure", credFields: map[string]string{"type": "composer_repository", "registry": "https://composer.example.com"}},
+			{provider: "jfrog", credFields: map[string]string{"type": "composer_repository", "registry": "https://jfrog.example.com", "url": "https://jfrog.example.com"}},
+			{provider: "cloudsmith", credFields: map[string]string{"type": "composer_repository", "registry": "https://cloudsmith.example.com"}},
+			{provider: "gcp", credFields: map[string]string{"type": "composer_repository", "registry": "https://us-central1-composer.pkg.dev/my-project/my-repo"}},
+		},
+	)...)
+
+	// Docker
+	dockerFactory := func(creds config.Credentials) oidcHandler {
+		return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
+	}
+	testCases = append(testCases, buildEcosystemCases("Docker",
+		dockerFactory, "docker registry",
+		[]providerVariant{
+			{provider: "aws", credFields: map[string]string{"type": "docker_registry", "registry": "https://docker.example.com"}},
+			{provider: "azure", credFields: map[string]string{"type": "docker_registry", "registry": "https://docker.example.com"}},
+			{
+				provider:         "jfrog",
+				testName:         "Docker with URL",
+				credFields:       map[string]string{"type": "docker_registry", "url": "https://jfrog.example.com"},
+				expectedLogLines: []string{"registered jfrog OIDC credentials for docker registry: jfrog.example.com"},
+			},
+			{provider: "cloudsmith", credFields: map[string]string{"type": "docker_registry", "registry": "https://cloudsmith.example.com"}},
+			{provider: "gcp", credFields: map[string]string{"type": "docker_registry", "registry": "https://us-central1-docker.pkg.dev"}},
+		},
+	)...)
+
+	// Go proxy
+	testCases = append(testCases, buildEcosystemCases("Go proxy",
+		func(creds config.Credentials) oidcHandler { return NewGoProxyServerHandler(creds) },
+		"goproxy server",
+		[]providerVariant{
+			{
+				provider:           "aws",
+				credFields:         map[string]string{"type": "goproxy_server", "url": "https://goproxy.example.com"},
+				urlsToAuthenticate: []string{"https://goproxy.example.com/packages/some-package"},
+			},
+			{
+				provider:           "azure",
+				testName:           "Go proxy with host",
+				credFields:         map[string]string{"type": "goproxy_server", "host": "goproxy.example.com"},
+				expectedLogLines:   []string{"registered azure OIDC credentials for goproxy server: goproxy.example.com"},
+				urlsToAuthenticate: []string{"https://goproxy.example.com/packages/some-package"},
+			},
+			{
+				provider:           "jfrog",
+				credFields:         map[string]string{"type": "goproxy_server", "url": "https://jfrog.example.com"},
+				urlsToAuthenticate: []string{"https://jfrog.example.com/packages/some-package"},
+			},
+			{
+				provider:           "cloudsmith",
+				credFields:         map[string]string{"type": "goproxy_server", "url": "https://cloudsmith.example.com"},
+				urlsToAuthenticate: []string{"https://cloudsmith.example.com/some-package"},
+			},
+			{
+				provider:           "gcp",
+				credFields:         map[string]string{"type": "goproxy_server", "url": "https://us-central1-go.pkg.dev/my-project/my-repo"},
+				urlsToAuthenticate: []string{"https://us-central1-go.pkg.dev/my-project/my-repo/some-package"},
+			},
+		},
+	)...)
+
+	// Helm registry
+	testCases = append(testCases, buildEcosystemCases("Helm registry",
+		func(creds config.Credentials) oidcHandler { return NewHelmRegistryHandler(creds) },
+		"helm registry",
+		[]providerVariant{
+			{provider: "aws", credFields: map[string]string{"type": "helm_registry", "registry": "https://helm.example.com"}},
+			{provider: "azure", credFields: map[string]string{"type": "helm_registry", "registry": "https://helm.example.com"}},
+			{
+				provider:         "jfrog",
+				testName:         "Helm registry with url",
+				credFields:       map[string]string{"type": "helm_registry", "url": "https://jfrog.example.com"},
+				expectedLogLines: []string{"registered jfrog OIDC credentials for helm registry: jfrog.example.com"},
+			},
+			{provider: "cloudsmith", credFields: map[string]string{"type": "helm_registry", "registry": "https://cloudsmith.example.com"}},
+			{provider: "gcp", credFields: map[string]string{"type": "helm_registry", "registry": "https://us-central1-helm.pkg.dev/my-project/my-repo"}},
+		},
+	)...)
+
+	// Hex
+	testCases = append(testCases, buildEcosystemCases("Hex",
+		func(creds config.Credentials) oidcHandler { return NewHexRepositoryHandler(creds) },
+		"hex repository",
+		[]providerVariant{
+			{provider: "aws", credFields: map[string]string{"type": "hex_repository", "url": "https://hex.example.com"}},
+			{provider: "azure", credFields: map[string]string{"type": "hex_repository", "url": "https://hex.example.com"}},
+			{provider: "jfrog", credFields: map[string]string{"type": "hex_repository", "url": "https://jfrog.example.com"}},
+			{provider: "cloudsmith", credFields: map[string]string{"type": "hex_repository", "url": "https://cloudsmith.example.com"}},
+			{provider: "gcp", credFields: map[string]string{"type": "hex_repository", "url": "https://us-central1-hex.pkg.dev/my-project/my-repo"}},
+		},
+	)...)
+
+	// Maven
+	testCases = append(testCases, buildEcosystemCases("Maven",
+		func(creds config.Credentials) oidcHandler { return NewMavenRepositoryHandler(creds) },
+		"maven repository",
+		[]providerVariant{
+			{provider: "aws", credFields: map[string]string{"type": "maven_repository", "url": "https://maven.example.com/packages"}},
+			{provider: "azure", credFields: map[string]string{"type": "maven_repository", "url": "https://maven.example.com/packages"}},
+			{provider: "jfrog", credFields: map[string]string{"type": "maven_repository", "url": "https://jfrog.example.com/packages"}},
+			{provider: "cloudsmith", credFields: map[string]string{"type": "maven_repository", "url": "https://cloudsmith.example.com"}},
+			{provider: "gcp", credFields: map[string]string{"type": "maven_repository", "url": "https://us-central1-maven.pkg.dev/my-project/my-repo"}},
+		},
+	)...)
+
+	// NPM
+	testCases = append(testCases, buildEcosystemCases("NPM",
+		func(creds config.Credentials) oidcHandler { return NewNPMRegistryHandler(creds) },
+		"npm registry",
+		[]providerVariant{
+			{provider: "aws", credFields: map[string]string{"type": "npm_registry", "url": "https://npm.example.com"}},
+			{provider: "azure", credFields: map[string]string{"type": "npm_registry", "url": "https://npm.example.com"}},
+			{provider: "jfrog", credFields: map[string]string{"type": "npm_registry", "url": "https://jfrog.example.com"}},
+			{provider: "cloudsmith", credFields: map[string]string{"type": "npm_registry", "url": "https://cloudsmith.example.com"}},
+			{provider: "gcp", credFields: map[string]string{"type": "npm_registry", "url": "https://us-central1-npm.pkg.dev/my-project/my-repo"}},
+		},
+	)...)
+
+	// NuGet — has URL mocks for service index discovery and extra log/auth URLs
+	nugetFactory := func(creds config.Credentials) oidcHandler { return NewNugetFeedHandler(creds) }
+	nugetMock := func(baseURL, resourceURL string) []mockHttpRequest {
+		return []mockHttpRequest{{
+			verb:     "GET",
+			url:      baseURL,
+			response: fmt.Sprintf(`{"version":"3.0.0","resources":[{"@id":"%s","@type":"PackageBaseAddress/3.0.0"}]}`, resourceURL),
+		}}
+	}
+	nugetVariant := func(provider, baseURL, resourceURL string) providerVariant {
+		return providerVariant{
+			provider:   provider,
+			credFields: map[string]string{"type": "nuget_feed", "url": baseURL},
+			urlMocks:   nugetMock(baseURL, resourceURL),
+			expectedLogLines: []string{
+				fmt.Sprintf("registered %s OIDC credentials for nuget feed: %s", provider, baseURL),
+				fmt.Sprintf("registered %s OIDC credentials for nuget resource: %s", provider, resourceURL),
+			},
+			urlsToAuthenticate: []string{
+				baseURL,
+				resourceURL + "/some.package/index.json",
+			},
+		}
+	}
+	testCases = append(testCases, buildEcosystemCases("NuGet", nugetFactory, "nuget feed",
+		[]providerVariant{
+			nugetVariant("aws", "https://nuget.example.com/index.json", "https://nuget.example.com/v3/packages"),
+			nugetVariant("azure", "https://nuget.example.com/index.json", "https://nuget.example.com/v3/packages"),
+			nugetVariant("jfrog", "https://jfrog.example.com/index.json", "https://jfrog.example.com/v3/packages"),
+			nugetVariant("cloudsmith", "https://cloudsmith.example.com/v3/index.json", "https://cloudsmith.example.com/v3/packages"),
+			nugetVariant("gcp", "https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json", "https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages"),
+		},
+	)...)
+
+	// Pub
+	testCases = append(testCases, buildEcosystemCases("Pub",
+		func(creds config.Credentials) oidcHandler { return NewPubRepositoryHandler(creds) },
+		"pub repository",
+		[]providerVariant{
+			{provider: "aws", credFields: map[string]string{"type": "pub_repository", "url": "https://pub.example.com"}},
+			{provider: "azure", credFields: map[string]string{"type": "pub_repository", "url": "https://pub.example.com"}},
+			{provider: "jfrog", credFields: map[string]string{"type": "pub_repository", "url": "https://jfrog.example.com"}},
+			{provider: "cloudsmith", credFields: map[string]string{"type": "pub_repository", "url": "https://cloudsmith.example.com"}},
+			{provider: "gcp", credFields: map[string]string{"type": "pub_repository", "url": "https://us-central1-pub.pkg.dev/my-project/my-repo"}},
+		},
+	)...)
+
+	// Python — GCP uses index-url with /simple suffix stripping for log target
+	testCases = append(testCases, buildEcosystemCases("Python",
+		func(creds config.Credentials) oidcHandler { return NewPythonIndexHandler(creds) },
+		"python index",
+		[]providerVariant{
+			{provider: "aws", credFields: map[string]string{"type": "python_index", "url": "https://python.example.com"}},
+			{provider: "azure", credFields: map[string]string{"type": "python_index", "url": "https://python.example.com"}},
+			{provider: "jfrog", credFields: map[string]string{"type": "python_index", "url": "https://jfrog.example.com"}},
+			{provider: "cloudsmith", credFields: map[string]string{"type": "python_index", "url": "https://cloudsmith.example.com"}},
+			{
+				provider:   "gcp",
+				credFields: map[string]string{"type": "python_index", "index-url": "https://us-central1-python.pkg.dev/my-project/my-repo/simple"},
+				expectedLogLines: []string{
+					"registered gcp OIDC credentials for python index: https://us-central1-python.pkg.dev/my-project/my-repo/",
+				},
+				urlsToAuthenticate: []string{
+					"https://us-central1-python.pkg.dev/my-project/my-repo/simple/some-package",
+				},
+			},
+		},
+	)...)
+
+	// RubyGems — uses "host" as primary URL key; jfrog/cloudsmith/gcp also set "url"
+	testCases = append(testCases, buildEcosystemCases("RubyGems",
+		func(creds config.Credentials) oidcHandler { return NewRubyGemsServerHandler(creds) },
+		"rubygems server",
+		[]providerVariant{
+			{provider: "aws", credFields: map[string]string{"type": "rubygems_server", "host": "https://rubygems.example.com"}},
+			{provider: "azure", credFields: map[string]string{"type": "rubygems_server", "host": "https://rubygems.example.com"}},
+			{provider: "jfrog", credFields: map[string]string{"type": "rubygems_server", "url": "https://jfrog.example.com", "host": "https://jfrog.example.com"}},
+			{provider: "cloudsmith", credFields: map[string]string{"type": "rubygems_server", "url": "https://cloudsmith.example.com", "host": "https://cloudsmith.example.com"}},
+			{provider: "gcp", credFields: map[string]string{"type": "rubygems_server", "url": "https://us-central1-ruby.pkg.dev/my-project/my-repo", "host": "https://us-central1-ruby.pkg.dev/my-project/my-repo"}},
+		},
+	)...)
+
+	// Terraform — azure uses "host" instead of "url"
+	testCases = append(testCases, buildEcosystemCases("Terraform",
+		func(creds config.Credentials) oidcHandler { return NewTerraformRegistryHandler(creds) },
+		"terraform registry",
+		[]providerVariant{
+			{provider: "aws", credFields: map[string]string{"type": "terraform_registry", "url": "https://terraform.example.com"}},
+			{
+				provider:           "azure",
+				testName:           "Terraform with host",
+				credFields:         map[string]string{"type": "terraform_registry", "host": "https://terraform.example.com"},
+				expectedLogLines:   []string{"registered azure OIDC credentials for terraform registry: https://terraform.example.com"},
+				urlsToAuthenticate: []string{"https://terraform.example.com/some-package"},
+			},
+			{provider: "jfrog", credFields: map[string]string{"type": "terraform_registry", "url": "https://jfrog.example.com"}},
+			{provider: "cloudsmith", credFields: map[string]string{"type": "terraform_registry", "url": "https://cloudsmith.example.com"}},
+			{provider: "gcp", credFields: map[string]string{"type": "terraform_registry", "url": "https://us-central1-terraform.pkg.dev/my-project/my-repo"}},
+		},
+	)...)
+
+	// Run all test cases
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%s - %s", tc.name, tc.provider), func(t *testing.T) {
 			httpmock.Activate()
@@ -1595,57 +413,56 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			tokenUrl := "https://token.actions.example.com" //nolint:gosec // test URL
 			httpmock.RegisterResponder("GET", tokenUrl,
 				httpmock.NewStringResponder(200, `{
-				"count": 1,
-				"value": "sometoken"
-			}`))
+"count": 1,
+"value": "sometoken"
+}`))
 
-			// mock provider URLs
+			// mock provider token exchange endpoints
 			switch tc.provider {
 			case "aws":
-				// mock AWS OIDC token request
 				httpmock.RegisterResponder("POST", "https://sts.amazonaws.com",
 					httpmock.NewStringResponder(200, `<?xml version="1.0" encoding="UTF-8"?>
-					<AssumeRoleWithWebIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
-					  <AssumeRoleWithWebIdentityResult>
-					    <Credentials>
-					      <AccessKeyId>ASIA_TEST_ACCESS_KEY</AccessKeyId>
-					      <SecretAccessKey>TEST_SECRET_ACCESS_KEY</SecretAccessKey>
-					      <SessionToken>TEST_SESSION_TOKEN</SessionToken>
-					      <Expiration>2024-12-31T23:59:59Z</Expiration>
-					    </Credentials>
-					  </AssumeRoleWithWebIdentityResult>
-					</AssumeRoleWithWebIdentityResponse>`))
+<AssumeRoleWithWebIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+  <AssumeRoleWithWebIdentityResult>
+    <Credentials>
+      <AccessKeyId>ASIA_TEST_ACCESS_KEY</AccessKeyId>
+      <SecretAccessKey>TEST_SECRET_ACCESS_KEY</SecretAccessKey>
+      <SessionToken>TEST_SESSION_TOKEN</SessionToken>
+      <Expiration>2024-12-31T23:59:59Z</Expiration>
+    </Credentials>
+  </AssumeRoleWithWebIdentityResult>
+</AssumeRoleWithWebIdentityResponse>`))
 				httpmock.RegisterResponder("POST", "https://codeartifact."+testRegion+".amazonaws.com/v1/authorization-token",
 					httpmock.NewStringResponder(200, `{
-					  "authorizationToken": "__test_token__",
-					  "expiration": 1E5
-					}`))
+  "authorizationToken": "__test_token__",
+  "expiration": 1E5
+}`))
 			case "azure":
-				// mock Azure OIDC token request
-				httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", testTenantId), httpmock.NewStringResponder(200, `{
-					"access_token": "__test_token__",
-					"expires_in": 3600,
-					"token_type": "Bearer"
-				}`))
+				httpmock.RegisterResponder("POST",
+					fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", testTenantID),
+					httpmock.NewStringResponder(200, `{
+"access_token": "__test_token__",
+"expires_in": 3600,
+"token_type": "Bearer"
+}`))
 			case "jfrog":
-				// mock JFrog OIDC token request
 				httpmock.RegisterResponder("POST", "https://jfrog.example.com/access/api/v1/oidc/token", httpmock.NewStringResponder(200, `{
-					"access_token": "__test_token__",
-					"expires_in": 3600
-				}`))
+"access_token": "__test_token__",
+"expires_in": 3600
+}`))
 			case "cloudsmith":
-				namespace := tc.credentials[0]["namespace"]
+				namespace := tc.credentials[0].GetString("namespace")
 				httpmock.RegisterResponder("POST", fmt.Sprintf("https://api.cloudsmith.io/openid/%s/", namespace),
 					httpmock.NewStringResponder(200, `{
-						"token": "__test_token__"
-				}`))
+"token": "__test_token__"
+}`))
 			case "gcp":
 				httpmock.RegisterResponder("POST", "https://sts.googleapis.com/v1/token",
 					httpmock.NewStringResponder(200, `{
-						"access_token": "__test_token__",
-						"expires_in": 3600,
-						"token_type": "urn:ietf:params:oauth:token-type:access_token"
-				}`))
+"access_token": "__test_token__",
+"expires_in": 3600,
+"token_type": "urn:ietf:params:oauth:token-type:access_token"
+}`))
 			default:
 				t.Fatal("unsupported provider in test case: " + tc.provider)
 			}
