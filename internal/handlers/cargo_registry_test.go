@@ -124,9 +124,9 @@ func TestCargoRegistryHandlerConfigJsonResponse(t *testing.T) {
 		checkModified func(t *testing.T, body []byte)
 	}{
 		{
-			name:         "config.json with auth-required should be removed",
-			requestPath:  "/index/te/st/config.json",
-			responseBody: map[string]interface{}{"auth-required": true, "dl": "https://example.com/download"},
+			name:          "config.json with auth-required should be removed",
+			requestPath:   "/index/te/st/config.json",
+			responseBody:  map[string]interface{}{"auth-required": true, "dl": "https://example.com/download"},
 			expectRewrite: true,
 			checkModified: func(t *testing.T, body []byte) {
 				var result map[string]interface{}
@@ -142,9 +142,9 @@ func TestCargoRegistryHandlerConfigJsonResponse(t *testing.T) {
 			},
 		},
 		{
-			name:         "config.json without auth-required should not be modified",
-			requestPath:  "/index/te/st/config.json",
-			responseBody: map[string]interface{}{"dl": "https://example.com/download"},
+			name:          "config.json without auth-required should not be modified",
+			requestPath:   "/index/te/st/config.json",
+			responseBody:  map[string]interface{}{"dl": "https://example.com/download"},
 			expectRewrite: false,
 			checkModified: func(t *testing.T, body []byte) {},
 		},
