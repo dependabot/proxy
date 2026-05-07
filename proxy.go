@@ -123,6 +123,7 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 
 	cargoRegistryHandler := handlers.NewCargoRegistryHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(cargoRegistryHandler.HandleRequest)
+	proxy.OnResponse().DoFunc(cargoRegistryHandler.HandleResponse)
 
 	goProxyServerHandler := handlers.NewGoProxyServerHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(goProxyServerHandler.HandleRequest)

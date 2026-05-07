@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/elazarl/goproxy"
 	"github.com/sirupsen/logrus"
@@ -33,6 +37,16 @@ import (
 // In that case, the supplied token value should be `Bearer <token>`. This would match how cargo stores the
 // credentials locally in this example:
 // https://jfrog.com/help/r/artifactory-how-to-integrate-artifactory-with-cargo-using-sparse-indexing/client-configuration
+//
+// Response Rewriting:
+// When a registry responds with a config.json file containing the "auth-required" property,
+// this handler removes that property before returning the response to the client (cargo command
+// in the Dependabot updater container). This is necessary because the proxy is responsible for
+// injecting authentication credentials into the request via the Authorization header. When cargo
+// sees "auth-required": true, it expects to need authentication but no credentials are available
+// in its configuration, causing it to error with "authenticated registries require a
+// credential-provider to be configured". By removing this property, cargo treats the response as
+// coming from an unauthenticated registry.
 type CargoRegistryHandler struct {
 	credentials  []cargoRepositoryCredentials
 	oidcRegistry *oidc.OIDCRegistry
@@ -107,4 +121,57 @@ func (h *CargoRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 	}
 
 	return req, nil
+}
+
+// HandleResponse rewrites the response if it's a config.json file with auth-required property
+func (h *CargoRegistryHandler) HandleResponse(rsp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+	if rsp == nil || ctx == nil || ctx.Req == nil {
+		return rsp
+	}
+
+	// Check if the request path ends with config.json
+	requestPath := ctx.Req.URL.Path
+	if !strings.HasSuffix(requestPath, "config.json") {
+		return rsp
+	}
+
+	// Read the response body
+	body, err := io.ReadAll(rsp.Body)
+	if err != nil {
+		logging.RequestLogf(ctx, "* error reading cargo registry response body: %v", err)
+		return rsp
+	}
+
+	// Try to parse as JSON
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		logging.RequestLogf(ctx, "* cargo registry config.json response is not valid JSON, leaving unchanged")
+		rsp.Body = io.NopCloser(bytes.NewReader(body))
+		return rsp
+	}
+
+	// Check if auth-required property exists
+	if _, hasAuthRequired := payload["auth-required"]; !hasAuthRequired {
+		rsp.Body = io.NopCloser(bytes.NewReader(body))
+		return rsp
+	}
+
+	// Remove auth-required property
+	delete(payload, "auth-required")
+	logging.RequestLogf(ctx, "* removing auth-required property from cargo registry config.json")
+
+	// Serialize the modified JSON
+	modifiedBody, err := json.Marshal(payload)
+	if err != nil {
+		logging.RequestLogf(ctx, "* error serializing modified cargo registry response: %v", err)
+		rsp.Body = io.NopCloser(bytes.NewReader(body))
+		return rsp
+	}
+
+	// Create a new response with the modified body
+	rsp.Body = io.NopCloser(bytes.NewReader(modifiedBody))
+	rsp.ContentLength = int64(len(modifiedBody))
+	rsp.Header.Set("Content-Length", string(rune(len(modifiedBody))))
+
+	return rsp
 }
