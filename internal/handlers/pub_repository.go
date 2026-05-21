@@ -25,10 +25,10 @@ type pubRepositoryCredentials struct {
 	token string
 }
 
-func NewPubRepositoryHandler(credentials config.Credentials) *PubRepositoryHandler {
+func NewPubRepositoryHandler(credentials config.Credentials, transport http.RoundTripper) *PubRepositoryHandler {
 	handler := PubRepositoryHandler{
 		credentials:  []pubRepositoryCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(transport),
 	}
 
 	for _, credential := range credentials {
@@ -45,7 +45,7 @@ func NewPubRepositoryHandler(credentials config.Credentials) *PubRepositoryHandl
 			if oidcCred, _, _ := handler.oidcRegistry.Register(credential, []string{"url"}, "pub repository"); oidcCred != nil {
 				continue
 			}
-		} else if oidcCred, _ := oidc.CreateOIDCCredential(credential); oidcCred != nil {
+		} else if oidcCred, _ := oidc.CreateOIDCCredential(credential, transport); oidcCred != nil {
 			continue
 		}
 

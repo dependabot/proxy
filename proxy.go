@@ -88,46 +88,46 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 	proxy.OnRequest().DoFunc(gitServerHandler.HandleRequest)
 	proxy.OnResponse().DoFunc(gitServerHandler.HandleResponse)
 
-	npmRegistryHandler := handlers.NewNPMRegistryHandler(cfg.Credentials)
+	npmRegistryHandler := handlers.NewNPMRegistryHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(npmRegistryHandler.HandleRequest)
 
 	hexOrganizationHandler := handlers.NewHexOrganizationHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(hexOrganizationHandler.HandleRequest)
 
-	hexRepositoryHandler := handlers.NewHexRepositoryHandler(cfg.Credentials)
+	hexRepositoryHandler := handlers.NewHexRepositoryHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(hexRepositoryHandler.HandleRequest)
 
-	pythonHandler := handlers.NewPythonIndexHandler(cfg.Credentials)
+	pythonHandler := handlers.NewPythonIndexHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(pythonHandler.HandleRequest)
 
-	composerHandler := handlers.NewComposerHandler(cfg.Credentials)
+	composerHandler := handlers.NewComposerHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(composerHandler.HandleRequest)
 
 	dockerRegistryHandler := handlers.NewDockerRegistryHandler(cfg.Credentials, transport, nil)
 	proxy.OnRequest().DoFunc(dockerRegistryHandler.HandleRequest)
 
-	rubyGemsServerHandler := handlers.NewRubyGemsServerHandler(cfg.Credentials)
+	rubyGemsServerHandler := handlers.NewRubyGemsServerHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(rubyGemsServerHandler.HandleRequest)
 
 	nugetFeedHandler := handlers.NewNugetFeedHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(nugetFeedHandler.HandleRequest)
 
-	mavenRepositoryHandler := handlers.NewMavenRepositoryHandler(cfg.Credentials)
+	mavenRepositoryHandler := handlers.NewMavenRepositoryHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(mavenRepositoryHandler.HandleRequest)
 
-	terraformRegistryHandler := handlers.NewTerraformRegistryHandler(cfg.Credentials)
+	terraformRegistryHandler := handlers.NewTerraformRegistryHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(terraformRegistryHandler.HandleRequest)
 
-	pubRepositoryHandler := handlers.NewPubRepositoryHandler(cfg.Credentials)
+	pubRepositoryHandler := handlers.NewPubRepositoryHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(pubRepositoryHandler.HandleRequest)
 
-	cargoRegistryHandler := handlers.NewCargoRegistryHandler(cfg.Credentials)
+	cargoRegistryHandler := handlers.NewCargoRegistryHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(cargoRegistryHandler.HandleRequest)
 
-	goProxyServerHandler := handlers.NewGoProxyServerHandler(cfg.Credentials)
+	goProxyServerHandler := handlers.NewGoProxyServerHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(goProxyServerHandler.HandleRequest)
 
-	helmRegistryHandler := handlers.NewHelmRegistryHandler(cfg.Credentials)
+	helmRegistryHandler := handlers.NewHelmRegistryHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(helmRegistryHandler.HandleRequest)
 
 	proxy.OnResponse().DoFunc(cacher.OnResponse)

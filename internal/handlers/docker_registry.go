@@ -40,7 +40,7 @@ func NewDockerRegistryHandler(creds config.Credentials, transport http.RoundTrip
 	handler := DockerRegistryHandler{
 		credentials:  []*dockerRegistryCredentials{},
 		transport:    transport,
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(transport),
 	}
 
 	if getECRClient == nil {

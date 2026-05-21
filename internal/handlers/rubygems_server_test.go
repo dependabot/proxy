@@ -37,7 +37,7 @@ func TestRubyGemsServerHandler(t *testing.T) {
 			"token": fmt.Sprintf("%s:%s", pathUser, pathPassword),
 		},
 	}
-	handler := NewRubyGemsServerHandler(credentials)
+	handler := NewRubyGemsServerHandler(credentials, nil)
 
 	req := httptest.NewRequest("GET", "https://corp.dependabot.com/gems", nil)
 	req = handleRequestAndClose(handler, req, nil)

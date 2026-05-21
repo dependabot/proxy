@@ -458,7 +458,7 @@ func TestGetAzureAccessToken(t *testing.T) {
 				TenantID: tt.tenantID,
 				ClientID: tt.clientID,
 			}
-			azureToken, err = GetAzureAccessToken(ctx, params, tt.githubToken)
+			azureToken, err = GetAzureAccessToken(ctx, params, tt.githubToken, http.DefaultClient)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -633,7 +633,7 @@ func TestGetJFrogAccessToken(t *testing.T) {
 				Audience:            tt.audience,
 				IdentityMappingName: tt.identityMappingName,
 			}
-			jfrogToken, err = GetJFrogAccessToken(ctx, params, tt.githubToken)
+			jfrogToken, err = GetJFrogAccessToken(ctx, params, tt.githubToken, http.DefaultClient)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -822,7 +822,7 @@ func TestGetAWSAccessToken(t *testing.T) {
 				Domain:      tt.domain,
 				DomainOwner: tt.domainOwner,
 			}
-			awsToken, err = GetAWSAccessToken(ctx, params, tt.githubToken)
+			awsToken, err = GetAWSAccessToken(ctx, params, tt.githubToken, http.DefaultClient)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -1001,7 +1001,7 @@ func TestGetCloudsmithAccessToken(t *testing.T) {
 				}))
 			}
 
-			cloudsmithToken, err = GetCloudsmithAccessToken(ctx, tt.params, tt.githubToken)
+			cloudsmithToken, err = GetCloudsmithAccessToken(ctx, tt.params, tt.githubToken, http.DefaultClient)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -1319,7 +1319,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 					}))
 			}
 
-			gcpToken, err := GetGCPAccessToken(ctx, tt.params, tt.githubToken)
+			gcpToken, err := GetGCPAccessToken(ctx, tt.params, tt.githubToken, http.DefaultClient)
 
 			if tt.expectError {
 				require.Error(t, err)

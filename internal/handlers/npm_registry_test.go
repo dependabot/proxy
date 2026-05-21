@@ -41,7 +41,7 @@ func TestNPMRegistryHandler(t *testing.T) {
 			"token": privateRegToken,
 		},
 	}
-	handler := NewNPMRegistryHandler(credentials)
+	handler := NewNPMRegistryHandler(credentials, nil)
 
 	req := httptest.NewRequest("GET", "https://registry.npmjs.org/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)

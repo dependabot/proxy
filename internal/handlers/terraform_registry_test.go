@@ -58,7 +58,7 @@ func TestTerraformRegistryHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(strings.Join([]string{tt.registryType, tt.host, tt.token}, " "), func(t *testing.T) {
-			handler := NewTerraformRegistryHandler(tt.credentials)
+			handler := NewTerraformRegistryHandler(tt.credentials, nil)
 
 			request := handleRequestAndClose(handler, httptest.NewRequest("GET", tt.url, nil), nil)
 
@@ -67,7 +67,7 @@ func TestTerraformRegistryHandler(t *testing.T) {
 	}
 
 	t.Run("HandleRequest without credentials", func(t *testing.T) {
-		handler := NewTerraformRegistryHandler(config.Credentials{})
+		handler := NewTerraformRegistryHandler(config.Credentials{}, nil)
 
 		url := "https://registry.terraform.io/v1/providers/org/name/versions"
 		request := handleRequestAndClose(handler, httptest.NewRequest("GET", url, nil), nil)
@@ -80,7 +80,7 @@ func TestTerraformRegistryHandler(t *testing.T) {
 			config.Credential{"type": "terraform_registry", "url": "https://terraform.example.com/org1", "token": "token-org1"},
 			config.Credential{"type": "terraform_registry", "url": "https://terraform.example.com/org2", "token": "token-org2"},
 		}
-		handler := NewTerraformRegistryHandler(credentials)
+		handler := NewTerraformRegistryHandler(credentials, nil)
 
 		// Request to org1 path should use org1 token
 		req1 := handleRequestAndClose(handler, httptest.NewRequest("GET", "https://terraform.example.com/org1/v1/providers/foo", nil), nil)
@@ -99,7 +99,7 @@ func TestTerraformRegistryHandler(t *testing.T) {
 		credentials := config.Credentials{
 			config.Credential{"type": "terraform_registry", "host": "terraform.example.org", "token": ""},
 		}
-		handler := NewTerraformRegistryHandler(credentials)
+		handler := NewTerraformRegistryHandler(credentials, nil)
 		assert.Equal(t, 0, len(handler.credentials), "should skip credential with empty token")
 	})
 
@@ -107,7 +107,7 @@ func TestTerraformRegistryHandler(t *testing.T) {
 		credentials := config.Credentials{
 			config.Credential{"type": "terraform_registry", "token": "some-token"},
 		}
-		handler := NewTerraformRegistryHandler(credentials)
+		handler := NewTerraformRegistryHandler(credentials, nil)
 		assert.Equal(t, 0, len(handler.credentials), "should skip credential with empty host and url")
 	})
 
@@ -117,7 +117,7 @@ func TestTerraformRegistryHandler(t *testing.T) {
 			config.Credential{"type": "terraform_registry", "url": "https://terraform.example.com/org", "token": "token-org"},
 			config.Credential{"type": "terraform_registry", "url": "https://terraform.example.com/org1", "token": "token-org1"},
 		}
-		handler := NewTerraformRegistryHandler(credentials)
+		handler := NewTerraformRegistryHandler(credentials, nil)
 
 		assert.Equal(t, "https://terraform.example.com/org1", handler.credentials[0].url, "longer path should be first")
 		assert.Equal(t, "https://terraform.example.com/org", handler.credentials[1].url, "shorter path should be second")

@@ -51,7 +51,7 @@ type nugetFeedCredentials struct {
 func NewNugetFeedHandler(creds config.Credentials, transport http.RoundTripper) *NugetFeedHandler {
 	handler := NugetFeedHandler{
 		credentials:  []nugetFeedCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(transport),
 	}
 
 	httpClient := &http.Client{
