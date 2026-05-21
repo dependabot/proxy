@@ -44,6 +44,8 @@ func RawAuth(value string) authorization {
 
 // SetAuthorization clears the existing authorization header on req and sets it to the value
 // described by auth. The header key defaults to "Authorization" if not provided.
+//
+// Note: The "Authorization" header is always cleared.
 func SetAuthorization(req *http.Request, auth authorization, key ...string) {
 	h := "Authorization"
 	if len(key) > 0 {
