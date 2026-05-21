@@ -23,10 +23,10 @@ type openTofuRegistryCredentials struct {
 	token string
 }
 
-func NewOpenTofuRegistryHandler(credentials config.Credentials) *OpenTofuRegistryHandler {
+func NewOpenTofuRegistryHandler(credentials config.Credentials, transport http.RoundTripper) *OpenTofuRegistryHandler {
 	handler := OpenTofuRegistryHandler{
 		credentials:  []openTofuRegistryCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(transport),
 	}
 
 	for _, credential := range credentials {

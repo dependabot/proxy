@@ -29,7 +29,7 @@ func TestHexRepositoryHandler(t *testing.T) {
 
 	validPath := "/repos/my_wonderful_repo/version"
 
-	handler := NewHexRepositoryHandler(credentials)
+	handler := NewHexRepositoryHandler(credentials, nil)
 
 	// valid request, should authenticate
 	url := validConfigUrl + validPath

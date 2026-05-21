@@ -228,7 +228,7 @@ type OIDCAccessToken struct {
 // githubToken: The GitHub Actions OIDC token obtained via GetTokenForAzureADExchange
 //
 // Returns an Azure AD access token scoped for Azure DevOps (499b84ac-1321-427f-aa17-267ca6975798/.default)
-func GetAzureAccessToken(ctx context.Context, params AzureOIDCParameters, githubToken string) (_ *OIDCAccessToken, err error) {
+func GetAzureAccessToken(ctx context.Context, params AzureOIDCParameters, githubToken string, client *http.Client) (_ *OIDCAccessToken, err error) {
 	if params.TenantID == "" {
 		return nil, fmt.Errorf("tenant ID is required")
 	}
@@ -251,10 +251,6 @@ func GetAzureAccessToken(ctx context.Context, params AzureOIDCParameters, github
 	formData.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
 	formData.Set("client_assertion", githubToken)
 	formData.Set("grant_type", "client_credentials")
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, strings.NewReader(formData.Encode()))
 	if err != nil {
@@ -296,7 +292,7 @@ func GetAzureAccessToken(ctx context.Context, params AzureOIDCParameters, github
 
 // GetAzureAccessTokenForDevOps is a convenience function that combines fetching the GitHub OIDC token
 // and exchanging it for an Azure AD access token in a single call.
-func GetAzureAccessTokenForDevOps(ctx context.Context, params AzureOIDCParameters) (*OIDCAccessToken, error) {
+func GetAzureAccessTokenForDevOps(ctx context.Context, params AzureOIDCParameters, client *http.Client) (*OIDCAccessToken, error) {
 	if !IsOIDCConfigured() {
 		return nil, fmt.Errorf("GitHub Actions OIDC is not configured")
 	}
@@ -308,7 +304,7 @@ func GetAzureAccessTokenForDevOps(ctx context.Context, params AzureOIDCParameter
 	}
 
 	// Exchange for Azure token
-	azureToken, err := GetAzureAccessToken(ctx, params, githubToken)
+	azureToken, err := GetAzureAccessToken(ctx, params, githubToken, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange GitHub token for Azure token: %w", err)
 	}
@@ -324,7 +320,7 @@ func GetAzureAccessTokenForDevOps(ctx context.Context, params AzureOIDCParameter
 // githubToken: The GitHub Actions OIDC token obtained via GetToken
 //
 // Returns a JFrog access token
-func GetJFrogAccessToken(ctx context.Context, params JFrogOIDCParameters, githubToken string) (_ *OIDCAccessToken, err error) {
+func GetJFrogAccessToken(ctx context.Context, params JFrogOIDCParameters, githubToken string, client *http.Client) (_ *OIDCAccessToken, err error) {
 	if params.JFrogURL == "" {
 		return nil, fmt.Errorf("token URL base is required")
 	}
@@ -359,9 +355,6 @@ func GetJFrogAccessToken(ctx context.Context, params JFrogOIDCParameters, github
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "dependabot-proxy/1.0")
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute JFrog token request: %w", err)
@@ -397,7 +390,7 @@ func GetJFrogAccessToken(ctx context.Context, params JFrogOIDCParameters, github
 	}, nil
 }
 
-func GetJFrogAccessTokenForDevOps(ctx context.Context, params JFrogOIDCParameters) (*OIDCAccessToken, error) {
+func GetJFrogAccessTokenForDevOps(ctx context.Context, params JFrogOIDCParameters, client *http.Client) (*OIDCAccessToken, error) {
 	if !IsOIDCConfigured() {
 		return nil, fmt.Errorf("GitHub Actions OIDC is not configured")
 	}
@@ -409,7 +402,7 @@ func GetJFrogAccessTokenForDevOps(ctx context.Context, params JFrogOIDCParameter
 	}
 
 	// Exchange for JFrog token
-	jfrogToken, err := GetJFrogAccessToken(ctx, params, githubToken)
+	jfrogToken, err := GetJFrogAccessToken(ctx, params, githubToken, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange GitHub token for JFrog token: %w", err)
 	}
@@ -425,7 +418,7 @@ func GetJFrogAccessTokenForDevOps(ctx context.Context, params JFrogOIDCParameter
 // githubToken: The GitHub Actions OIDC token obtained via GetToken
 //
 // Returns temporary AWS credentials
-func GetAWSAccessToken(ctx context.Context, params AWSOIDCParameters, githubToken string) (_ *OIDCAccessToken, err error) {
+func GetAWSAccessToken(ctx context.Context, params AWSOIDCParameters, githubToken string, client *http.Client) (_ *OIDCAccessToken, err error) {
 	if params.Region == "" {
 		return nil, fmt.Errorf("AWS region is required")
 	}
@@ -452,10 +445,6 @@ func GetAWSAccessToken(ctx context.Context, params AWSOIDCParameters, githubToke
 	formData.Set("RoleArn", fmt.Sprintf("arn:aws:iam::%s:role/%s", params.AccountID, params.RoleName))
 	formData.Set("RoleSessionName", "dependabot-update")
 	formData.Set("WebIdentityToken", githubToken)
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", awsCodeArtifactSTSRequestUrl, strings.NewReader(formData.Encode()))
 	if err != nil {
@@ -573,7 +562,7 @@ func GetAWSAccessToken(ctx context.Context, params AWSOIDCParameters, githubToke
 	}, nil
 }
 
-func GetAWSAccessTokenForDevOps(ctx context.Context, params AWSOIDCParameters) (*OIDCAccessToken, error) {
+func GetAWSAccessTokenForDevOps(ctx context.Context, params AWSOIDCParameters, client *http.Client) (*OIDCAccessToken, error) {
 	if !IsOIDCConfigured() {
 		return nil, fmt.Errorf("GitHub Actions OIDC is not configured")
 	}
@@ -585,7 +574,7 @@ func GetAWSAccessTokenForDevOps(ctx context.Context, params AWSOIDCParameters) (
 	}
 
 	// Exchange for AWS token
-	awsToken, err := GetAWSAccessToken(ctx, params, githubToken)
+	awsToken, err := GetAWSAccessToken(ctx, params, githubToken, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange GitHub token for AWS token: %w", err)
 	}
@@ -593,7 +582,7 @@ func GetAWSAccessTokenForDevOps(ctx context.Context, params AWSOIDCParameters) (
 	return awsToken, nil
 }
 
-func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParameters, githubToken string) (_ *OIDCAccessToken, err error) {
+func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParameters, githubToken string, client *http.Client) (_ *OIDCAccessToken, err error) {
 	if params.ServiceSlug == "" {
 		return nil, fmt.Errorf("service slug is required")
 	}
@@ -630,9 +619,6 @@ func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParamete
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "dependabot-proxy/1.0")
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute cloudsmith token request: %w", err)
@@ -664,7 +650,7 @@ func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParamete
 	}, nil
 }
 
-func GetCloudsmithAccessTokenForDevOps(ctx context.Context, params CloudsmithOIDCParameters) (*OIDCAccessToken, error) {
+func GetCloudsmithAccessTokenForDevOps(ctx context.Context, params CloudsmithOIDCParameters, client *http.Client) (*OIDCAccessToken, error) {
 	if !IsOIDCConfigured() {
 		return nil, fmt.Errorf("GitHub Actions OIDC is not configured")
 	}
@@ -675,7 +661,7 @@ func GetCloudsmithAccessTokenForDevOps(ctx context.Context, params CloudsmithOID
 		return nil, fmt.Errorf("failed to get GitHub OIDC token: %w", err)
 	}
 
-	cloudsmithToken, err := GetCloudsmithAccessToken(ctx, params, githubToken)
+	cloudsmithToken, err := GetCloudsmithAccessToken(ctx, params, githubToken, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange GitHub token for cloudsmith token: %w", err)
 	}
@@ -683,7 +669,7 @@ func GetCloudsmithAccessTokenForDevOps(ctx context.Context, params CloudsmithOID
 	return cloudsmithToken, nil
 }
 
-func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToken string) (_ *OIDCAccessToken, err error) {
+func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToken string, client *http.Client) (_ *OIDCAccessToken, err error) {
 	if params.WorkloadIdentityProvider == "" {
 		return nil, fmt.Errorf("workload-identity-provider is required")
 	}
@@ -718,9 +704,6 @@ func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToke
 	stsReq.Header.Set("Accept", "application/json")
 	stsReq.Header.Set("User-Agent", "dependabot-proxy/1.0")
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
 	stsResp, err := client.Do(stsReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute GCP STS request: %w", err)
@@ -818,7 +801,7 @@ func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToke
 	}, nil
 }
 
-func GetGCPAccessTokenForDevOps(ctx context.Context, params GCPOIDCParameters) (*OIDCAccessToken, error) {
+func GetGCPAccessTokenForDevOps(ctx context.Context, params GCPOIDCParameters, client *http.Client) (*OIDCAccessToken, error) {
 	if !IsOIDCConfigured() {
 		return nil, fmt.Errorf("GitHub Actions OIDC is not configured")
 	}
@@ -829,7 +812,7 @@ func GetGCPAccessTokenForDevOps(ctx context.Context, params GCPOIDCParameters) (
 		return nil, fmt.Errorf("failed to get GitHub OIDC token: %w", err)
 	}
 
-	gcpToken, err := GetGCPAccessToken(ctx, params, githubToken)
+	gcpToken, err := GetGCPAccessToken(ctx, params, githubToken, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange GitHub token for GCP token: %w", err)
 	}

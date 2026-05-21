@@ -46,7 +46,7 @@ func TestPubRepositoryHandler(t *testing.T) {
 		},
 	}
 
-	handler := NewPubRepositoryHandler(credentials)
+	handler := NewPubRepositoryHandler(credentials, nil)
 
 	// valid request, should authenticate
 	url := validURL

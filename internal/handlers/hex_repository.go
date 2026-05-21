@@ -23,10 +23,10 @@ type hexRepositoryCredentials struct {
 	authKey string
 }
 
-func NewHexRepositoryHandler(creds config.Credentials) *HexRepositoryHandler {
+func NewHexRepositoryHandler(creds config.Credentials, transport http.RoundTripper) *HexRepositoryHandler {
 	handler := HexRepositoryHandler{
 		credentials:  []hexRepositoryCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(transport),
 	}
 
 	for _, cred := range creds {
@@ -43,7 +43,7 @@ func NewHexRepositoryHandler(creds config.Credentials) *HexRepositoryHandler {
 			if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"url"}, "hex repository"); oidcCred != nil {
 				continue
 			}
-		} else if oidcCred, _ := oidc.CreateOIDCCredential(cred); oidcCred != nil {
+		} else if oidcCred, _ := oidc.CreateOIDCCredential(cred, transport); oidcCred != nil {
 			continue
 		}
 

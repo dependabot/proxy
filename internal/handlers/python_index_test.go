@@ -55,7 +55,7 @@ func TestPythonIndexHandler(t *testing.T) {
 			"token": fmt.Sprintf("%s:%s", deltaForceUser, deltaForcePassword),
 		},
 	}
-	handler := NewPythonIndexHandler(credentials)
+	handler := NewPythonIndexHandler(credentials, nil)
 
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://corp.dependabot.com/pyreg", nil)
 	req = handleRequestAndClose(handler, req, nil)

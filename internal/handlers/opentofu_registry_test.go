@@ -65,7 +65,7 @@ func TestOpenTofuRegistryHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(strings.Join([]string{tt.registryType, tt.host, tt.token}, " "), func(t *testing.T) {
-			handler := NewOpenTofuRegistryHandler(tt.credentials)
+			handler := NewOpenTofuRegistryHandler(tt.credentials, nil)
 
 			request := handleRequestAndClose(handler, httptest.NewRequestWithContext(t.Context(), "GET", tt.url, nil), nil)
 
@@ -74,7 +74,7 @@ func TestOpenTofuRegistryHandler(t *testing.T) {
 	}
 
 	t.Run("HandleRequest without credentials", func(t *testing.T) {
-		handler := NewOpenTofuRegistryHandler(config.Credentials{})
+		handler := NewOpenTofuRegistryHandler(config.Credentials{}, nil)
 
 		url := "https://registry.opentofu.org/v1/providers/org/name/versions"
 		request := handleRequestAndClose(handler, httptest.NewRequestWithContext(t.Context(), "GET", url, nil), nil)
@@ -87,7 +87,7 @@ func TestOpenTofuRegistryHandler(t *testing.T) {
 			config.Credential{"type": "opentofu_registry", "url": "https://registry.example.com/org1", "token": "token-org1"},
 			config.Credential{"type": "opentofu_registry", "url": "https://registry.example.com/org2", "token": "token-org2"},
 		}
-		handler := NewOpenTofuRegistryHandler(credentials)
+		handler := NewOpenTofuRegistryHandler(credentials, nil)
 
 		// Request to org1 path should use org1 token
 		req1 := handleRequestAndClose(handler, httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.example.com/org1/v1/providers/foo", nil), nil)
@@ -106,7 +106,7 @@ func TestOpenTofuRegistryHandler(t *testing.T) {
 		credentials := config.Credentials{
 			config.Credential{"type": "opentofu_registry", "host": "registry.example.org", "token": ""},
 		}
-		handler := NewOpenTofuRegistryHandler(credentials)
+		handler := NewOpenTofuRegistryHandler(credentials, nil)
 		assert.Equal(t, 0, len(handler.credentials), "should skip credential with empty token")
 	})
 
@@ -114,7 +114,7 @@ func TestOpenTofuRegistryHandler(t *testing.T) {
 		credentials := config.Credentials{
 			config.Credential{"type": "opentofu_registry", "token": "some-token"},
 		}
-		handler := NewOpenTofuRegistryHandler(credentials)
+		handler := NewOpenTofuRegistryHandler(credentials, nil)
 		assert.Equal(t, 0, len(handler.credentials), "should skip credential with empty host and url")
 	})
 
@@ -124,7 +124,7 @@ func TestOpenTofuRegistryHandler(t *testing.T) {
 			config.Credential{"type": "opentofu_registry", "url": "https://registry.example.com/org", "token": "token-org"},
 			config.Credential{"type": "opentofu_registry", "url": "https://registry.example.com/org1", "token": "token-org1"},
 		}
-		handler := NewOpenTofuRegistryHandler(credentials)
+		handler := NewOpenTofuRegistryHandler(credentials, nil)
 
 		assert.Equal(t, "https://registry.example.com/org1", handler.credentials[0].url, "longer path should be first")
 		assert.Equal(t, "https://registry.example.com/org", handler.credentials[1].url, "shorter path should be second")

@@ -46,7 +46,7 @@ func TestCargoRegistryHandler(t *testing.T) {
 		},
 	}
 
-	handler := NewCargoRegistryHandler(credentials)
+	handler := NewCargoRegistryHandler(credentials, nil)
 
 	// valid request, should authenticate
 	url := validURL

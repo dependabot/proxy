@@ -27,7 +27,7 @@ func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {
 	creds, err := CreateOIDCCredential(config.Credential{
 		"tenant-id": "test-tenant-id",
 		"client-id": "test-client-id",
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	// ensure of type azure
@@ -88,7 +88,7 @@ func TestFailedAuthenticationIsNotRetried(t *testing.T) {
 	creds, err := CreateOIDCCredential(config.Credential{
 		"tenant-id": "test-tenant-id",
 		"client-id": "test-client-id",
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	// ensure of type azure
@@ -334,7 +334,7 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			t.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
 			t.Setenv(envActionsIDTokenRequestToken, "test-token")
 
-			actual, _ := CreateOIDCCredential(tc.cred)
+			actual, _ := CreateOIDCCredential(tc.cred, nil)
 			if tc.expectedParameters == nil {
 				assert.Nil(t, actual)
 				return

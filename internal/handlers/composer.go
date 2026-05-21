@@ -26,10 +26,10 @@ type composerCredentials struct {
 }
 
 // NewComposerHandler returns a new ComposerHandler.
-func NewComposerHandler(creds config.Credentials) *ComposerHandler {
+func NewComposerHandler(creds config.Credentials, transport http.RoundTripper) *ComposerHandler {
 	handler := ComposerHandler{
 		credentials:  []composerCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(transport),
 	}
 
 	for _, cred := range creds {

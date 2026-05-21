@@ -24,10 +24,10 @@ type terraformRegistryCredentials struct {
 	token string
 }
 
-func NewTerraformRegistryHandler(credentials config.Credentials) *TerraformRegistryHandler {
+func NewTerraformRegistryHandler(credentials config.Credentials, transport http.RoundTripper) *TerraformRegistryHandler {
 	handler := TerraformRegistryHandler{
 		credentials:  []terraformRegistryCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(transport),
 	}
 
 	for _, credential := range credentials {
