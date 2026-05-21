@@ -602,6 +602,9 @@ func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParamete
 	if params.OrgName == "" {
 		return nil, fmt.Errorf("org name is required")
 	}
+	if params.Audience == "" {
+		return nil, fmt.Errorf("audience is required")
+	}
 	if githubToken == "" {
 		return nil, fmt.Errorf("GitHub token is required")
 	}
