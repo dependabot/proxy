@@ -1,6 +1,8 @@
 package helpers
 
 import (
+	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -9,6 +11,49 @@ import (
 
 	"golang.org/x/net/idna"
 )
+
+// authorization holds a pre-formatted Authorization header value.
+// Obtain instances via BasicAuth, BearerAuth, TokenAuth, or RawAuth.
+type authorization struct {
+	value string
+}
+
+func (a authorization) asHeader() string { return a.value }
+
+// BasicAuth returns an authorization for "Basic <base64(username:password)>".
+func BasicAuth(username, password string) authorization {
+	encoded := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", username, password)))
+	return authorization{fmt.Sprintf("Basic %s", encoded)}
+}
+
+// BearerAuth returns an authorization for "Bearer <token>".
+func BearerAuth(token string) authorization {
+	return authorization{fmt.Sprintf("Bearer %s", token)}
+}
+
+// TokenAuth returns an authorization for "token <value>" (GitHub legacy format).
+func TokenAuth(value string) authorization {
+	return authorization{fmt.Sprintf("token %s", value)}
+}
+
+// RawAuth returns an authorization whose header value is the given string as-is.
+// Use only when the credential is already a fully-formed header value.
+func RawAuth(value string) authorization {
+	return authorization{value}
+}
+
+// SetAuthorization clears the existing authorization header on req and sets it to the value
+// described by auth. The header key defaults to "Authorization" if not provided.
+func SetAuthorization(req *http.Request, auth authorization, key ...string) {
+	h := "Authorization"
+	if len(key) > 0 {
+		h = key[0]
+	}
+	// Clear any auth passed by Dependabot Core
+	req.Header.Del("Authorization")
+	req.Header.Del(h)
+	req.Header.Set(h, auth.asHeader())
+}
 
 func CheckGitHubAPIHost(r *http.Request) bool {
 	hostname := GetHost(r)

@@ -83,7 +83,7 @@ func (h *PubRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 		}
 
 		logging.RequestLogf(ctx, "* authenticating pub repository request (url: %s)", cred.url)
-		req.Header.Set("Authorization", "Bearer "+cred.token)
+		helpers.SetAuthorization(req, helpers.BearerAuth(cred.token))
 
 		return req, nil
 	}

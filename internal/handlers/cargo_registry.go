@@ -101,7 +101,7 @@ func (h *CargoRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 		}
 
 		logging.RequestLogf(ctx, "* authenticating cargo registry request (url: %s)", cred.url)
-		req.Header.Set("Authorization", cred.authorization)
+		helpers.SetAuthorization(req, helpers.RawAuth(cred.authorization))
 
 		return req, nil
 	}

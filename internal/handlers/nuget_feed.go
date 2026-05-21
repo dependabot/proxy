@@ -300,14 +300,14 @@ func authenticateNugetRequest(req *http.Request, cred nugetFeedCredentials, ctx 
 	username, password, found := strings.Cut(token, ":")
 	if found {
 		logging.RequestLogf(ctx, "* authenticating nuget feed request (host: %s, basic auth)", req.URL.Hostname())
-		req.SetBasicAuth(username, password)
+		helpers.SetAuthorization(req, helpers.BasicAuth(username, password))
 	} else if token != "" {
 		if shouldTreatTokenAsPassword(req.URL) {
 			logging.RequestLogf(ctx, "* authenticating nuget feed request (host: %s, basic auth for Azure DevOps)", req.URL.Hostname())
-			req.SetBasicAuth("", token)
+			helpers.SetAuthorization(req, helpers.BasicAuth("", token))
 		} else {
 			logging.RequestLogf(ctx, "* authenticating nuget feed request (host: %s, bearer auth)", req.URL.Hostname())
-			req.Header.Set("authorization", "Bearer "+token)
+			helpers.SetAuthorization(req, helpers.BearerAuth(token))
 		}
 	}
 }
