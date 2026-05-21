@@ -47,7 +47,7 @@ func TestSetAuthorization_BasicAuth(t *testing.T) {
 		}
 	})
 
-	t.Run("encodes empty password correctly", func(t *testing.T) {
+	t.Run("encodes empty username correctly", func(t *testing.T) {
 		req := newRequest(t, "https://example.com")
 		SetAuthorization(req, BasicAuth("", "token"))
 
