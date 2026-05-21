@@ -31,7 +31,7 @@ func BearerAuth(token string) authorization {
 	return authorization{fmt.Sprintf("Bearer %s", token)}
 }
 
-// TokenAuth returns an authorization for "token <value>" (GitHub legacy format).
+// TokenAuth returns an authorization for "token <value>", used at least by Github API.
 func TokenAuth(value string) authorization {
 	return authorization{fmt.Sprintf("token %s", value)}
 }
