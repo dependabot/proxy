@@ -968,7 +968,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NuGet",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
+				return NewNugetFeedHandler(creds, nil)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1001,7 +1001,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NuGet",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
+				return NewNugetFeedHandler(creds, nil)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1031,7 +1031,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NuGet",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
+				return NewNugetFeedHandler(creds, nil)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1060,7 +1060,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NuGet",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
+				return NewNugetFeedHandler(creds, nil)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1091,7 +1091,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NuGet",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
+				return NewNugetFeedHandler(creds, nil)
 			},
 			credentials: config.Credentials{
 				config.Credential{

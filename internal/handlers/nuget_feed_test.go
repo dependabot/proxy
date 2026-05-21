@@ -133,7 +133,7 @@ func TestNugetFeedHandler(t *testing.T) {
 	// Log for initial authentication contains appropriate information
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
-	handler := NewNugetFeedHandler(credentials)
+	handler := NewNugetFeedHandler(credentials, nil)
 	logContents := buf.String()
 	assert.False(t, strings.Contains(logContents, "* authenticating nuget feed request (host: api.nuget.org, bearer auth)"), "don't authenticate a feed without a token or password")
 	assert.True(t, strings.Contains(logContents, "unauthorized for nuget feed https://nuget.example.com/auth-required/v3"), "authentication failure is reported")
@@ -336,7 +336,7 @@ func TestExtraAuthenticatedURLsAreReportedInTheLog(t *testing.T) {
 
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
-	NewNugetFeedHandler(credentials)
+	NewNugetFeedHandler(credentials, nil)
 	logContents := buf.String()
 
 	assert.True(t, strings.Contains(logContents, "  added url to authentication list: https://nuget.example.com/v3/packages"), "include PackageBaseAddress")

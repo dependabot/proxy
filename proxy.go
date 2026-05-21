@@ -109,7 +109,7 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 	rubyGemsServerHandler := handlers.NewRubyGemsServerHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(rubyGemsServerHandler.HandleRequest)
 
-	nugetFeedHandler := handlers.NewNugetFeedHandler(cfg.Credentials)
+	nugetFeedHandler := handlers.NewNugetFeedHandler(cfg.Credentials, transport)
 	proxy.OnRequest().DoFunc(nugetFeedHandler.HandleRequest)
 
 	mavenRepositoryHandler := handlers.NewMavenRepositoryHandler(cfg.Credentials)
