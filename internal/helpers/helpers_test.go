@@ -23,10 +23,10 @@ func newRequestWithAuth(t *testing.T, rawURL, existing string) *http.Request {
 	return req
 }
 
-func TestSetAuthorization_BasicAuth(t *testing.T) {
+func TestSetBasicAuthorization(t *testing.T) {
 	t.Run("sets correct Basic header", func(t *testing.T) {
 		req := newRequest(t, "https://example.com")
-		SetAuthorization(req, BasicAuth("user", "pass"))
+		SetBasicAuthorization(req, "user", "pass")
 
 		want := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:pass"))
 		if got := req.Header.Get("Authorization"); got != want {
@@ -36,7 +36,7 @@ func TestSetAuthorization_BasicAuth(t *testing.T) {
 
 	t.Run("clears pre-existing Authorization header", func(t *testing.T) {
 		req := newRequestWithAuth(t, "https://example.com", "Bearer old-token")
-		SetAuthorization(req, BasicAuth("user", "pass"))
+		SetBasicAuthorization(req, "user", "pass")
 
 		want := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:pass"))
 		if got := req.Header.Get("Authorization"); got != want {
@@ -49,7 +49,7 @@ func TestSetAuthorization_BasicAuth(t *testing.T) {
 
 	t.Run("encodes empty username correctly", func(t *testing.T) {
 		req := newRequest(t, "https://example.com")
-		SetAuthorization(req, BasicAuth("", "token"))
+		SetBasicAuthorization(req, "", "token")
 
 		want := "Basic " + base64.StdEncoding.EncodeToString([]byte(":token"))
 		if got := req.Header.Get("Authorization"); got != want {
@@ -58,10 +58,10 @@ func TestSetAuthorization_BasicAuth(t *testing.T) {
 	})
 }
 
-func TestSetAuthorization_BearerAuth(t *testing.T) {
+func TestSetBearerAuthorization(t *testing.T) {
 	t.Run("sets correct Bearer header", func(t *testing.T) {
 		req := newRequest(t, "https://example.com")
-		SetAuthorization(req, BearerAuth("my-token"))
+		SetBearerAuthorization(req, "my-token")
 
 		if got := req.Header.Get("Authorization"); got != "Bearer my-token" {
 			t.Errorf("Authorization = %q, want %q", got, "Bearer my-token")
@@ -70,7 +70,7 @@ func TestSetAuthorization_BearerAuth(t *testing.T) {
 
 	t.Run("clears pre-existing Authorization header", func(t *testing.T) {
 		req := newRequestWithAuth(t, "https://example.com", "Basic dXNlcjpwYXNz")
-		SetAuthorization(req, BearerAuth("new-token"))
+		SetBearerAuthorization(req, "new-token")
 
 		if got := req.Header.Get("Authorization"); got != "Bearer new-token" {
 			t.Errorf("Authorization = %q, want %q", got, "Bearer new-token")
@@ -81,10 +81,10 @@ func TestSetAuthorization_BearerAuth(t *testing.T) {
 	})
 }
 
-func TestSetAuthorization_TokenAuth(t *testing.T) {
+func TestSetGithubAPITokenAuthorization(t *testing.T) {
 	t.Run("sets correct token header", func(t *testing.T) {
 		req := newRequest(t, "https://api.github.com")
-		SetAuthorization(req, TokenAuth("ghp_abc123"))
+		SetGithubAPITokenAuthorization(req, "ghp_abc123")
 
 		if got := req.Header.Get("Authorization"); got != "token ghp_abc123" {
 			t.Errorf("Authorization = %q, want %q", got, "token ghp_abc123")
@@ -93,7 +93,7 @@ func TestSetAuthorization_TokenAuth(t *testing.T) {
 
 	t.Run("clears pre-existing Authorization header", func(t *testing.T) {
 		req := newRequestWithAuth(t, "https://api.github.com", "token old-token")
-		SetAuthorization(req, TokenAuth("new-token"))
+		SetGithubAPITokenAuthorization(req, "new-token")
 
 		if got := req.Header.Get("Authorization"); got != "token new-token" {
 			t.Errorf("Authorization = %q, want %q", got, "token new-token")
@@ -104,10 +104,10 @@ func TestSetAuthorization_TokenAuth(t *testing.T) {
 	})
 }
 
-func TestSetAuthorization_RawAuth(t *testing.T) {
+func TestSetRawAuthorization(t *testing.T) {
 	t.Run("sets pre-formatted value as-is", func(t *testing.T) {
 		req := newRequest(t, "https://example.com")
-		SetAuthorization(req, RawAuth("Bearer already-formatted"))
+		SetRawAuthorization(req, "Bearer already-formatted")
 
 		if got := req.Header.Get("Authorization"); got != "Bearer already-formatted" {
 			t.Errorf("Authorization = %q, want %q", got, "Bearer already-formatted")
@@ -116,7 +116,7 @@ func TestSetAuthorization_RawAuth(t *testing.T) {
 
 	t.Run("clears pre-existing Authorization header", func(t *testing.T) {
 		req := newRequestWithAuth(t, "https://example.com", "Bearer stale")
-		SetAuthorization(req, RawAuth("token new-raw"))
+		SetRawAuthorization(req, "token new-raw")
 
 		if got := req.Header.Get("Authorization"); got != "token new-raw" {
 			t.Errorf("Authorization = %q, want %q", got, "token new-raw")
@@ -127,10 +127,10 @@ func TestSetAuthorization_RawAuth(t *testing.T) {
 	})
 }
 
-func TestSetAuthorization_CustomKey(t *testing.T) {
+func TestReplaceAuthorization_CustomKey(t *testing.T) {
 	t.Run("sets value on custom header key", func(t *testing.T) {
 		req := newRequest(t, "https://cloudsmith.example.com")
-		SetAuthorization(req, RawAuth("my-api-key"), "X-Api-Key")
+		ReplaceAuthorization(req, "X-Api-Key", "my-api-key")
 
 		if got := req.Header.Get("X-Api-Key"); got != "my-api-key" {
 			t.Errorf("X-Api-Key = %q, want %q", got, "my-api-key")
@@ -140,10 +140,10 @@ func TestSetAuthorization_CustomKey(t *testing.T) {
 		}
 	})
 
-	t.Run("clears pre-existing custom header before setting", func(t *testing.T) {
+	t.Run("clears pre-existing Authorization header before setting custom key", func(t *testing.T) {
 		req := newRequest(t, "https://cloudsmith.example.com")
 		req.Header.Set("X-Api-Key", "old-key")
-		SetAuthorization(req, RawAuth("new-key"), "X-Api-Key")
+		ReplaceAuthorization(req, "X-Api-Key", "new-key")
 
 		if got := req.Header.Get("X-Api-Key"); got != "new-key" {
 			t.Errorf("X-Api-Key = %q, want %q", got, "new-key")

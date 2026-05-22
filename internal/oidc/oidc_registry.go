@@ -142,18 +142,18 @@ func (r *OIDCRegistry) TryAuth(req *http.Request, ctx *goproxy.ProxyCtx) bool {
 	switch matched.parameters.(type) {
 	case *CloudsmithOIDCParameters:
 		logging.RequestLogf(ctx, "* authenticating request with OIDC API key (host: %s)", host)
-		helpers.SetAuthorization(req, helpers.RawAuth(token), "X-Api-Key")
+		helpers.ReplaceAuthorization(req, "X-Api-Key", token)
 	case *GCPOIDCParameters:
 		if strings.HasSuffix(host, "-docker.pkg.dev") {
 			logging.RequestLogf(ctx, "* authenticating request with OIDC oauth2accesstoken (host: %s)", host)
-			helpers.SetAuthorization(req, helpers.BasicAuth("oauth2accesstoken", token))
+			helpers.SetBasicAuthorization(req, "oauth2accesstoken", token)
 		} else {
 			logging.RequestLogf(ctx, "* authenticating request with OIDC token (host: %s)", host)
-			helpers.SetAuthorization(req, helpers.BearerAuth(token))
+			helpers.SetBearerAuthorization(req, token)
 		}
 	default:
 		logging.RequestLogf(ctx, "* authenticating request with OIDC token (host: %s)", host)
-		helpers.SetAuthorization(req, helpers.BearerAuth(token))
+		helpers.SetBearerAuthorization(req, token)
 	}
 
 	return true

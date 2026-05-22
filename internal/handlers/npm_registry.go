@@ -108,10 +108,10 @@ func (h *NPMRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 		username, password, found := strings.Cut(cred.token, ":")
 		if found {
 			logging.RequestLogf(ctx, "* authenticating npm registry request (host: %s, basic auth)", reqHost)
-			helpers.SetAuthorization(req, helpers.BasicAuth(username, password))
+			helpers.SetBasicAuthorization(req, username, password)
 		} else {
 			logging.RequestLogf(ctx, "* authenticating npm registry request (host: %s, token auth)", reqHost)
-			helpers.SetAuthorization(req, helpers.BearerAuth(cred.token))
+			helpers.SetBearerAuthorization(req, cred.token)
 		}
 		return req, nil
 	}

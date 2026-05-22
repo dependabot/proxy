@@ -74,7 +74,7 @@ func (h *HelmRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Prox
 		}
 
 		logging.RequestLogf(ctx, "* authenticating helm registry request (host: %s)", req.URL.Hostname())
-		helpers.SetAuthorization(req, helpers.BasicAuth(cred.username, cred.password))
+		helpers.SetBasicAuthorization(req, cred.username, cred.password)
 
 		return req, nil
 	}

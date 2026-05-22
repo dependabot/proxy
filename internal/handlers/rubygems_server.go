@@ -80,7 +80,7 @@ func (h *RubyGemsServerHandler) HandleRequest(req *http.Request, ctx *goproxy.Pr
 
 		// ignore `found` because it's okay for the password to be an empty string
 		username, password, _ := strings.Cut(cred.token, ":")
-		helpers.SetAuthorization(req, helpers.BasicAuth(username, password))
+		helpers.SetBasicAuthorization(req, username, password)
 
 		return req, nil
 	}

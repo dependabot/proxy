@@ -85,7 +85,7 @@ func (h *HexRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 		}
 
 		logging.RequestLogf(ctx, "* authenticating hex repository request (host: %s)", req.URL.Hostname())
-		helpers.SetAuthorization(req, helpers.RawAuth(cred.authKey))
+		helpers.SetRawAuthorization(req, cred.authKey)
 
 		return req, nil
 	}

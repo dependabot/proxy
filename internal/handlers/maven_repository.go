@@ -79,7 +79,7 @@ func (h *MavenRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.P
 		}
 
 		logging.RequestLogf(ctx, "* authenticating maven repository request (host: %s)", req.URL.Hostname())
-		helpers.SetAuthorization(req, helpers.BasicAuth(cred.username, cred.password))
+		helpers.SetBasicAuthorization(req, cred.username, cred.password)
 
 		return req, nil
 	}

@@ -107,7 +107,7 @@ func (h *PythonIndexHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 		}
 		// ignore `found` because it's okay for the password to be an empty string
 		username, password, _ := strings.Cut(token, ":")
-		helpers.SetAuthorization(req, helpers.BasicAuth(username, password))
+		helpers.SetBasicAuthorization(req, username, password)
 
 		return req, nil
 	}

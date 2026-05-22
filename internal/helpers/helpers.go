@@ -12,49 +12,35 @@ import (
 	"golang.org/x/net/idna"
 )
 
-// authorization holds a pre-formatted Authorization header value.
-// Obtain instances via BasicAuth, BearerAuth, TokenAuth, or RawAuth.
-type authorization struct {
-	value string
-}
-
-func (a authorization) asHeader() string { return a.value }
-
-// BasicAuth returns an authorization for "Basic <base64(username:password)>".
-func BasicAuth(username, password string) authorization {
-	encoded := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", username, password)))
-	return authorization{fmt.Sprintf("Basic %s", encoded)}
-}
-
-// BearerAuth returns an authorization for "Bearer <token>".
-func BearerAuth(token string) authorization {
-	return authorization{fmt.Sprintf("Bearer %s", token)}
-}
-
-// TokenAuth returns an authorization for "token <value>", used at least by Github API.
-func TokenAuth(value string) authorization {
-	return authorization{fmt.Sprintf("token %s", value)}
-}
-
-// RawAuth returns an authorization whose header value is the given string as-is.
-// Use only when the credential is already a fully-formed header value.
-func RawAuth(value string) authorization {
-	return authorization{value}
-}
-
-// SetAuthorization clears the existing authorization header on req and sets it to the value
-// described by auth. The header key defaults to "Authorization" if not provided.
+// ReplaceAuthorization replaces the authorization configured on req with the given key and value.
 //
-// Note: The "Authorization" header is always cleared.
-func SetAuthorization(req *http.Request, auth authorization, key ...string) {
-	h := "Authorization"
-	if len(key) > 0 {
-		h = key[0]
-	}
-	// Clear any auth passed by Dependabot Core
+// Note: "Authorization"-header is always cleared to avoid multiple auth headers being set on the request.
+func ReplaceAuthorization(req *http.Request, key string, value string) {
 	req.Header.Del("Authorization")
-	req.Header.Del(h)
-	req.Header.Set(h, auth.asHeader())
+	req.Header.Set(key, value)
+}
+
+// SetRawAuthorization sets the authorization header on req to the given value
+func SetRawAuthorization(req *http.Request, authorization string) {
+	ReplaceAuthorization(req, "Authorization", authorization)
+}
+
+func SetBasicAuthorization(req *http.Request, username, password string) {
+	SetRawAuthorization(
+		req,
+		fmt.Sprintf(
+			"Basic %s",
+			base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", username, password))),
+		),
+	)
+}
+
+func SetBearerAuthorization(req *http.Request, token string) {
+	SetRawAuthorization(req, fmt.Sprintf("Bearer %s", token))
+}
+
+func SetGithubAPITokenAuthorization(req *http.Request, token string) {
+	SetRawAuthorization(req, fmt.Sprintf("token %s", token))
 }
 
 func CheckGitHubAPIHost(r *http.Request) bool {

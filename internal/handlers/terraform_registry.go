@@ -88,7 +88,7 @@ func (h *TerraformRegistryHandler) HandleRequest(request *http.Request, context 
 		}
 
 		logging.RequestLogf(context, "* authenticating terraform registry request (host: %s)", request.URL.Hostname())
-		helpers.SetAuthorization(request, helpers.BearerAuth(cred.token))
+		helpers.SetBearerAuthorization(request, cred.token)
 		return request, nil
 	}
 
