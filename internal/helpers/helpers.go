@@ -2,7 +2,6 @@ package helpers
 
 import (
 	"encoding/base64"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -26,21 +25,17 @@ func SetRawAuthorization(req *http.Request, authorization string) {
 }
 
 func SetBasicAuthorization(req *http.Request, username, password string) {
-	SetRawAuthorization(
-		req,
-		fmt.Sprintf(
-			"Basic %s",
-			base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", username, password))),
-		),
-	)
+	credentials := username + ":" + password
+	encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
+	SetRawAuthorization(req, "Basic "+encoded)
 }
 
 func SetBearerAuthorization(req *http.Request, token string) {
-	SetRawAuthorization(req, fmt.Sprintf("Bearer %s", token))
+	SetRawAuthorization(req, "Bearer "+token)
 }
 
-func SetGithubAPITokenAuthorization(req *http.Request, token string) {
-	SetRawAuthorization(req, fmt.Sprintf("token %s", token))
+func SetGitHubAPITokenAuthorization(req *http.Request, token string) {
+	SetRawAuthorization(req, "token "+token)
 }
 
 func CheckGitHubAPIHost(r *http.Request) bool {

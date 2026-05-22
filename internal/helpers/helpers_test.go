@@ -81,10 +81,10 @@ func TestSetBearerAuthorization(t *testing.T) {
 	})
 }
 
-func TestSetGithubAPITokenAuthorization(t *testing.T) {
+func TestSetGitHubAPITokenAuthorization(t *testing.T) {
 	t.Run("sets correct token header", func(t *testing.T) {
 		req := newRequest(t, "https://api.github.com")
-		SetGithubAPITokenAuthorization(req, "ghp_abc123")
+		SetGitHubAPITokenAuthorization(req, "ghp_abc123")
 
 		if got := req.Header.Get("Authorization"); got != "token ghp_abc123" {
 			t.Errorf("Authorization = %q, want %q", got, "token ghp_abc123")
@@ -93,7 +93,7 @@ func TestSetGithubAPITokenAuthorization(t *testing.T) {
 
 	t.Run("clears pre-existing Authorization header", func(t *testing.T) {
 		req := newRequestWithAuth(t, "https://api.github.com", "token old-token")
-		SetGithubAPITokenAuthorization(req, "new-token")
+		SetGitHubAPITokenAuthorization(req, "new-token")
 
 		if got := req.Header.Get("Authorization"); got != "token new-token" {
 			t.Errorf("Authorization = %q, want %q", got, "token new-token")
