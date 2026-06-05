@@ -282,7 +282,7 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCt
 
 	logging.RequestLogf(ctx, "* authenticating git server request (host: %s)", helpers.GetHost(req))
 	credsToUse := creds[0]
-	req.SetBasicAuth(credsToUse.username, credsToUse.password)
+	helpers.SetBasicAuthorization(req, credsToUse.username, credsToUse.password)
 	if ctx != nil {
 		ctxdata.SetValue(ctx, addedAuthCtxKey, credsToUse)
 	}
@@ -472,7 +472,7 @@ func (h *GitServerHandler) requestWithAlternativeAuth(ctx *goproxy.ProxyCtx, bod
 		newReq.Body = io.NopCloser(bytes.NewReader(body))
 	}
 
-	newReq.SetBasicAuth(creds.username, creds.password)
+	helpers.SetBasicAuthorization(newReq, creds.username, creds.password)
 	newRsp, err := ctx.RoundTrip(newReq)
 	if err != nil {
 		return nil

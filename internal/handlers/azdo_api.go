@@ -71,7 +71,7 @@ func (h *AzureDevOpsAPIHandler) HandleRequest(req *http.Request, ctx *goproxy.Pr
 	}
 
 	logging.RequestLogf(ctx, "* authenticating azure devops api request with token for %s", host)
-	req.SetBasicAuth(creds[0].username, creds[0].password)
+	helpers.SetBasicAuthorization(req, creds[0].username, creds[0].password)
 
 	// Azure DevOps requires an api-version to be set for requests. Add it if it is not present.
 	var queryParams = req.URL.Query()

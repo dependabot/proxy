@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/url"
@@ -9,6 +10,33 @@ import (
 
 	"golang.org/x/net/idna"
 )
+
+// ReplaceAuthorization replaces the authorization configured on req with the given key and value.
+//
+// Note: "Authorization"-header is always cleared to avoid multiple auth headers being set on the request.
+func ReplaceAuthorization(req *http.Request, key string, value string) {
+	req.Header.Del("Authorization")
+	req.Header.Set(key, value)
+}
+
+// SetRawAuthorization sets the authorization header on req to the given value
+func SetRawAuthorization(req *http.Request, authorization string) {
+	ReplaceAuthorization(req, "Authorization", authorization)
+}
+
+func SetBasicAuthorization(req *http.Request, username, password string) {
+	credentials := username + ":" + password
+	encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
+	SetRawAuthorization(req, "Basic "+encoded)
+}
+
+func SetBearerAuthorization(req *http.Request, token string) {
+	SetRawAuthorization(req, "Bearer "+token)
+}
+
+func SetGitHubAPITokenAuthorization(req *http.Request, token string) {
+	SetRawAuthorization(req, "token "+token)
+}
 
 func CheckGitHubAPIHost(r *http.Request) bool {
 	hostname := GetHost(r)

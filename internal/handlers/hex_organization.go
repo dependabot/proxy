@@ -69,7 +69,7 @@ func (h *HexOrganizationHandler) HandleRequest(req *http.Request, ctx *goproxy.P
 	for _, cred := range h.credentials {
 		if cred.organization == reqOrg {
 			logging.RequestLogf(ctx, "* authenticating hex request (org: %s)", reqOrg)
-			req.Header.Set("authorization", cred.key)
+			helpers.SetRawAuthorization(req, cred.key)
 			return req, nil
 		}
 	}

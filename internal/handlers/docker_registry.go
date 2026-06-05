@@ -120,7 +120,7 @@ func (h *DockerRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pr
 
 		if cred.getECRCredentials(ctx) {
 			logging.RequestLogf(ctx, "* authenticating docker ecr request (host: %s)", req.URL.Hostname())
-			req.SetBasicAuth(cred.ecrUsername, cred.ecrPassword)
+			helpers.SetBasicAuthorization(req, cred.ecrUsername, cred.ecrPassword)
 		} else {
 			logging.RequestLogf(ctx, "* authenticating docker registry request (host: %s)", req.URL.Hostname())
 			transport := &registry.BasicTransport{
