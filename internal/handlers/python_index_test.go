@@ -2,8 +2,13 @@ package handlers
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/elazarl/goproxy"
 
 	"github.com/dependabot/proxy/internal/config"
 )
@@ -104,4 +109,107 @@ func TestPythonIndexHandler(t *testing.T) {
 	req = httptest.NewRequest("GET", "https://PKGS.dev.azure.com/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "azure devops case insensitive registry request")
+}
+
+func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromHTML(t *testing.T) {
+	handler := NewPythonIndexHandler(config.Credentials{
+		config.Credential{
+			"type":      "python_index",
+			"index-url": "https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/",
+			"token":     "user:pass",
+		},
+	})
+
+	ctx := &goproxy.ProxyCtx{}
+	indexReq := httptest.NewRequest(
+		"GET",
+		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
+		nil,
+	)
+	indexReq = handleRequestAndClose(handler, indexReq, ctx)
+	assertHasBasicAuth(t, indexReq, "user", "pass", "simple index request")
+
+	indexResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/html"},
+		},
+		Body: io.NopCloser(strings.NewReader(`
+			<html><body>
+				<a href="https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl#sha256=abc">
+					my-package-1.0.0.whl
+				</a>
+				<a href="https://pkgs.example.com/other-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl">
+					other-org file
+				</a>
+			</body></html>
+		`)),
+	}
+	handler.HandleResponse(indexResp, ctx)
+
+	downloadReq := httptest.NewRequest(
+		"HEAD",
+		"https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
+		nil,
+	)
+	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
+	assertHasBasicAuth(t, downloadReq, "user", "pass", "discovered download request")
+
+	samePrefixReq := httptest.NewRequest(
+		"GET",
+		"https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/another-package/2.0.0/another-package-2.0.0.whl",
+		nil,
+	)
+	samePrefixReq = handleRequestAndClose(handler, samePrefixReq, &goproxy.ProxyCtx{})
+	assertHasBasicAuth(t, samePrefixReq, "user", "pass", "same discovered download prefix request")
+
+	otherOrgReq := httptest.NewRequest(
+		"GET",
+		"https://pkgs.example.com/other-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
+		nil,
+	)
+	otherOrgReq = handleRequestAndClose(handler, otherOrgReq, &goproxy.ProxyCtx{})
+	assertUnauthenticated(t, otherOrgReq, "download request outside authenticated path scope")
+}
+
+func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromJSON(t *testing.T) {
+	handler := NewPythonIndexHandler(config.Credentials{
+		config.Credential{
+			"type":      "python_index",
+			"index-url": "https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/",
+			"token":     "user:pass",
+		},
+	})
+
+	ctx := &goproxy.ProxyCtx{}
+	indexReq := httptest.NewRequest(
+		"GET",
+		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
+		nil,
+	)
+	indexReq = handleRequestAndClose(handler, indexReq, ctx)
+	assertHasBasicAuth(t, indexReq, "user", "pass", "simple index request")
+
+	indexResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"application/vnd.pypi.simple.v1+json"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{
+			"meta": {"api-version": "1.4"},
+			"name": "my-package",
+			"files": [
+				{"filename": "my-package-1.0.0.whl", "url": "/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl#sha256=abc"}
+			]
+		}`)),
+	}
+	handler.HandleResponse(indexResp, ctx)
+
+	downloadReq := httptest.NewRequest(
+		"GET",
+		"https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
+		nil,
+	)
+	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
+	assertHasBasicAuth(t, downloadReq, "user", "pass", "discovered JSON download request")
 }

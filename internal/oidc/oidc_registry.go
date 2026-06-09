@@ -97,6 +97,12 @@ func (r *OIDCRegistry) RegisterURL(url string, cred *OIDCCredential, registryTyp
 //
 // Returns true if the request was authenticated, false otherwise.
 func (r *OIDCRegistry) TryAuth(req *http.Request, ctx *goproxy.ProxyCtx) bool {
+	return r.TryAuthCredential(req, ctx, r.CredentialForRequest(req))
+}
+
+// CredentialForRequest returns the most specific OIDC credential matching the
+// request host, port, and path.
+func (r *OIDCRegistry) CredentialForRequest(req *http.Request) *OIDCCredential {
 	host := strings.ToLower(helpers.GetHost(req))
 	reqPort := req.URL.Port()
 	if reqPort == "" {
@@ -108,7 +114,7 @@ func (r *OIDCRegistry) TryAuth(req *http.Request, ctx *goproxy.ProxyCtx) bool {
 	r.mutex.RUnlock()
 
 	if len(entries) == 0 {
-		return false
+		return nil
 	}
 
 	// Find the most specific matching entry: host is already matched,
@@ -129,17 +135,25 @@ func (r *OIDCRegistry) TryAuth(req *http.Request, ctx *goproxy.ProxyCtx) bool {
 		}
 	}
 
-	if matched == nil {
+	return matched
+}
+
+// TryAuthCredential authenticates a request with a known OIDC credential.
+// Handlers use this when they have their own safe matching rule but want the
+// provider-specific OIDC header behavior to stay centralized here.
+func (r *OIDCRegistry) TryAuthCredential(req *http.Request, ctx *goproxy.ProxyCtx, credential *OIDCCredential) bool {
+	if credential == nil {
 		return false
 	}
 
-	token, err := GetOrRefreshOIDCToken(matched, req.Context())
+	host := strings.ToLower(helpers.GetHost(req))
+	token, err := GetOrRefreshOIDCToken(credential, req.Context())
 	if err != nil {
-		logging.RequestLogf(ctx, "* failed to get %s token via OIDC for %s: %v", matched.Provider(), host, err)
+		logging.RequestLogf(ctx, "* failed to get %s token via OIDC for %s: %v", credential.Provider(), host, err)
 		return false
 	}
 
-	switch matched.parameters.(type) {
+	switch credential.parameters.(type) {
 	case *CloudsmithOIDCParameters:
 		logging.RequestLogf(ctx, "* authenticating request with OIDC API key (host: %s)", host)
 		helpers.ReplaceAuthorization(req, "X-Api-Key", token)

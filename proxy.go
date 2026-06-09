@@ -99,6 +99,7 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 
 	pythonHandler := handlers.NewPythonIndexHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(pythonHandler.HandleRequest)
+	proxy.OnResponse().DoFunc(pythonHandler.HandleResponse)
 
 	composerHandler := handlers.NewComposerHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(composerHandler.HandleRequest)
