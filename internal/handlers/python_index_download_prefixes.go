@@ -13,6 +13,8 @@ import (
 	"github.com/elazarl/goproxy"
 )
 
+const maxPythonIndexDiscoveryBytes = 2 * 1024 * 1024
+
 var hrefAttrRe = regexp.MustCompile(`(?is)<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^'"\s>]+))`)
 
 type simpleJSONResponse struct {
@@ -35,10 +37,11 @@ func (h *PythonIndexHandler) HandleResponse(resp *http.Response, ctx *goproxy.Pr
 		return resp
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	resp.Body = io.NopCloser(bytes.NewReader(body))
+	body, complete, err := readPythonIndexDiscoveryBody(resp)
 	if err != nil {
+		return resp
+	}
+	if !complete {
 		return resp
 	}
 
@@ -49,6 +52,30 @@ func (h *PythonIndexHandler) HandleResponse(resp *http.Response, ctx *goproxy.Pr
 	}
 
 	return resp
+}
+
+func readPythonIndexDiscoveryBody(resp *http.Response) ([]byte, bool, error) {
+	// Only buffer a bounded prefix for discovery. If the response is larger
+	// than the cap, skip learning but replay the bytes already consumed so the
+	// package manager still receives the original full response.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxPythonIndexDiscoveryBytes+1))
+	resp.Body = &replayReadCloser{
+		Reader: io.MultiReader(bytes.NewReader(body), resp.Body),
+		Closer: resp.Body,
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if len(body) > maxPythonIndexDiscoveryBytes {
+		return nil, false, nil
+	}
+
+	return body, true, nil
+}
+
+type replayReadCloser struct {
+	io.Reader
+	io.Closer
 }
 
 func distributionFileLinks(contentType string, body []byte) []string {

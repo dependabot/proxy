@@ -213,3 +213,45 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromJSON(t *test
 	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
 	assertHasBasicAuth(t, downloadReq, "user", "pass", "discovered JSON download request")
 }
+
+func TestPythonIndexHandlerSkipsDiscoveryForLargeSimpleResponse(t *testing.T) {
+	handler := NewPythonIndexHandler(config.Credentials{
+		config.Credential{
+			"type":      "python_index",
+			"index-url": "https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/",
+			"token":     "user:pass",
+		},
+	})
+
+	ctx := &goproxy.ProxyCtx{}
+	indexReq := httptest.NewRequest(
+		"GET",
+		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
+		nil,
+	)
+	indexReq = handleRequestAndClose(handler, indexReq, ctx)
+	assertHasBasicAuth(t, indexReq, "user", "pass", "simple index request")
+
+	downloadURL := "https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl"
+	responseBody := `<a href="` + downloadURL + `">file</a>` + strings.Repeat("x", maxPythonIndexDiscoveryBytes)
+	indexResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/html"},
+		},
+		Body: io.NopCloser(strings.NewReader(responseBody)),
+	}
+	handler.HandleResponse(indexResp, ctx)
+
+	replayedBody, err := io.ReadAll(indexResp.Body)
+	if err != nil {
+		t.Fatalf("failed to read replayed response body: %v", err)
+	}
+	if string(replayedBody) != responseBody {
+		t.Fatal("large Simple API response body was not replayed unchanged")
+	}
+
+	downloadReq := httptest.NewRequest("GET", downloadURL, nil)
+	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
+	assertUnauthenticated(t, downloadReq, "large Simple API response should not be used for discovery")
+}
