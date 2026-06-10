@@ -299,6 +299,46 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixPort(t *testing.T) {
 	assertUnauthenticated(t, defaultPortReq, "download request on default port should not match custom port prefix")
 }
 
+func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixIPv6Host(t *testing.T) {
+	handler := NewPythonIndexHandler(config.Credentials{
+		config.Credential{
+			"type":      "python_index",
+			"index-url": "https://[2001:db8::1]/my-org/my-project/_packaging/my-feed/pypi/simple/",
+			"token":     "user:pass",
+		},
+	})
+
+	ctx := &goproxy.ProxyCtx{}
+	indexReq := httptest.NewRequest(
+		"GET",
+		"https://[2001:db8::1]/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
+		nil,
+	)
+	indexReq = handleRequestAndClose(handler, indexReq, ctx)
+	assertHasBasicAuth(t, indexReq, "user", "pass", "simple index request")
+
+	indexResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/html"},
+		},
+		Body: io.NopCloser(strings.NewReader(`
+			<a href="https://[2001:db8::1]/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl">
+				my-package-1.0.0.whl
+			</a>
+		`)),
+	}
+	handler.HandleResponse(indexResp, ctx)
+
+	downloadReq := httptest.NewRequest(
+		"GET",
+		"https://[2001:db8::1]/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
+		nil,
+	)
+	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
+	assertHasBasicAuth(t, downloadReq, "user", "pass", "discovered download request on IPv6 host")
+}
+
 func TestPythonIndexDownloadAuthStoreEvictsOldestEntryAtLimit(t *testing.T) {
 	store := newPythonIndexDownloadAuthStore()
 	auth := pythonIndexAuth{

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"html"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -164,6 +165,9 @@ func resolveSameScopedURL(link string, baseURL *url.URL) (*url.URL, bool) {
 	return resolved, true
 }
 
+// pythonDownloadPrefixPath recognizes Azure Artifacts package download URLs,
+// whose Simple API responses can rewrite /pypi/simple/ registry paths to
+// /_packaging/<feed-id>/pypi/download/ file paths.
 func pythonDownloadPrefixPath(path string) (string, bool) {
 	segments := pathSegments(path)
 	for i, segment := range segments {
@@ -189,7 +193,9 @@ func normalizedPythonIndexDownloadURL(u *url.URL) *url.URL {
 	port := normalizedPort(&normalized)
 	normalized.Host = strings.ToLower(normalized.Hostname())
 	if port != "" && !isDefaultPort(normalized.Scheme, port) {
-		normalized.Host += ":" + port
+		normalized.Host = net.JoinHostPort(normalized.Host, port)
+	} else if strings.Contains(normalized.Host, ":") {
+		normalized.Host = "[" + normalized.Host + "]"
 	}
 	normalized.RawQuery = ""
 	normalized.Fragment = ""
