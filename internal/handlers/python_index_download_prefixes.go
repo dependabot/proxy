@@ -186,8 +186,9 @@ func normalizedPythonIndexDownloadURL(u *url.URL) *url.URL {
 
 	normalized := *u
 	normalized.Scheme = strings.ToLower(normalized.Scheme)
+	port := normalizedPort(&normalized)
 	normalized.Host = strings.ToLower(normalized.Hostname())
-	if port := normalizedPort(&normalized); !isDefaultPort(normalized.Scheme, port) {
+	if port != "" && !isDefaultPort(normalized.Scheme, port) {
 		normalized.Host += ":" + port
 	}
 	normalized.RawQuery = ""
