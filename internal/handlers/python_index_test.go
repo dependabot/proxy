@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -260,6 +261,53 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixPort(t *testing.T) {
 	)
 	defaultPortReq = handleRequestAndClose(handler, defaultPortReq, &goproxy.ProxyCtx{})
 	assertUnauthenticated(t, defaultPortReq, "download request on default port should not match custom port prefix")
+}
+
+func TestPythonIndexDownloadAuthStoreEvictsOldestEntryAtLimit(t *testing.T) {
+	store := newPythonIndexDownloadAuthStore()
+	auth := pythonIndexAuth{
+		basic:    pythonIndexCredentials{token: "user:pass"},
+		hasBasic: true,
+	}
+
+	for i := 0; i < maxPythonIndexDownloadAuthEntries+1; i++ {
+		prefix, err := url.Parse(fmt.Sprintf(
+			"https://pkgs.example.com/org/project/_packaging/feed-%d/pypi/download/",
+			i,
+		))
+		if err != nil {
+			t.Fatalf("failed to parse prefix URL: %v", err)
+		}
+		store.add(prefix, auth)
+	}
+
+	store.mutex.RLock()
+	entryCount := len(store.entries)
+	store.mutex.RUnlock()
+	if entryCount != maxPythonIndexDownloadAuthEntries {
+		t.Fatalf("expected %d stored prefixes, got %d", maxPythonIndexDownloadAuthEntries, entryCount)
+	}
+
+	evictedReq := httptest.NewRequest(
+		"GET",
+		"https://pkgs.example.com/org/project/_packaging/feed-0/pypi/download/pkg/1.0/pkg.whl",
+		nil,
+	)
+	if _, ok := store.authFor(evictedReq); ok {
+		t.Fatal("oldest discovered download prefix should be evicted")
+	}
+
+	retainedReq := httptest.NewRequest(
+		"GET",
+		fmt.Sprintf(
+			"https://pkgs.example.com/org/project/_packaging/feed-%d/pypi/download/pkg/1.0/pkg.whl",
+			maxPythonIndexDownloadAuthEntries,
+		),
+		nil,
+	)
+	if _, ok := store.authFor(retainedReq); !ok {
+		t.Fatal("newest discovered download prefix should be retained")
+	}
 }
 
 func TestPythonIndexHandlerSkipsDiscoveryForLargeSimpleResponse(t *testing.T) {

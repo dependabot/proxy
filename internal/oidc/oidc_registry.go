@@ -110,7 +110,7 @@ func (r *OIDCRegistry) CredentialForRequest(req *http.Request) *OIDCCredential {
 	}
 
 	r.mutex.RLock()
-	entries := r.byHost[host]
+	entries := append([]oidcEntry(nil), r.byHost[host]...)
 	r.mutex.RUnlock()
 
 	if len(entries) == 0 {

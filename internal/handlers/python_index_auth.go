@@ -14,7 +14,10 @@ import (
 	"github.com/dependabot/proxy/internal/oidc"
 )
 
-const pythonIndexResponseAuthKey = "python-index-response-auth"
+const (
+	pythonIndexResponseAuthKey        = "python-index-response-auth"
+	maxPythonIndexDownloadAuthEntries = 1024
+)
 
 type pythonIndexAuth struct {
 	oidc     *oidc.OIDCCredential
@@ -60,10 +63,16 @@ func (s *pythonIndexDownloadAuthStore) add(prefix *url.URL, auth pythonIndexAuth
 		}
 	}
 
-	s.entries = append(s.entries, pythonIndexDownloadAuthEntry{
+	entry := pythonIndexDownloadAuthEntry{
 		prefix: normalized,
 		auth:   auth,
-	})
+	}
+	if len(s.entries) >= maxPythonIndexDownloadAuthEntries {
+		copy(s.entries, s.entries[1:])
+		s.entries[len(s.entries)-1] = entry
+		return
+	}
+	s.entries = append(s.entries, entry)
 }
 
 func (s *pythonIndexDownloadAuthStore) authFor(req *http.Request) (pythonIndexAuth, bool) {
