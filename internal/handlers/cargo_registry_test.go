@@ -214,3 +214,28 @@ func TestCargoRegistryHandlerIgnoresNoUrlOrHost(t *testing.T) {
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "credential with no url or host should be ignored")
 }
+
+func TestCargoRegistryHandlerUrlScopingNotBypassedByHost(t *testing.T) {
+	token := "Bearer abc123" //nolint:gosec // test credential
+
+	credentials := config.Credentials{
+		config.Credential{
+			"type":  "cargo_registry",
+			"url":   "https://cargo.example.com/registry",
+			"host":  "cargo.example.com",
+			"token": token,
+		},
+	}
+
+	handler := NewCargoRegistryHandler(credentials)
+
+	// matching url path should authenticate
+	req := httptest.NewRequest("GET", "https://cargo.example.com/registry/crate", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasTokenAuth(t, req, "", token, "url-matched request")
+
+	// different path on same host should NOT authenticate (url scoping takes precedence)
+	req = httptest.NewRequest("GET", "https://cargo.example.com/other/path", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "different path on same host should not be authenticated when url is set")
+}

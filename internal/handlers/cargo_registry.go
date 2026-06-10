@@ -95,7 +95,7 @@ func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandl
 		}
 
 		if token == "" && password == "" {
-			logrus.Warnf("missing token for registry (url: %s, host: %s)", cargoCred.url, cargoCred.host)
+			logrus.Warnf("missing token or password for registry (url: %s, host: %s)", cargoCred.url, cargoCred.host)
 			continue
 		}
 
@@ -116,7 +116,11 @@ func (h *CargoRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 
 	// Fall back to static credentials
 	for _, cred := range h.credentials {
-		if !helpers.UrlMatchesRequest(req, cred.url, true) && !helpers.CheckHost(req, cred.host) {
+		if cred.url != "" {
+			if !helpers.UrlMatchesRequest(req, cred.url, true) {
+				continue
+			}
+		} else if !helpers.CheckHost(req, cred.host) {
 			continue
 		}
 
