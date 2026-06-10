@@ -33,7 +33,7 @@ func (h *PythonIndexHandler) HandleResponse(resp *http.Response, ctx *goproxy.Pr
 	}
 
 	responseAuth, ok := pythonIndexResponseAuthFromContext(ctx)
-	if !ok || !isSimpleAPIResponse(resp) {
+	if !ok || !isPythonSimpleAPIPath(responseAuth.baseURL.Path) || !isSimpleAPIResponse(resp) {
 		return resp
 	}
 
@@ -237,6 +237,15 @@ func firstPathSegment(path string) string {
 		return ""
 	}
 	return segments[0]
+}
+
+func isPythonSimpleAPIPath(path string) bool {
+	for _, segment := range pathSegments(path) {
+		if segment == "simple" || segment == "+simple" {
+			return true
+		}
+	}
+	return false
 }
 
 func isPathPrefix(prefix, path string) bool {

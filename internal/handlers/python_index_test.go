@@ -215,6 +215,42 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromJSON(t *test
 	assertHasBasicAuth(t, downloadReq, "user", "pass", "discovered JSON download request")
 }
 
+func TestPythonIndexHandlerSkipsDiscoveryForAuthenticatedNonSimpleResponse(t *testing.T) {
+	handler := NewPythonIndexHandler(config.Credentials{
+		config.Credential{
+			"type":      "python_index",
+			"index-url": "https://pkgs.example.com/org/project/",
+			"token":     "user:pass",
+		},
+	})
+
+	ctx := &goproxy.ProxyCtx{}
+	nonSimpleReq := httptest.NewRequest("GET", "https://pkgs.example.com/org/project/status", nil)
+	nonSimpleReq = handleRequestAndClose(handler, nonSimpleReq, ctx)
+	assertHasBasicAuth(t, nonSimpleReq, "user", "pass", "path-scoped python index request")
+
+	indexResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/html"},
+		},
+		Body: io.NopCloser(strings.NewReader(`
+			<a href="https://pkgs.example.com/org/other-project/_packaging/feed/pypi/download/my-package/1.0.0/my-package-1.0.0.whl">
+				my-package-1.0.0.whl
+			</a>
+		`)),
+	}
+	handler.HandleResponse(indexResp, ctx)
+
+	downloadReq := httptest.NewRequest(
+		"GET",
+		"https://pkgs.example.com/org/other-project/_packaging/feed/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
+		nil,
+	)
+	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
+	assertUnauthenticated(t, downloadReq, "non-Simple response should not be used for discovery")
+}
+
 func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixPort(t *testing.T) {
 	handler := NewPythonIndexHandler(config.Credentials{
 		config.Credential{
