@@ -78,7 +78,6 @@ func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandl
 
 		cargoCred := cargoRepositoryCredentials{
 			url:      url,
-			host:     host,
 			token:    token,
 			username: username,
 			password: password,
@@ -89,13 +88,17 @@ func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandl
 				logrus.Warnf("ignoring invalid registry url (%s): %v", cargoCred.url, err)
 				continue
 			}
-		} else if host == "" {
+		} else if host != "" {
+			// Only set host when url is empty so URL/path scoping always
+			// takes precedence and never falls back to host-only matching.
+			cargoCred.host = host
+		} else {
 			logrus.Warn("ignoring cargo_registry credential with no url or host")
 			continue
 		}
 
 		if token == "" && password == "" {
-			logrus.Warnf("missing token or password for registry (url: %s, host: %s)", cargoCred.url, cargoCred.host)
+			logrus.Warnf("missing token or username/password for registry (url: %s, host: %s)", cargoCred.url, cargoCred.host)
 			continue
 		}
 

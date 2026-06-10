@@ -221,7 +221,7 @@ func TestCargoRegistryHandlerUrlScopingNotBypassedByHost(t *testing.T) {
 	credentials := config.Credentials{
 		config.Credential{
 			"type":  "cargo_registry",
-			"url":   "https://cargo.example.com/registry",
+			"url":   "https://cargo.example.com/myorg",
 			"host":  "cargo.example.com",
 			"token": token,
 		},
@@ -229,13 +229,13 @@ func TestCargoRegistryHandlerUrlScopingNotBypassedByHost(t *testing.T) {
 
 	handler := NewCargoRegistryHandler(credentials)
 
-	// matching url path should authenticate
-	req := httptest.NewRequest("GET", "https://cargo.example.com/registry/crate", nil)
+	// in-scope path should authenticate
+	req := httptest.NewRequest("GET", "https://cargo.example.com/myorg/crate", nil)
 	req = handleRequestAndClose(handler, req, nil)
-	assertHasTokenAuth(t, req, "", token, "url-matched request")
+	assertHasTokenAuth(t, req, "", token, "in-scope path request")
 
-	// different path on same host should NOT authenticate (url scoping takes precedence)
-	req = httptest.NewRequest("GET", "https://cargo.example.com/other/path", nil)
+	// different path on the same host must NOT authenticate
+	req = httptest.NewRequest("GET", "https://cargo.example.com/otherorg/crate", nil)
 	req = handleRequestAndClose(handler, req, nil)
-	assertUnauthenticated(t, req, "different path on same host should not be authenticated when url is set")
+	assertUnauthenticated(t, req, "host must not bypass url path scoping")
 }
