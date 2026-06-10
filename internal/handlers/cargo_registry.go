@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/elazarl/goproxy"
 	"github.com/sirupsen/logrus"
@@ -39,8 +40,11 @@ type CargoRegistryHandler struct {
 }
 
 type cargoRepositoryCredentials struct {
-	url           string
-	authorization string
+	url      string
+	host     string
+	token    string
+	username string
+	password string
 }
 
 func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandler {
@@ -55,6 +59,7 @@ func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandl
 		}
 
 		url := credential.GetString("url")
+		host := strings.ToLower(credential.GetString("host"))
 
 		// Cargo credentials must remain URL-scoped; do not allow OIDC
 		// registration to fall back to host-only matching when url is empty.
@@ -67,18 +72,33 @@ func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandl
 			continue
 		}
 
+		token := credential.GetString("token")
+		username := credential.GetString("username")
+		password := credential.GetString("password")
+
 		cargoCred := cargoRepositoryCredentials{
-			url:           url,
-			authorization: credential.GetString("token"),
+			url:      url,
+			host:     host,
+			token:    token,
+			username: username,
+			password: password,
 		}
-		if _, err := helpers.ParseURLLax(cargoCred.url); err != nil {
-			logrus.Warnf("ignoring invalid registry url (%s): %v", cargoCred.url, err)
+
+		if url != "" {
+			if _, err := helpers.ParseURLLax(cargoCred.url); err != nil {
+				logrus.Warnf("ignoring invalid registry url (%s): %v", cargoCred.url, err)
+				continue
+			}
+		} else if host == "" {
+			logrus.Warn("ignoring cargo_registry credential with no url or host")
 			continue
 		}
-		if cargoCred.authorization == "" {
-			logrus.Warnf("missing token for registry url (%s)", cargoCred.url)
+
+		if token == "" && password == "" {
+			logrus.Warnf("missing token for registry (url: %s, host: %s)", cargoCred.url, cargoCred.host)
 			continue
 		}
+
 		handler.credentials = append(handler.credentials, cargoCred)
 	}
 	return &handler
@@ -96,15 +116,23 @@ func (h *CargoRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 
 	// Fall back to static credentials
 	for _, cred := range h.credentials {
-		if !helpers.UrlMatchesRequest(req, cred.url, true) {
+		if !helpers.UrlMatchesRequest(req, cred.url, true) && !helpers.CheckHost(req, cred.host) {
 			continue
 		}
 
-		logging.RequestLogf(ctx, "* authenticating cargo registry request (url: %s)", cred.url)
-		helpers.SetRawAuthorization(req, cred.authorization)
-
+		authenticateCargoRequest(req, cred, ctx)
 		return req, nil
 	}
 
 	return req, nil
+}
+
+func authenticateCargoRequest(req *http.Request, cred cargoRepositoryCredentials, ctx *goproxy.ProxyCtx) {
+	if cred.token != "" {
+		logging.RequestLogf(ctx, "* authenticating cargo registry request (url: %s, host: %s, token auth)", cred.url, cred.host)
+		helpers.SetRawAuthorization(req, cred.token)
+	} else if cred.password != "" {
+		logging.RequestLogf(ctx, "* authenticating cargo registry request (url: %s, host: %s, basic auth)", cred.url, cred.host)
+		helpers.SetBasicAuthorization(req, cred.username, cred.password)
+	}
 }
