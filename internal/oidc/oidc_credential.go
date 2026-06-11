@@ -3,6 +3,7 @@ package oidc
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -74,13 +75,14 @@ type OIDCCredential struct {
 	tokenExpiry time.Time
 	isRejected  bool
 	mutex       sync.RWMutex
+	httpClient  *http.Client
 }
 
 func (c *OIDCCredential) Provider() string {
 	return c.parameters.Name()
 }
 
-func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
+func CreateOIDCCredential(cred config.Credential, transport http.RoundTripper) (*OIDCCredential, error) {
 	if !IsOIDCConfigured() {
 		return nil, fmt.Errorf("OIDC is not configured")
 	}
@@ -173,6 +175,10 @@ func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {
 
 	return &OIDCCredential{
 		parameters: parameters,
+		httpClient: &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: transport,
+		},
 	}, nil
 }
 
@@ -201,15 +207,15 @@ func GetOrRefreshOIDCToken(cred *OIDCCredential, ctx context.Context) (string, e
 	var err error
 	switch params := cred.parameters.(type) {
 	case *AzureOIDCParameters:
-		oidcAccessToken, err = GetAzureAccessTokenForDevOps(ctx, *params)
+		oidcAccessToken, err = GetAzureAccessTokenForDevOps(ctx, *params, cred.httpClient)
 	case *JFrogOIDCParameters:
-		oidcAccessToken, err = GetJFrogAccessTokenForDevOps(ctx, *params)
+		oidcAccessToken, err = GetJFrogAccessTokenForDevOps(ctx, *params, cred.httpClient)
 	case *AWSOIDCParameters:
-		oidcAccessToken, err = GetAWSAccessTokenForDevOps(ctx, *params)
+		oidcAccessToken, err = GetAWSAccessTokenForDevOps(ctx, *params, cred.httpClient)
 	case *CloudsmithOIDCParameters:
-		oidcAccessToken, err = GetCloudsmithAccessTokenForDevOps(ctx, *params)
+		oidcAccessToken, err = GetCloudsmithAccessTokenForDevOps(ctx, *params, cred.httpClient)
 	case *GCPOIDCParameters:
-		oidcAccessToken, err = GetGCPAccessTokenForDevOps(ctx, *params)
+		oidcAccessToken, err = GetGCPAccessTokenForDevOps(ctx, *params, cred.httpClient)
 	default:
 		return "", fmt.Errorf("unsupported OIDC provider: %s", cred.Provider())
 	}

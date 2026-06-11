@@ -48,14 +48,15 @@ type nugetFeedCredentials struct {
 }
 
 // NewNugetFeedHandler returns a new NugetFeedHandler.
-func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
+func NewNugetFeedHandler(creds config.Credentials, transport http.RoundTripper) *NugetFeedHandler {
 	handler := NugetFeedHandler{
 		credentials:  []nugetFeedCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(transport),
 	}
 
 	httpClient := &http.Client{
-		Timeout: time.Second * 10,
+		Timeout:   time.Second * 10,
+		Transport: transport,
 	}
 
 	for _, cred := range creds {

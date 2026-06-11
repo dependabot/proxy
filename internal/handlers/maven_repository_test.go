@@ -36,7 +36,7 @@ func TestMavenRepositoryHandler(t *testing.T) {
 			"password": deltaForcePassword,
 		},
 	}
-	handler := NewMavenRepositoryHandler(credentials)
+	handler := NewMavenRepositoryHandler(credentials, nil)
 
 	req := httptest.NewRequest("GET", "https://corp.dependabot.com/packages/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)

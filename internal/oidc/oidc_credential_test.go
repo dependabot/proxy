@@ -30,7 +30,7 @@ func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {
 	creds, err := CreateOIDCCredential(config.Credential{
 		"tenant-id": "test-tenant-id",
 		"client-id": "test-client-id",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error creating OIDC credential: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestFailedAuthenticationIsNotRetried(t *testing.T) {
 	creds, err := CreateOIDCCredential(config.Credential{
 		"tenant-id": "test-tenant-id",
 		"client-id": "test-client-id",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error creating OIDC credential: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 				os.Unsetenv(envActionsIDTokenRequestToken)
 			}()
 
-			actual, _ := CreateOIDCCredential(tc.cred)
+			actual, _ := CreateOIDCCredential(tc.cred, nil)
 			if tc.expectedParameters == nil {
 				if actual != nil {
 					t.Fatalf("expected no credential, but got %+v", actual)
