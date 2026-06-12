@@ -215,6 +215,43 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromJSON(t *test
 	assertHasBasicAuth(t, downloadReq, "user", "pass", "discovered JSON download request")
 }
 
+func TestPythonDownloadPrefixFromSimpleLinkRejectsUnscopedLinks(t *testing.T) {
+	baseURL, err := url.Parse("https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/")
+	if err != nil {
+		t.Fatalf("failed to parse base URL: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		link string
+	}{
+		{
+			name: "non-HTTPS",
+			link: "http://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
+		},
+		{
+			name: "different host",
+			link: "https://files.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
+		},
+		{
+			name: "different port",
+			link: "https://pkgs.example.com:8443/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
+		},
+		{
+			name: "different first path segment",
+			link: "https://pkgs.example.com/other-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if prefix, ok := pythonDownloadPrefixFromSimpleLink(tt.link, baseURL); ok {
+				t.Fatalf("expected download prefix discovery to be rejected, got %s", prefix)
+			}
+		})
+	}
+}
+
 func TestPythonIndexHandlerSkipsDiscoveryForAuthenticatedNonSimpleResponse(t *testing.T) {
 	handler := NewPythonIndexHandler(config.Credentials{
 		config.Credential{
