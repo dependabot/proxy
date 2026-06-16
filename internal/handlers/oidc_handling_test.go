@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -1739,6 +1740,64 @@ func TestPythonOIDCSimpleSuffixStripping(t *testing.T) {
 	reqB := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-B/pkg/b", nil)
 	reqB = handleRequestAndClose(handler, reqB, nil)
 	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B request should use token B")
+}
+
+func TestPythonOIDCAuthenticatesDiscoveredDownloadPrefix(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	tenantID := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	clientID := "87654321-4321-4321-4321-210987654321"
+	tokenURL := "https://token.actions.example.com" //nolint:gosec // test URL
+
+	httpmock.RegisterResponder("GET", tokenURL,
+		httpmock.NewStringResponder(200, `{"count":1,"value":"sometoken"}`))
+	httpmock.RegisterResponder("POST", fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantID),
+		httpmock.NewStringResponder(200, `{"access_token":"__oidc_token__","expires_in":3600,"token_type":"Bearer"}`))
+
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", tokenURL)
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "sometoken")
+
+	handler := NewPythonIndexHandler(config.Credentials{
+		config.Credential{
+			"type":      "python_index",
+			"index-url": "https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/",
+			"tenant-id": tenantID,
+			"client-id": clientID,
+		},
+	})
+
+	ctx := &goproxy.ProxyCtx{}
+	indexReq := httptest.NewRequest(
+		"GET",
+		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
+		nil,
+	)
+	indexReq = handleRequestAndClose(handler, indexReq, ctx)
+	assertHasTokenAuth(t, indexReq, "Bearer", "__oidc_token__", "simple index request should use OIDC token")
+
+	indexResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/html"},
+		},
+		Body: io.NopCloser(strings.NewReader(`
+			<html><body>
+				<a href="https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl#sha256=abc">
+					my-package-1.0.0.whl
+				</a>
+			</body></html>
+		`)),
+	}
+	handler.HandleResponse(indexResp, ctx)
+
+	downloadReq := httptest.NewRequest(
+		"HEAD",
+		"https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
+		nil,
+	)
+	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, downloadReq, "Bearer", "__oidc_token__", "discovered download request should use OIDC token")
 }
 
 // TestNPMOIDCSameHostDifferentPaths verifies that two npm OIDC credentials on

@@ -3,13 +3,11 @@ package handlers
 import (
 	"net/http"
 	"regexp"
-	"strings"
 
 	"github.com/elazarl/goproxy"
 
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/helpers"
-	"github.com/dependabot/proxy/internal/logging"
 	"github.com/dependabot/proxy/internal/oidc"
 )
 
@@ -18,6 +16,7 @@ var simpleSuffixRe = regexp.MustCompile(`/\+?simple/?\z`)
 // PythonIndexHandler handles requests to Python indexes, adding auth.
 type PythonIndexHandler struct {
 	credentials  []pythonIndexCredentials
+	downloadAuth *pythonIndexDownloadAuthStore
 	oidcRegistry *oidc.OIDCRegistry
 }
 
@@ -33,6 +32,7 @@ type pythonIndexCredentials struct {
 func NewPythonIndexHandler(creds config.Credentials) *PythonIndexHandler {
 	handler := PythonIndexHandler{
 		credentials:  []pythonIndexCredentials{},
+		downloadAuth: newPythonIndexDownloadAuthStore(),
 		oidcRegistry: oidc.NewOIDCRegistry(),
 	}
 
@@ -87,8 +87,13 @@ func (h *PythonIndexHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 		return req, nil
 	}
 
+	if auth, ok := h.downloadAuth.authFor(req); ok && h.applyAuth(req, ctx, auth) {
+		return req, nil
+	}
+
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, ctx) {
+	if credential := h.oidcRegistry.CredentialForRequest(req); h.oidcRegistry.TryAuthCredential(req, ctx, credential) {
+		rememberPythonIndexResponseAuth(ctx, req.URL, pythonIndexAuth{oidc: credential})
 		return req, nil
 	}
 
@@ -99,15 +104,9 @@ func (h *PythonIndexHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 			continue
 		}
 
-		logging.RequestLogf(ctx, "* authenticating python index request (host: %s)", req.URL.Hostname())
-
-		token := cred.token
-		if token == "" && cred.password != "" {
-			token = cred.username + ":" + cred.password
-		}
-		// ignore `found` because it's okay for the password to be an empty string
-		username, password, _ := strings.Cut(token, ":")
-		helpers.SetBasicAuthorization(req, username, password)
+		auth := pythonIndexAuth{basic: cred, hasBasic: true}
+		h.applyAuth(req, ctx, auth)
+		rememberPythonIndexResponseAuth(ctx, req.URL, auth)
 
 		return req, nil
 	}
