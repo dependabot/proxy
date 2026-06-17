@@ -59,9 +59,10 @@ func TestNPMRegistryHandler(t *testing.T) {
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", privateRegToken, "valid registry request with port and path")
 
+	// Sibling path on the same host should NOT receive credentials from /reg-path
 	req = httptest.NewRequest("GET", "https://example.com/other-path/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
-	assertHasTokenAuth(t, req, "Bearer", privateRegToken, "different path")
+	assertUnauthenticated(t, req, "sibling path should not match")
 
 	req = httptest.NewRequest("GET", "https://nexus.some-company.com/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
@@ -86,4 +87,37 @@ func TestNPMRegistryHandler(t *testing.T) {
 	req = httptest.NewRequest("GET", "https://PKGS.dev.azure.com/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, nexusUser, nexusPassword, "azure devops case insensitive registry request")
+}
+
+func TestNPMRegistryHandler_SameHostDifferentPaths(t *testing.T) {
+	teamAToken := "team-a-token"
+	teamBToken := "team-b-token"
+	credentials := config.Credentials{
+		config.Credential{
+			"type":     "npm_registry",
+			"registry": "https://artifactory.example.com/api/npm/team-a-npm",
+			"token":    teamAToken,
+		},
+		config.Credential{
+			"type":     "npm_registry",
+			"registry": "https://artifactory.example.com/api/npm/team-b-npm",
+			"token":    teamBToken,
+		},
+	}
+	handler := NewNPMRegistryHandler(credentials)
+
+	// Request to team-a path should use team-a token
+	req := httptest.NewRequest("GET", "https://artifactory.example.com/api/npm/team-a-npm/@scope/pkg", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasTokenAuth(t, req, "Bearer", teamAToken, "team-a path should use team-a token")
+
+	// Request to team-b path should use team-b token, not team-a
+	req = httptest.NewRequest("GET", "https://artifactory.example.com/api/npm/team-b-npm/@scope/pkg", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasTokenAuth(t, req, "Bearer", teamBToken, "team-b path should use team-b token")
+
+	// Request to unrelated path should not be authenticated
+	req = httptest.NewRequest("GET", "https://artifactory.example.com/api/npm/team-c-npm/@scope/pkg", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "unrelated path should not match any credential")
 }

@@ -101,6 +101,14 @@ func (h *NPMRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 			continue
 		}
 
+		// Path-segment-aware matching prevents credentials configured for one
+		// path-scoped registry from being applied to sibling paths on the same
+		// host (e.g., /team-a-npm should not match /team-b-npm).
+		regPath := strings.TrimSuffix(regURL.Path, "/")
+		if regPath != "" && !strings.HasPrefix(req.URL.Path, regPath+"/") && req.URL.Path != regPath {
+			continue
+		}
+
 		if cred.token == "" && cred.password != "" {
 			cred.token = cred.username + ":" + cred.password
 		}
