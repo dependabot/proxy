@@ -4,8 +4,8 @@ go 1.26.0
 
 require (
 	github.com/aws/aws-sdk-go v1.55.8
-	github.com/aws/aws-sdk-go-v2 v1.41.12
-	github.com/elazarl/goproxy v1.8.4
+	github.com/aws/aws-sdk-go-v2 v1.42.1
+	github.com/elazarl/goproxy v0.0.0-20240726154733-8b0c20506380
 	github.com/evalphobia/logrus_sentry v0.8.2
 	github.com/getsentry/raven-go v0.2.0
 	github.com/jarcoal/httpmock v1.4.1
@@ -15,13 +15,13 @@ require (
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stackrox/docker-registry-client v0.2.1
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/net v0.52.0
-	golang.org/x/sync v0.20.0
+	golang.org/x/net v0.56.0
+	golang.org/x/sync v0.21.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	github.com/aws/smithy-go v1.27.1 // indirect
+	github.com/aws/smithy-go v1.27.3 // indirect
 	github.com/cenk/backoff v2.2.1+incompatible // indirect
 	github.com/certifi/gocertifi v0.0.0-20191021191039-0944d244cd40 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -37,7 +37,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 )

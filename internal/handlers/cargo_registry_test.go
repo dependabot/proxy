@@ -96,3 +96,146 @@ func TestCargoRegistryHandler(t *testing.T) {
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "non-GET request")
 }
+
+func TestCargoRegistryHandlerWithHost(t *testing.T) {
+	token := "Bearer abc123" //nolint:gosec // test credential
+
+	credentials := config.Credentials{
+		config.Credential{
+			"type":  "cargo_registry",
+			"host":  "cargo.example.com",
+			"token": token,
+		},
+	}
+
+	handler := NewCargoRegistryHandler(credentials)
+
+	// matching host should authenticate
+	req := httptest.NewRequest("GET", "https://cargo.example.com/some/path", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasTokenAuth(t, req, "", token, "host-matched request")
+
+	// non-matching host should not authenticate
+	req = httptest.NewRequest("GET", "https://other.example.com/some/path", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "non-matching host request")
+
+	// HTTP should not authenticate
+	req = httptest.NewRequest("GET", "http://cargo.example.com/some/path", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "HTTP request to matching host")
+}
+
+func TestCargoRegistryHandlerWithUsernamePassword(t *testing.T) {
+	username := "some-user"
+	password := "some-password"
+
+	credentials := config.Credentials{
+		config.Credential{
+			"type":     "cargo_registry",
+			"url":      "https://cargo.example.com/registry",
+			"username": username,
+			"password": password,
+		},
+	}
+
+	handler := NewCargoRegistryHandler(credentials)
+
+	// matching url should authenticate with basic auth
+	req := httptest.NewRequest("GET", "https://cargo.example.com/registry/crate", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, username, password, "basic auth via username/password")
+
+	// non-matching url should not authenticate
+	req = httptest.NewRequest("GET", "https://other.example.com/registry/crate", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "non-matching url should not authenticate")
+}
+
+func TestCargoRegistryHandlerWithHostAndUsernamePassword(t *testing.T) {
+	username := "some-user"
+	password := "some-password"
+
+	credentials := config.Credentials{
+		config.Credential{
+			"type":     "cargo_registry",
+			"host":     "cargo.example.com",
+			"username": username,
+			"password": password,
+		},
+	}
+
+	handler := NewCargoRegistryHandler(credentials)
+
+	// matching host should authenticate with basic auth
+	req := httptest.NewRequest("GET", "https://cargo.example.com/any/path", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, username, password, "host-matched basic auth")
+
+	// non-matching host should not authenticate
+	req = httptest.NewRequest("GET", "https://other.example.com/any/path", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "non-matching host should not authenticate")
+}
+
+func TestCargoRegistryHandlerTokenTakesPrecedenceOverPassword(t *testing.T) {
+	token := "Bearer abc123" //nolint:gosec // test credential
+
+	credentials := config.Credentials{
+		config.Credential{
+			"type":     "cargo_registry",
+			"url":      "https://cargo.example.com/registry",
+			"token":    token,
+			"username": "user",
+			"password": "pass",
+		},
+	}
+
+	handler := NewCargoRegistryHandler(credentials)
+
+	// token should take precedence over username/password
+	req := httptest.NewRequest("GET", "https://cargo.example.com/registry/crate", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasTokenAuth(t, req, "", token, "token takes precedence over password")
+}
+
+func TestCargoRegistryHandlerIgnoresNoUrlOrHost(t *testing.T) {
+	credentials := config.Credentials{
+		config.Credential{
+			"type":  "cargo_registry",
+			"token": "some-token",
+		},
+	}
+
+	handler := NewCargoRegistryHandler(credentials)
+
+	// should not authenticate any request since no url or host was provided
+	req := httptest.NewRequest("GET", "https://anything.example.com/path", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "credential with no url or host should be ignored")
+}
+
+func TestCargoRegistryHandlerUrlScopingNotBypassedByHost(t *testing.T) {
+	token := "Bearer abc123" //nolint:gosec // test credential
+
+	credentials := config.Credentials{
+		config.Credential{
+			"type":  "cargo_registry",
+			"url":   "https://cargo.example.com/myorg",
+			"host":  "cargo.example.com",
+			"token": token,
+		},
+	}
+
+	handler := NewCargoRegistryHandler(credentials)
+
+	// in-scope path should authenticate
+	req := httptest.NewRequest("GET", "https://cargo.example.com/myorg/crate", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasTokenAuth(t, req, "", token, "in-scope path request")
+
+	// different path on the same host must NOT authenticate
+	req = httptest.NewRequest("GET", "https://cargo.example.com/otherorg/crate", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "host must not bypass url path scoping")
+}

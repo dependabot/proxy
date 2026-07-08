@@ -1,4 +1,4 @@
-FROM docker.io/library/golang:1.26.3-alpine3.23 AS builder-base
+FROM docker.io/library/golang:1.26.4-alpine3.23 AS builder-base
 
 ENV GOOS=linux GOARCH=amd64
 
@@ -28,7 +28,7 @@ RUN apk add --update --no-cache gcc musl-dev upx && \
 
 # ============================================================================
 
-FROM docker.io/library/alpine:3.23.4
+FROM docker.io/library/alpine:3.24.1
 
 LABEL org.opencontainers.image.source="https://github.com/dependabot/proxy"
 
