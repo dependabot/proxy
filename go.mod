@@ -15,8 +15,8 @@ require (
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stackrox/docker-registry-client v0.2.1
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/net v0.56.0
-	golang.org/x/sync v0.21.0
+	golang.org/x/net v0.57.0
+	golang.org/x/sync v0.22.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -37,7 +37,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 )
