@@ -1331,3 +1331,163 @@ func TestGetGCPAccessToken(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildJSONRequest(t *testing.T) {
+	type testBody struct {
+		Name  string `json:"name"`
+		Value int    `json:"value"`
+	}
+
+	t.Run("creates request with correct headers and body", func(t *testing.T) {
+		body := testBody{Name: "test", Value: 42}
+		req, err := buildJSONRequest(context.Background(), "https://example.com/token", body)
+		require.NoError(t, err)
+
+		assert.Equal(t, "POST", req.Method)
+		assert.Equal(t, "https://example.com/token", req.URL.String())
+		assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
+		assert.Equal(t, "dependabot-proxy/1.0", req.Header.Get("User-Agent"))
+		assert.Empty(t, req.Header.Get("Accept"), "Accept should not be set by default")
+
+		reqBody, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"name":"test","value":42}`, string(reqBody))
+	})
+
+	t.Run("allows caller to add custom headers after build", func(t *testing.T) {
+		req, err := buildJSONRequest(context.Background(), "https://example.com/token", testBody{})
+		require.NoError(t, err)
+
+		req.Header.Set("Authorization", "Bearer my-token")
+		req.Header.Set("Accept", "application/json")
+
+		assert.Equal(t, "Bearer my-token", req.Header.Get("Authorization"))
+		assert.Equal(t, "application/json", req.Header.Get("Accept"))
+	})
+
+	t.Run("returns error for invalid URL", func(t *testing.T) {
+		_, err := buildJSONRequest(context.Background(), "://invalid", testBody{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create request")
+	})
+}
+
+func TestExecuteRequest(t *testing.T) {
+	t.Run("returns status code and body", func(t *testing.T) {
+		httpmock.Activate()
+		defer httpmock.DeactivateAndReset()
+
+		httpmock.RegisterResponder("POST", "https://example.com/api",
+			httpmock.NewStringResponder(200, `{"token":"abc"}`))
+
+		req, err := http.NewRequest("POST", "https://example.com/api", strings.NewReader("{}"))
+		require.NoError(t, err)
+
+		statusCode, body, err := executeRequest(req)
+		require.NoError(t, err)
+		assert.Equal(t, 200, statusCode)
+		assert.JSONEq(t, `{"token":"abc"}`, string(body))
+	})
+
+	t.Run("returns non-200 status codes without error", func(t *testing.T) {
+		httpmock.Activate()
+		defer httpmock.DeactivateAndReset()
+
+		httpmock.RegisterResponder("POST", "https://example.com/api",
+			httpmock.NewStringResponder(403, `{"error":"forbidden"}`))
+
+		req, err := http.NewRequest("POST", "https://example.com/api", strings.NewReader("{}"))
+		require.NoError(t, err)
+
+		statusCode, body, err := executeRequest(req)
+		require.NoError(t, err)
+		assert.Equal(t, 403, statusCode)
+		assert.Contains(t, string(body), "forbidden")
+	})
+
+	t.Run("returns error on connection failure", func(t *testing.T) {
+		httpmock.Activate()
+		defer httpmock.DeactivateAndReset()
+
+		httpmock.RegisterResponder("POST", "https://example.com/api",
+			httpmock.NewErrorResponder(fmt.Errorf("connection refused")))
+
+		req, err := http.NewRequest("POST", "https://example.com/api", strings.NewReader("{}"))
+		require.NoError(t, err)
+
+		_, _, err = executeRequest(req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to execute request")
+	})
+}
+
+func TestGetAccessTokenForDevOps(t *testing.T) {
+	t.Run("returns error when OIDC is not configured", func(t *testing.T) {
+		t.Setenv(envActionsIDTokenRequestURL, "")
+		t.Setenv(envActionsIDTokenRequestToken, "")
+
+		_, err := getAccessTokenForDevOps(
+			context.Background(),
+			func(ctx context.Context) (string, error) { return "token", nil },
+			func(ctx context.Context, githubToken string) (*OIDCAccessToken, error) {
+				return &OIDCAccessToken{Token: "result"}, nil
+			},
+			"TestProvider",
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "GitHub Actions OIDC is not configured")
+	})
+
+	t.Run("returns error when GitHub token fetch fails", func(t *testing.T) {
+		t.Setenv(envActionsIDTokenRequestURL, "https://example.com")
+		t.Setenv(envActionsIDTokenRequestToken, "test-token")
+
+		_, err := getAccessTokenForDevOps(
+			context.Background(),
+			func(ctx context.Context) (string, error) {
+				return "", fmt.Errorf("token endpoint unreachable")
+			},
+			func(ctx context.Context, githubToken string) (*OIDCAccessToken, error) {
+				return &OIDCAccessToken{Token: "result"}, nil
+			},
+			"TestProvider",
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get GitHub OIDC token")
+	})
+
+	t.Run("returns error when exchange fails with provider name", func(t *testing.T) {
+		t.Setenv(envActionsIDTokenRequestURL, "https://example.com")
+		t.Setenv(envActionsIDTokenRequestToken, "test-token")
+
+		_, err := getAccessTokenForDevOps(
+			context.Background(),
+			func(ctx context.Context) (string, error) { return "github-jwt", nil },
+			func(ctx context.Context, githubToken string) (*OIDCAccessToken, error) {
+				return nil, fmt.Errorf("exchange failed")
+			},
+			"MyProvider",
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to exchange GitHub token for MyProvider token")
+	})
+
+	t.Run("succeeds and passes GitHub token to exchange function", func(t *testing.T) {
+		t.Setenv(envActionsIDTokenRequestURL, "https://example.com")
+		t.Setenv(envActionsIDTokenRequestToken, "test-token")
+
+		var receivedToken string
+		token, err := getAccessTokenForDevOps(
+			context.Background(),
+			func(ctx context.Context) (string, error) { return "my-github-jwt", nil },
+			func(ctx context.Context, githubToken string) (*OIDCAccessToken, error) {
+				receivedToken = githubToken
+				return &OIDCAccessToken{Token: "provider-token"}, nil
+			},
+			"TestProvider",
+		)
+		require.NoError(t, err)
+		assert.Equal(t, "provider-token", token.Token)
+		assert.Equal(t, "my-github-jwt", receivedToken)
+	})
+}
