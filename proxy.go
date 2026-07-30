@@ -77,7 +77,7 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 	proxy.OnRequest().DoFunc(metricsHandler.HandleRequest)
 	proxy.OnResponse().DoFunc(metricsHandler.HandleResponse)
 
-	gitHubAPIHandler := handlers.NewGitHubAPIHandler(cfg.Credentials)
+	gitHubAPIHandler := handlers.NewGitHubAPIHandler(cfg.Credentials, apiClient)
 	proxy.OnRequest().DoFunc(gitHubAPIHandler.HandleRequest)
 	proxy.OnResponse().DoFunc(gitHubAPIHandler.HandleResponse)
 

@@ -19,7 +19,9 @@ import (
 // This allows git credentials for "github.com" to apply to "api.github.com" and
 // will allow git credentials for "<tenant>.ghe.com" to apply to "api.<tenant>.ghe.com" in Proxima.
 type GitHubAPIHandler struct {
-	credentials *gitCredentialsMap
+	credentials     *gitCredentialsMap
+	jitAccessByHost map[string]jitAccessConfig
+	client          ScopeRequester
 }
 
 const ghAPIAddedAuthCtxKey = "gh-api.added-auth"
@@ -27,20 +29,27 @@ const reservedProximaIdentity = "proxima-service-identity"
 
 // NewGitHubAPIHandler returns a new GitHubAPIHandler, extracting the app
 // access token from the array of credentials
-func NewGitHubAPIHandler(creds config.Credentials) *GitHubAPIHandler {
+func NewGitHubAPIHandler(creds config.Credentials, client ScopeRequester) *GitHubAPIHandler {
 	handler := GitHubAPIHandler{
-		credentials: newGitCredentialsMap(),
+		credentials:     newGitCredentialsMap(),
+		jitAccessByHost: map[string]jitAccessConfig{},
+		client:          client,
 	}
 
 	for _, cred := range creds {
-		host := cred.Host()
-		if host == "" {
-			continue
+		switch cred["type"] {
+		case "git_source":
+			host := cred.Host()
+			if host == "" {
+				continue
+			}
+			if host != "github.com" && !strings.HasSuffix(fmt.Sprint(host), ".ghe.com") {
+				continue
+			}
+			handler.credentials.addGitSourceCredentials("api."+host, cred)
+		case "jit_access":
+			handler.addJITAccess(cred)
 		}
-		if cred["type"] != "git_source" || (host != "github.com" && !(strings.HasSuffix(fmt.Sprint(host), ".ghe.com"))) {
-			continue
-		}
-		handler.credentials.addGitSourceCredentials("api."+host, cred)
 	}
 
 	if len(handler.credentials.data) == 0 {
@@ -48,6 +57,27 @@ func NewGitHubAPIHandler(creds config.Credentials) *GitHubAPIHandler {
 	}
 
 	return &handler
+}
+
+func (h *GitHubAPIHandler) addJITAccess(cred config.Credential) {
+	if cred.GetString("credential-type") != "git_source" {
+		return
+	}
+
+	host := strings.ToLower(cred.GetString("host"))
+	if host == "" {
+		return
+	}
+
+	if !strings.HasPrefix(host, "api.") {
+		host = "api." + host
+	}
+
+	h.jitAccessByHost[host] = jitAccessConfig{
+		endpoint: cred.GetString("endpoint"),
+		username: cred.GetString("username"),
+		password: cred.GetString("password"),
+	}
 }
 
 // HandleRequest adds auth to a GitHub API request
@@ -84,10 +114,11 @@ func (h *GitHubAPIHandler) HandleResponse(rsp *http.Response, ctx *goproxy.Proxy
 	if rsp == nil {
 		return rsp
 	}
-	if addedAuth, ok := ctxdata.GetBool(ctx, ghAPIAddedAuthCtxKey); !ok || !addedAuth {
+	if !h.isHandledGitHubAPIRequest(ctx.Req) {
 		return rsp
 	}
-	if !h.isHandledGitHubAPIRequest(ctx.Req) {
+	addedAuth, _ := ctxdata.GetBool(ctx, ghAPIAddedAuthCtxKey)
+	if !addedAuth && h.jitAccessByHost[helpers.GetHost(ctx.Req)].endpoint == "" {
 		return rsp
 	}
 	if !isPotentialAuthFailure(rsp.StatusCode) {
@@ -121,7 +152,57 @@ func (h *GitHubAPIHandler) HandleResponse(rsp *http.Response, ctx *goproxy.Proxy
 		logging.RequestLogf(ctx, "* re-auth'd request returned %d, ignoring response", newRsp.StatusCode)
 		helpers.DrainAndClose(newRsp)
 	}
+
+	// All known credentials have been tried, try to JIT create access credentials.
+	jitCreds := h.getJITCredentialsForRequest(ctx)
+	if jitCreds != nil {
+		newReq := ctx.Req.Clone(ctx.Req.Context())
+		logging.RequestLogf(ctx, "* auth'd github api request failed authentication, retrying with jit access auth")
+		newReq.Header.Set("Authorization", "token "+jitCreds.password)
+		newRsp, err := ctx.RoundTrip(newReq)
+		if err != nil {
+			return rsp
+		}
+
+		if !isPotentialAuthFailure(newRsp.StatusCode) {
+			helpers.DrainAndClose(rsp)
+			logging.RequestLogf(ctx, "* re-auth'd jit request returned %d, replacing response", newRsp.StatusCode)
+			return newRsp
+		}
+		logging.RequestLogf(ctx, "* re-auth'd jit request returned %d, ignoring response", newRsp.StatusCode)
+		helpers.DrainAndClose(newRsp)
+	}
+
 	return rsp
+}
+
+func (h *GitHubAPIHandler) getJITCredentialsForRequest(ctx *goproxy.ProxyCtx) *gitCredentials {
+	host := helpers.GetHost(ctx.Req)
+	jitConfig := h.jitAccessByHost[host]
+	if jitConfig.endpoint == "" {
+		return nil
+	}
+
+	org, repo, ok := gitHubAPIExtractOrgAndRepo(ctx.Req.URL.Path)
+	if !ok {
+		return nil
+	}
+
+	logging.RequestLogf(ctx, "* requesting JIT access for github api request")
+	if h.client == nil {
+		return nil
+	}
+	credential, err := h.client.RequestJITAccess(ctx, jitConfig.endpoint, jitConfig.username, jitConfig.password, org, repo)
+	if credential == nil || err != nil {
+		return nil
+	}
+
+	repoNWO := fmt.Sprintf("%s/%s", org, repo)
+
+	// Add the returned credentials to the beginning of the repo-scoped list, so that
+	// they are prioritized over existing tokens for future requests.
+	hostCreds := h.credentials.get(host)
+	return hostCreds.addToken(repoNWO, credential.GetString("username"), credential.GetString("password"), true)
 }
 
 func (h *GitHubAPIHandler) isHandledGitHubAPIRequest(req *http.Request) bool {
