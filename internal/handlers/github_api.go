@@ -52,7 +52,7 @@ func NewGitHubAPIHandler(creds config.Credentials, client ScopeRequester) *GitHu
 		}
 	}
 
-	if len(handler.credentials.data) == 0 {
+	if handler.credentials.isEmpty() && len(handler.jitAccessByHost) == 0 {
 		logrus.Warn("GitHubAPIHandler has no app access tokens")
 	}
 
@@ -85,7 +85,7 @@ func (h *GitHubAPIHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCt
 	if !h.isHandledGitHubAPIRequest(req) {
 		return req, nil
 	}
-	if len(h.credentials.data) == 0 {
+	if h.credentials.isEmpty() {
 		return req, nil
 	}
 
