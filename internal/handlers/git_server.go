@@ -64,13 +64,6 @@ func newGitCredentialsMap() *gitCredentialsMap {
 	}
 }
 
-func (g *gitCredentialsMap) isEmpty() bool {
-	g.RLock()
-	defer g.RUnlock()
-
-	return len(g.data) == 0
-}
-
 func (g *gitCredentialsMap) get(host string) *hostCredentialMap {
 	g.Lock()
 	defer g.Unlock()

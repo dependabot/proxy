@@ -29,6 +29,25 @@ var (
 	}
 )
 
+func TestGitHubAPIJITAccessEnabled(t *testing.T) {
+	tests := []struct {
+		value   string
+		enabled bool
+	}{
+		{value: "", enabled: false},
+		{value: "false", enabled: false},
+		{value: "TRUE", enabled: false},
+		{value: "true", enabled: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.value, func(t *testing.T) {
+			t.Setenv("PROXY_GITHUB_API_JIT_ACCESS", test.value)
+			assert.Equal(t, test.enabled, githubAPIJITAccessEnabled())
+		})
+	}
+}
+
 func TestProxyHTTPRequest(t *testing.T) {
 	var blockedIPs []net.IP
 	client, proxy := testProxyServer(t, testProxyConfig, blockedIPs)

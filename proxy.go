@@ -26,6 +26,10 @@ type Proxy struct {
 	Close         func() error
 }
 
+func githubAPIJITAccessEnabled() bool {
+	return os.Getenv("PROXY_GITHUB_API_JIT_ACCESS") == "true"
+}
+
 func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIps []net.IP) *Proxy {
 	var err error
 
@@ -77,7 +81,11 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 	proxy.OnRequest().DoFunc(metricsHandler.HandleRequest)
 	proxy.OnResponse().DoFunc(metricsHandler.HandleResponse)
 
-	gitHubAPIHandler := handlers.NewGitHubAPIHandler(cfg.Credentials, apiClient)
+	var gitHubAPIJITClient handlers.ScopeRequester
+	if githubAPIJITAccessEnabled() {
+		gitHubAPIJITClient = apiClient
+	}
+	gitHubAPIHandler := handlers.NewGitHubAPIHandler(cfg.Credentials, gitHubAPIJITClient)
 	proxy.OnRequest().DoFunc(gitHubAPIHandler.HandleRequest)
 	proxy.OnResponse().DoFunc(gitHubAPIHandler.HandleResponse)
 
