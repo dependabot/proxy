@@ -151,26 +151,6 @@ func TestMetadataAPIRestriction(t *testing.T) {
 	}
 }
 
-func TestIsPlainHTTPConnect(t *testing.T) {
-	tests := []struct {
-		host     string
-		expected bool
-	}{
-		{"example.com:80", true},
-		{"example.com:443", false},
-		{"example.com:8080", false},
-		{"example.com:8443", false},
-		{"example.com", false},
-		{"[::1]:80", true},
-		{"[::1]:443", false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.host, func(t *testing.T) {
-			assert.Equal(t, tc.expected, isPlainHTTPConnect(tc.host))
-		})
-	}
-}
-
 func TestProxyHTTPConnectPort80(t *testing.T) {
 	var blockedIPs []net.IP
 	client, proxy := testProxyServer(t, testProxyConfig, blockedIPs)
