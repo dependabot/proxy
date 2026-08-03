@@ -175,22 +175,27 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 			if err != nil {
 				return
 			}
-			req, resp := proxy.filterRequest(req, ctx)
+			req.URL.Scheme = "http"
+			req.URL.Host = host
+			req.Host = host
+			req.RemoteAddr = r.RemoteAddr
+			requestCtx := &ProxyCtx{Req: req, Session: atomic.AddInt64(&proxy.sess, 1), Proxy: proxy, UserData: ctx.UserData}
+			req, resp := proxy.filterRequest(req, requestCtx)
 			if resp == nil {
 				if err := req.Write(targetSiteCon); err != nil {
-					httpError(proxyClient, ctx, err)
+					httpError(proxyClient, requestCtx, err)
 					return
 				}
 				resp, err = http.ReadResponse(remote, req)
 				if err != nil {
-					httpError(proxyClient, ctx, err)
+					httpError(proxyClient, requestCtx, err)
 					return
 				}
 				defer resp.Body.Close()
 			}
-			resp = proxy.filterResponse(resp, ctx)
+			resp = proxy.filterResponse(resp, requestCtx)
 			if err := resp.Write(proxyClient); err != nil {
-				httpError(proxyClient, ctx, err)
+				httpError(proxyClient, requestCtx, err)
 				return
 			}
 		}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -9,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -16,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/elazarl/goproxy"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/dependabot/proxy/internal/config"
@@ -153,23 +156,72 @@ func TestMetadataAPIRestriction(t *testing.T) {
 
 func TestProxyHTTPConnectPort80(t *testing.T) {
 	var blockedIPs []net.IP
-	client, proxy := testProxyServer(t, testProxyConfig, blockedIPs)
+	_, proxy := testProxyServer(t, testProxyConfig, blockedIPs)
 	defer proxy.Close()
 
-	// Start a plain HTTP server
 	httpURL, httpSrv := testHTTPServer(t)
 	defer httpSrv.Close()
-
-	// Make a request via the proxy using an explicit http:// URL.
-	// The Go HTTP client issues a CONNECT to the proxy when it detects the proxy
-	// should handle even HTTP traffic through a tunnel (e.g., forced by the server's port).
-	// Here we use the httptest server URL which is plain HTTP.
-	rsp, err := client.Get(httpURL)
+	targetURL, err := url.Parse(httpURL)
 	if err != nil {
-		t.Fatalf("making proxied HTTP request: %v", err)
+		t.Fatalf("parsing target URL: %v", err)
+	}
+
+	proxyHandler := proxy.Handler.(*Proxy)
+	proxyHandler.ConnectDialWithReq = func(_ *http.Request, network, address string) (net.Conn, error) {
+		if address != "registry.test:80" {
+			return nil, fmt.Errorf("unexpected CONNECT target %q", address)
+		}
+		return net.Dial(network, targetURL.Host)
+	}
+	observedURL := make(chan *url.URL, 1)
+	observedResponseURL := make(chan *url.URL, 1)
+	proxyHandler.OnRequest().DoFunc(func(req *http.Request, _ *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		if req.Method == http.MethodGet {
+			observedURL <- req.URL
+		}
+		return req, nil
+	})
+	proxyHandler.OnResponse().DoFunc(func(rsp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+		if ctx.Req.Method == http.MethodGet {
+			observedResponseURL <- ctx.Req.URL
+		}
+		return rsp
+	})
+
+	conn, err := net.Dial("tcp", proxy.Addr)
+	if err != nil {
+		t.Fatalf("connecting to proxy: %v", err)
+	}
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+
+	if _, err := fmt.Fprint(conn, "CONNECT registry.test:80 HTTP/1.1\r\nHost: registry.test:80\r\n\r\n"); err != nil {
+		t.Fatalf("sending CONNECT request: %v", err)
+	}
+	connectRsp, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		t.Fatalf("reading CONNECT response: %v", err)
+	}
+	defer connectRsp.Body.Close()
+	assert.Equal(t, http.StatusOK, connectRsp.StatusCode)
+
+	if _, err := fmt.Fprint(conn, "GET /package HTTP/1.1\r\nHost: untrusted.example\r\nConnection: close\r\n\r\n"); err != nil {
+		t.Fatalf("sending tunneled request: %v", err)
+	}
+	rsp, err := http.ReadResponse(reader, &http.Request{Method: http.MethodGet})
+	if err != nil {
+		t.Fatalf("reading tunneled response: %v", err)
 	}
 	defer rsp.Body.Close()
-	assert.Equal(t, 200, rsp.StatusCode)
+	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+
+	innerURL := <-observedURL
+	assert.Equal(t, "http", innerURL.Scheme)
+	assert.Equal(t, "registry.test:80", innerURL.Host)
+	assert.Equal(t, "/package", innerURL.Path)
+
+	responseURL := <-observedResponseURL
+	assert.Equal(t, innerURL, responseURL)
 }
 
 func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*http.Client, *http.Server) {
