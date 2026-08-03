@@ -54,15 +54,7 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 	proxy.CertStore = newCertStore()
 
 	proxy.OnResponse().DoFunc(handleForbidden)
-	proxy.OnRequest().HandleConnectFunc(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
-		// If the CONNECT target is port 80, the client expects plain HTTP
-		// tunneling rather than TLS. Using MitmConnect (TLS) on port 80
-		// would cause a handshake failure because the client sends plain HTTP.
-		if ctx.Req.URL.Port() == "80" {
-			return goproxy.HTTPMitmConnect, host
-		}
-		return goproxy.MitmConnect, host
-	})
+	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	proxy.OnRequest().DoFunc(normaliseHost)
 	proxy.OnRequest().DoFunc(blockMetadataAPIHosts)
 	logger := NewRequestLogger()

@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
@@ -154,7 +155,7 @@ func TestMetadataAPIRestriction(t *testing.T) {
 	}
 }
 
-func TestProxyHTTPConnectPort80(t *testing.T) {
+func TestProxyHTTPConnectNonstandardPort(t *testing.T) {
 	var blockedIPs []net.IP
 	_, proxy := testProxyServer(t, testProxyConfig, blockedIPs)
 	defer proxy.Close()
@@ -167,8 +168,8 @@ func TestProxyHTTPConnectPort80(t *testing.T) {
 	}
 
 	proxyHandler := proxy.Handler.(*Proxy)
-	proxyHandler.ConnectDialWithReq = func(_ *http.Request, network, address string) (net.Conn, error) {
-		if address != "registry.test:80" {
+	proxyHandler.Tr.DialContext = func(_ context.Context, network, address string) (net.Conn, error) {
+		if address != "registry.test:8081" {
 			return nil, fmt.Errorf("unexpected CONNECT target %q", address)
 		}
 		return net.Dial(network, targetURL.Host)
@@ -195,7 +196,7 @@ func TestProxyHTTPConnectPort80(t *testing.T) {
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
 
-	if _, err := fmt.Fprint(conn, "CONNECT registry.test:80 HTTP/1.1\r\nHost: registry.test:80\r\n\r\n"); err != nil {
+	if _, err := fmt.Fprint(conn, "CONNECT registry.test:8081 HTTP/1.1\r\nHost: registry.test:8081\r\n\r\n"); err != nil {
 		t.Fatalf("sending CONNECT request: %v", err)
 	}
 	connectRsp, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
@@ -217,11 +218,43 @@ func TestProxyHTTPConnectPort80(t *testing.T) {
 
 	innerURL := <-observedURL
 	assert.Equal(t, "http", innerURL.Scheme)
-	assert.Equal(t, "registry.test:80", innerURL.Host)
+	assert.Equal(t, "registry.test:8081", innerURL.Host)
 	assert.Equal(t, "/package", innerURL.Path)
 
 	responseURL := <-observedResponseURL
 	assert.Equal(t, innerURL, responseURL)
+}
+
+func TestProxyHTTPSConnectPort80(t *testing.T) {
+	var blockedIPs []net.IP
+	client, proxy := testProxyServer(t, testProxyConfig, blockedIPs)
+	defer proxy.Close()
+
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	targetURL, err := url.Parse(target.URL)
+	if err != nil {
+		t.Fatalf("parsing target URL: %v", err)
+	}
+
+	proxyHandler := proxy.Handler.(*Proxy)
+	proxyHandler.Tr.DialContext = func(_ context.Context, network, address string) (net.Conn, error) {
+		if address != "127.0.0.1:80" {
+			return nil, fmt.Errorf("unexpected CONNECT target %q", address)
+		}
+		return net.Dial(network, targetURL.Host)
+	}
+	proxyHandler.Tr.TLSClientConfig.RootCAs = x509.NewCertPool()
+	proxyHandler.Tr.TLSClientConfig.RootCAs.AddCert(target.Certificate())
+
+	rsp, err := client.Get("https://127.0.0.1:80/package")
+	if err != nil {
+		t.Fatalf("making proxied HTTPS request: %v", err)
+	}
+	defer rsp.Body.Close()
+	assert.Equal(t, http.StatusOK, rsp.StatusCode)
 }
 
 func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*http.Client, *http.Server) {
