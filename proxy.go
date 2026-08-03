@@ -54,7 +54,15 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 	proxy.CertStore = newCertStore()
 
 	proxy.OnResponse().DoFunc(handleForbidden)
-	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+	proxy.OnRequest().HandleConnectFunc(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+		// If the CONNECT target is port 80, the client expects plain HTTP
+		// tunneling rather than TLS. Using MitmConnect (TLS) on port 80
+		// would cause a handshake failure because the client sends plain HTTP.
+		if isPlainHTTPConnect(host) {
+			return goproxy.HTTPMitmConnect, host
+		}
+		return goproxy.MitmConnect, host
+	})
 	proxy.OnRequest().DoFunc(normaliseHost)
 	proxy.OnRequest().DoFunc(blockMetadataAPIHosts)
 	logger := NewRequestLogger()
@@ -155,6 +163,17 @@ func handleForbidden(rsp *http.Response, p *goproxy.ProxyCtx) *http.Response {
 		return goproxy.NewResponse(p.Req, goproxy.ContentTypeText, http.StatusForbidden, "")
 	}
 	return rsp
+}
+
+// isPlainHTTPConnect returns true if the CONNECT target host indicates a plain
+// HTTP connection (port 80) rather than TLS.
+func isPlainHTTPConnect(host string) bool {
+	_, port, err := net.SplitHostPort(host)
+	if err != nil {
+		// No port specified; CONNECT without a port is unusual but not port 80.
+		return false
+	}
+	return port == "80"
 }
 
 func normaliseHost(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {

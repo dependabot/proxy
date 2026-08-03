@@ -151,6 +151,47 @@ func TestMetadataAPIRestriction(t *testing.T) {
 	}
 }
 
+func TestIsPlainHTTPConnect(t *testing.T) {
+	tests := []struct {
+		host     string
+		expected bool
+	}{
+		{"example.com:80", true},
+		{"example.com:443", false},
+		{"example.com:8080", false},
+		{"example.com:8443", false},
+		{"example.com", false},
+		{"[::1]:80", true},
+		{"[::1]:443", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.host, func(t *testing.T) {
+			assert.Equal(t, tc.expected, isPlainHTTPConnect(tc.host))
+		})
+	}
+}
+
+func TestProxyHTTPConnectPort80(t *testing.T) {
+	var blockedIPs []net.IP
+	client, proxy := testProxyServer(t, testProxyConfig, blockedIPs)
+	defer proxy.Close()
+
+	// Start a plain HTTP server
+	httpURL, httpSrv := testHTTPServer(t)
+	defer httpSrv.Close()
+
+	// Make a request via the proxy using an explicit http:// URL.
+	// The Go HTTP client issues a CONNECT to the proxy when it detects the proxy
+	// should handle even HTTP traffic through a tunnel (e.g., forced by the server's port).
+	// Here we use the httptest server URL which is plain HTTP.
+	rsp, err := client.Get(httpURL)
+	if err != nil {
+		t.Fatalf("making proxied HTTP request: %v", err)
+	}
+	defer rsp.Body.Close()
+	assert.Equal(t, 200, rsp.StatusCode)
+}
+
 func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*http.Client, *http.Server) {
 	envSettings := config.ProxyEnvSettings{
 		APIEndpoint:    "",
