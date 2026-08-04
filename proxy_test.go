@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -9,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -149,6 +151,60 @@ func TestMetadataAPIRestriction(t *testing.T) {
 			assert.Equal(t, 403, rsp.StatusCode)
 		})
 	}
+}
+
+func TestProxyCONNECTPort80CarriesPlainHTTP(t *testing.T) {
+	var blockedIPs []net.IP
+	_, proxy := testProxyServer(t, testProxyConfig, blockedIPs)
+	defer proxy.Close()
+
+	targetURLStr, httpSrv := testHTTPServer(t)
+	defer httpSrv.Close()
+
+	targetURL, err := url.Parse(targetURLStr)
+	if err != nil {
+		t.Fatalf("parse target URL: %v", err)
+	}
+
+	proxyConn, err := net.Dial("tcp", proxy.Addr)
+	if err != nil {
+		t.Fatalf("dial proxy: %v", err)
+	}
+	defer proxyConn.Close()
+
+	if err := proxyConn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+
+	connectReq := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", targetURL.Host, targetURL.Host)
+	if _, err := proxyConn.Write([]byte(connectReq)); err != nil {
+		t.Fatalf("write CONNECT request: %v", err)
+	}
+
+	br := bufio.NewReader(proxyConn)
+	connectRsp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("read CONNECT response: %v", err)
+	}
+	defer connectRsp.Body.Close()
+	assert.Equal(t, http.StatusOK, connectRsp.StatusCode)
+
+	plainReqRaw := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", targetURL.Host)
+	if _, err := proxyConn.Write([]byte(plainReqRaw)); err != nil {
+		t.Fatalf("write tunneled plain HTTP request: %v", err)
+	}
+
+	plainReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, targetURLStr, nil)
+	if err != nil {
+		t.Fatalf("create tunneled plain HTTP request: %v", err)
+	}
+
+	plainRsp, err := http.ReadResponse(br, plainReq)
+	if err != nil {
+		t.Fatalf("read tunneled plain HTTP response: %v", err)
+	}
+	defer plainRsp.Body.Close()
+	assert.Equal(t, http.StatusOK, plainRsp.StatusCode)
 }
 
 func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*http.Client, *http.Server) {
