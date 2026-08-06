@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ecr"
 	"github.com/aws/aws-sdk-go/service/ecr/ecriface"
 	"github.com/elazarl/goproxy"
@@ -160,7 +159,7 @@ func (c *mockECRClient) GetAuthorizationToken(*ecr.GetAuthorizationTokenInput) (
 	return &ecr.GetAuthorizationTokenOutput{
 		AuthorizationData: []*ecr.AuthorizationData{
 			{
-				AuthorizationToken: aws.String(authToken),
+				AuthorizationToken: new(authToken),
 			},
 		},
 	}, nil

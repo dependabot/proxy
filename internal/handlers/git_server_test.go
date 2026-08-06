@@ -22,7 +22,7 @@ import (
 )
 
 func TestGitServerHandler_url(t *testing.T) {
-	cred := map[string]interface{}{
+	cred := map[string]any{
 		"type":     "git_source",
 		"url":      "https://github.com",
 		"username": "x-access-token",
@@ -47,7 +47,7 @@ func TestGitServerHandler(t *testing.T) {
 	gheCred := testGitSourceCred("ghe.some-corp.com", "x-access-token", "corp")
 	proximaCred := testGitSourceCred("github.com", "proxima-service-identity", "jwt")
 
-	rubygemsCred := map[string]interface{}{
+	rubygemsCred := map[string]any{
 		"type":     "rubygems",
 		"host":     "github.com",
 		"username": "user",

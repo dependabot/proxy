@@ -41,7 +41,7 @@ func TestSendIncrementMetric(t *testing.T) {
 	client := createTestClient()
 
 	// Ensure that the buffer is empty at the start of the test
-	client.MetricsBuffer = make([]map[string]interface{}, 0)
+	client.MetricsBuffer = make([]map[string]any, 0)
 
 	// Send an increment metric
 	err := client.SendMetric("http_request_count", "increment", 1, map[string]string{"request_host": "example.com"})
@@ -63,7 +63,7 @@ func TestSendResponseCountMetric(t *testing.T) {
 	client := createTestClient()
 
 	// Ensure that the buffer is empty at the start of the test
-	client.MetricsBuffer = make([]map[string]interface{}, 0)
+	client.MetricsBuffer = make([]map[string]any, 0)
 
 	// Send a response count increment metric
 	err := client.SendMetric("http_response_count", "increment", 1, map[string]string{"response_code": "200", "request_host": "example.com"})
@@ -86,7 +86,7 @@ func TestFlushBuffer(t *testing.T) {
 	client := createTestClient()
 
 	// Ensure that the buffer is empty at the start of the test
-	client.MetricsBuffer = make([]map[string]interface{}, 0)
+	client.MetricsBuffer = make([]map[string]any, 0)
 
 	// Send a metric to the buffer
 	err := client.SendMetric("http_request_count", "increment", 1, map[string]string{"request_host": "example.com"})
@@ -120,7 +120,7 @@ func TestFlushBufferWithEmptyAPIEndpoint(t *testing.T) {
 	// Create a new CollectorClient instance for testing with an empty APIEndpoint
 	client := New(envSettings, &MockAPIClient{})
 
-	client.MetricsBuffer = append(client.MetricsBuffer, map[string]interface{}{
+	client.MetricsBuffer = append(client.MetricsBuffer, map[string]any{
 		"metric": "test_metric",
 		"value":  1,
 		"type":   "increment",
