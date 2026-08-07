@@ -1,9 +1,11 @@
 package goproxy
 
 import (
+	"bufio"
+	"crypto/tls"
 	"io"
-	"net"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -18,12 +20,42 @@ func headerContains(header http.Header, name string, value string) bool {
 	return false
 }
 
-func isWebSocketHandshake(header http.Header) bool {
-	return headerContains(header, "Connection", "Upgrade") &&
-		headerContains(header, "Upgrade", "websocket")
+func isWebSocketRequest(r *http.Request) bool {
+	return headerContains(r.Header, "Connection", "upgrade") &&
+		headerContains(r.Header, "Upgrade", "websocket")
 }
 
-func (proxy *ProxyHttpServer) hijackConnection(ctx *ProxyCtx, w http.ResponseWriter) (net.Conn, error) {
+func (proxy *ProxyHttpServer) serveWebsocketTLS(ctx *ProxyCtx, w http.ResponseWriter, req *http.Request, tlsConfig *tls.Config, clientConn *tls.Conn) {
+	targetURL := url.URL{Scheme: "wss", Host: req.URL.Host, Path: req.URL.Path}
+
+	// Connect to upstream
+	targetConn, err := tls.Dial("tcp", targetURL.Host, tlsConfig)
+	if err != nil {
+		ctx.Warnf("Error dialing target site: %v", err)
+		return
+	}
+	defer targetConn.Close()
+
+	// Perform handshake
+	if err := proxy.websocketHandshake(ctx, req, targetConn, clientConn); err != nil {
+		ctx.Warnf("Websocket handshake error: %v", err)
+		return
+	}
+
+	// Proxy wss connection
+	proxy.proxyWebsocket(ctx, targetConn, clientConn)
+}
+
+func (proxy *ProxyHttpServer) serveWebsocket(ctx *ProxyCtx, w http.ResponseWriter, req *http.Request) {
+	targetURL := url.URL{Scheme: "ws", Host: req.URL.Host, Path: req.URL.Path}
+
+	targetConn, err := proxy.connectDial(ctx, "tcp", targetURL.Host)
+	if err != nil {
+		ctx.Warnf("Error dialing target site: %v", err)
+		return
+	}
+	defer targetConn.Close()
+
 	// Connect to Client
 	hj, ok := w.(http.Hijacker)
 	if !ok {
@@ -32,25 +64,58 @@ func (proxy *ProxyHttpServer) hijackConnection(ctx *ProxyCtx, w http.ResponseWri
 	clientConn, _, err := hj.Hijack()
 	if err != nil {
 		ctx.Warnf("Hijack error: %v", err)
-		return nil, err
+		return
 	}
-	return clientConn, nil
+
+	// Perform handshake
+	if err := proxy.websocketHandshake(ctx, req, targetConn, clientConn); err != nil {
+		ctx.Warnf("Websocket handshake error: %v", err)
+		return
+	}
+
+	// Proxy ws connection
+	proxy.proxyWebsocket(ctx, targetConn, clientConn)
 }
 
-func (proxy *ProxyHttpServer) proxyWebsocket(ctx *ProxyCtx, remoteConn io.ReadWriter, proxyClient io.ReadWriter) {
-	// 2 is the number of goroutines, this code is implemented according to
-	// https://stackoverflow.com/questions/52031332/wait-for-one-goroutine-to-finish
-	waitChan := make(chan struct{}, 2)
-	go func() {
-		_ = copyOrWarn(ctx, remoteConn, proxyClient)
-		waitChan <- struct{}{}
-	}()
+func (proxy *ProxyHttpServer) websocketHandshake(ctx *ProxyCtx, req *http.Request, targetSiteConn io.ReadWriter, clientConn io.ReadWriter) error {
+	// write handshake request to target
+	err := req.Write(targetSiteConn)
+	if err != nil {
+		ctx.Warnf("Error writing upgrade request: %v", err)
+		return err
+	}
 
-	go func() {
-		_ = copyOrWarn(ctx, proxyClient, remoteConn)
-		waitChan <- struct{}{}
-	}()
+	targetTLSReader := bufio.NewReader(targetSiteConn)
 
-	// Wait until one end closes the connection
-	<-waitChan
+	// Read handshake response from target
+	resp, err := http.ReadResponse(targetTLSReader, req)
+	if err != nil {
+		ctx.Warnf("Error reading handhsake response  %v", err)
+		return err
+	}
+
+	// Run response through handlers
+	resp = proxy.filterResponse(resp, ctx)
+
+	// Proxy handshake back to client
+	err = resp.Write(clientConn)
+	if err != nil {
+		ctx.Warnf("Error writing handshake response: %v", err)
+		return err
+	}
+	return nil
+}
+
+func (proxy *ProxyHttpServer) proxyWebsocket(ctx *ProxyCtx, dest io.ReadWriter, source io.ReadWriter) {
+	errChan := make(chan error, 2)
+	cp := func(dst io.Writer, src io.Reader) {
+		_, err := io.Copy(dst, src)
+		ctx.Warnf("Websocket error: %v", err)
+		errChan <- err
+	}
+
+	// Start proxying websocket data
+	go cp(dest, source)
+	go cp(source, dest)
+	<-errChan
 }
