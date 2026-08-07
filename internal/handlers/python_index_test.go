@@ -383,7 +383,7 @@ func TestPythonIndexDownloadAuthStoreEvictsOldestEntryAtLimit(t *testing.T) {
 		hasBasic: true,
 	}
 
-	for i := 0; i < maxPythonIndexDownloadAuthEntries+1; i++ {
+	for i := range maxPythonIndexDownloadAuthEntries + 1 {
 		prefix, err := url.Parse(fmt.Sprintf(
 			"https://pkgs.example.com/org/project/_packaging/feed-%d/pypi/download/",
 			i,

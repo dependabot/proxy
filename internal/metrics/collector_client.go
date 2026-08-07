@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -18,7 +19,7 @@ type CollectorClient struct {
 	APIEndpoint         string
 	DefaultTags         map[string]string
 	JobID               string
-	MetricsBuffer       []map[string]interface{}
+	MetricsBuffer       []map[string]any
 	BufferMutex         sync.Mutex
 	MaxBufferSize       int
 	FlushTicker         *time.Ticker
@@ -46,7 +47,7 @@ func New(envSettings config.ProxyEnvSettings, apiClient apiclient.ClientInterfac
 		APIEndpoint:         envSettings.APIEndpoint,
 		DefaultTags:         map[string]string{"package_manager": envSettings.PackageManager, "grouped_update": envSettings.GroupedUpdate},
 		JobID:               envSettings.JobID,
-		MetricsBuffer:       make([]map[string]interface{}, 0),
+		MetricsBuffer:       make([]map[string]any, 0),
 		MaxBufferSize:       1000,
 		FlushTicker:         time.NewTicker(1 * time.Minute),
 		estimatedBufferSize: 0,
@@ -99,7 +100,7 @@ func (c *CollectorClient) flushBuffer() {
 		c.BufferMutex.Unlock()
 		return
 	}
-	jsonData, err := json.Marshal(map[string]interface{}{"data": c.MetricsBuffer})
+	jsonData, err := json.Marshal(map[string]any{"data": c.MetricsBuffer})
 	c.MetricsBuffer = c.MetricsBuffer[:0] // Reset buffer
 	c.BufferMutex.Unlock()
 
@@ -127,12 +128,8 @@ func (c *CollectorClient) SendMetric(name string, metricType string, value float
 
 	// Combine tags without altering DefaultTags
 	combinedTags := make(map[string]string)
-	for k, v := range c.DefaultTags {
-		combinedTags[k] = v
-	}
-	for k, v := range additionalTags {
-		combinedTags[k] = v
-	}
+	maps.Copy(combinedTags, c.DefaultTags)
+	maps.Copy(combinedTags, additionalTags)
 
 	c.BufferMutex.Lock()
 	defer c.BufferMutex.Unlock()
@@ -160,7 +157,7 @@ func (c *CollectorClient) SendMetric(name string, metricType string, value float
 	}
 
 	// Create new metric data
-	metricData := map[string]interface{}{
+	metricData := map[string]any{
 		"metric": prefixedName,
 		"type":   metricType,
 		"tags":   combinedTags,

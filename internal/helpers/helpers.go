@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/net/idna"
@@ -58,12 +59,7 @@ func GetHost(r *http.Request) string {
 }
 
 func MethodPermitted(r *http.Request, methods ...string) bool {
-	for _, m := range methods {
-		if r.Method == m {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(methods, r.Method)
 }
 
 func UrlMatchesRequest(req *http.Request, urlStr string, pathMatch bool) bool {

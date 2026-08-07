@@ -31,7 +31,7 @@ const (
 func TestClient_ReportMetrics_Success(t *testing.T) {
 
 	// Define the expected metrics data
-	metricsData := []map[string]interface{}{
+	metricsData := []map[string]any{
 		{
 			"metric": "http_request_count",
 			"type":   "increment",
@@ -51,7 +51,7 @@ func TestClient_ReportMetrics_Success(t *testing.T) {
 			},
 		},
 	}
-	expectedBody, err := json.Marshal(map[string]interface{}{"data": metricsData})
+	expectedBody, err := json.Marshal(map[string]any{"data": metricsData})
 	require.NoError(t, err)
 
 	// Set up a test server
@@ -71,7 +71,7 @@ func TestClient_ReportMetrics_Success(t *testing.T) {
 	client := apiclient.New(s.URL, jobToken, jobID)
 
 	// Prepare and serialize the metrics data for sending
-	metricsDataStr, err := json.Marshal(map[string]interface{}{"data": metricsData})
+	metricsDataStr, err := json.Marshal(map[string]any{"data": metricsData})
 	require.NoError(t, err)
 
 	// Call the method under test
@@ -95,7 +95,7 @@ func TestClient_ReportMetrics_Error(t *testing.T) {
 	)
 
 	// Prepare and serialize the metrics data for sending
-	metricsData := map[string]interface{}{"data": []map[string]interface{}{{"metric": "test_metric", "value": 1}}}
+	metricsData := map[string]any{"data": []map[string]any{{"metric": "test_metric", "value": 1}}}
 	metricsDataStr, err := json.Marshal(metricsData)
 	require.NoError(t, err)
 
@@ -169,19 +169,19 @@ func TestClient_RequestJITAccess(t *testing.T) {
 	})
 
 	t.Run("concurrency limit", func(t *testing.T) {
-		var concurrencyCounter int32
+		var concurrencyCounter atomic.Int32
 		var totalCounter int32
 
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// use an atomic concurrencyCounter to limit concurrent requests for testing
-			atomic.AddInt32(&concurrencyCounter, 1)
+			concurrencyCounter.Add(1)
 			atomic.AddInt32(&totalCounter, 1)
-			if atomic.LoadInt32(&concurrencyCounter) > 1 {
+			if concurrencyCounter.Load() > 1 {
 				w.WriteHeader(http.StatusTooManyRequests)
 				w.Write([]byte("Too many requests"))
 				return
 			}
-			defer atomic.AddInt32(&concurrencyCounter, -1)
+			defer concurrencyCounter.Add(-1)
 
 			data, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
@@ -214,7 +214,7 @@ func TestClient_RequestJITAccess(t *testing.T) {
 			assert.Equal(t, "world-"+requestNumber, (*credential)["hello"], "Response should contain request number")
 		}
 
-		for i := 0; i < concurrentRequests; i++ {
+		for i := range concurrentRequests {
 			go makeRequest(fmt.Sprint(i + 1))
 		}
 		waitGroup.Wait()

@@ -160,7 +160,7 @@ func (c *Client) ReportMetrics(ctx context.Context, metricsData string) error {
 	return nil
 }
 
-func (c *Client) newURL(path string, args ...interface{}) string {
+func (c *Client) newURL(path string, args ...any) string {
 	return c.baseURL + fmt.Sprintf(path, args...)
 }
 
