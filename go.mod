@@ -8,7 +8,7 @@ require (
 	github.com/elazarl/goproxy v1.8.5
 	github.com/evalphobia/logrus_sentry v0.8.2
 	github.com/getsentry/raven-go v0.2.0
-	github.com/jarcoal/httpmock v1.4.1
+	github.com/jarcoal/httpmock v1.4.2
 	github.com/lestrrat-go/backoff v1.0.1
 	github.com/rs/dnscache v0.0.0-20211102005908-e0241e321417
 	github.com/rubyist/circuitbreaker v2.2.1+incompatible

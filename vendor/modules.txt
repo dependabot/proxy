@@ -113,7 +113,7 @@ github.com/facebookgo/clock
 # github.com/getsentry/raven-go v0.2.0
 ## explicit
 github.com/getsentry/raven-go
-# github.com/jarcoal/httpmock v1.4.1
+# github.com/jarcoal/httpmock v1.4.2
 ## explicit; go 1.18
 github.com/jarcoal/httpmock
 github.com/jarcoal/httpmock/internal
