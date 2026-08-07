@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,7 +25,7 @@ func TestGitHubAPIHandler_withUrlFallback(t *testing.T) {
 		"password": "super-secret-token",
 	}}
 
-	handler := NewGitHubAPIHandler(usingURL)
+	handler := NewGitHubAPIHandler(usingURL, nil)
 
 	req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
@@ -59,7 +60,7 @@ func TestGitHubAPIHandler(t *testing.T) {
 				bitBucketCred,
 				rubygemsCred,
 			}
-			handler := NewGitHubAPIHandler(credentials)
+			handler := NewGitHubAPIHandler(credentials, nil)
 
 			// Valid API request, prioritises non-installation token
 			req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
@@ -84,7 +85,7 @@ func TestGitHubAPIHandler(t *testing.T) {
 
 		// With only the installation GitHub token
 		credentials := config.Credentials{installationCred, bitBucketCred, rubygemsCred}
-		handler := NewGitHubAPIHandler(credentials)
+		handler := NewGitHubAPIHandler(credentials, nil)
 
 		// Valid API request, uses installation token
 		req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
@@ -93,7 +94,7 @@ func TestGitHubAPIHandler(t *testing.T) {
 
 		// With only the proxima token
 		credentials = config.Credentials{proximaCred, bitBucketCred, rubygemsCred}
-		handler = NewGitHubAPIHandler(credentials)
+		handler = NewGitHubAPIHandler(credentials, nil)
 
 		// Valid API request, uses installation token
 		req = httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
@@ -153,7 +154,7 @@ func TestGitHubAPIHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewGitHubAPIHandler(tt.credentials)
+			handler := NewGitHubAPIHandler(tt.credentials, nil)
 
 			// Valid github git request, prioritises non-installation token
 			req := httptest.NewRequest("GET", fmt.Sprintf("https://api.github.com/%s", tt.repoNWO), nil)
@@ -197,7 +198,7 @@ func TestGitHubAPIHandlerInProxima(t *testing.T) {
 				bitBucketCred,
 				rubygemsCred,
 			}
-			handler := NewGitHubAPIHandler(credentials)
+			handler := NewGitHubAPIHandler(credentials, nil)
 
 			// Valid API request, prioritises non-installation token
 			req := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
@@ -222,7 +223,7 @@ func TestGitHubAPIHandlerInProxima(t *testing.T) {
 
 		// With only the installation GitHub token
 		credentials := config.Credentials{installationCred, bitBucketCred, rubygemsCred}
-		handler := NewGitHubAPIHandler(credentials)
+		handler := NewGitHubAPIHandler(credentials, nil)
 
 		// Valid API request, uses installation token
 		req := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
@@ -250,7 +251,7 @@ func TestGitHubAPIHandlerWithMulipleHosts(t *testing.T) {
 				tt.personalAccessToken,
 				fooGheCred,
 			}
-			handler := NewGitHubAPIHandler(credentials)
+			handler := NewGitHubAPIHandler(credentials, nil)
 
 			// Request to github.com, using the correct token
 			req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
@@ -271,7 +272,7 @@ func TestGitHubAPIHandlerWithMulipleHosts(t *testing.T) {
 
 	// With only the github.com token
 	credentials := config.Credentials{githubCred}
-	handler := NewGitHubAPIHandler(credentials)
+	handler := NewGitHubAPIHandler(credentials, nil)
 
 	// Valid API request, uses only github.com token
 	req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
@@ -280,7 +281,7 @@ func TestGitHubAPIHandlerWithMulipleHosts(t *testing.T) {
 
 	// With only the foo.ghe.com token
 	fooGheCredentials := config.Credentials{fooGheCred}
-	fooGhehandler := NewGitHubAPIHandler(fooGheCredentials)
+	fooGhehandler := NewGitHubAPIHandler(fooGheCredentials, nil)
 
 	// Valid API request, uses only foo.ghe.com token
 	fooGheReq := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
@@ -291,7 +292,7 @@ func TestGitHubAPIHandlerWithMulipleHosts(t *testing.T) {
 func TestGitHubAPIHandler_InstallationTokenFormat(t *testing.T) {
 	installationCred := testGitSourceCred("github.com", "x-access-token", "ghs_fakefakefakesuperfake")
 	credentials := config.Credentials{installationCred}
-	handler := NewGitHubAPIHandler(credentials)
+	handler := NewGitHubAPIHandler(credentials, nil)
 
 	req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
@@ -301,7 +302,7 @@ func TestGitHubAPIHandler_InstallationTokenFormat(t *testing.T) {
 func TestGitHubAPIHandler_InstallationTokenFormat_Proxima(t *testing.T) {
 	installationCred := testGitSourceCred("foo.ghe.com", "x-access-token", "ghs_fakefakefakesuperfake")
 	credentials := config.Credentials{installationCred}
-	handler := NewGitHubAPIHandler(credentials)
+	handler := NewGitHubAPIHandler(credentials, nil)
 
 	req := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
@@ -321,7 +322,6 @@ func TestGitHubAPIHandler_TokenFallback(t *testing.T) {
 		testGitSourceCred("github.com", "x-access-token", userToken1),
 		testGitSourceCred("github.com", "x-access-token", userToken2),
 	}
-	handler := NewGitHubAPIHandler(credentials)
 
 	tests := []struct {
 		name                   string
@@ -390,6 +390,7 @@ func TestGitHubAPIHandler_TokenFallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			handler := NewGitHubAPIHandler(credentials, nil)
 			var capturedTokens []string
 			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
 				token := strings.TrimPrefix(r.Header.Get("Authorization"), "token ")
@@ -438,7 +439,6 @@ func TestGitHubAPIHandler_TokenFallback_In_Proxima(t *testing.T) {
 		testGitSourceCred("foo.ghe.com", "x-access-token", userToken1),
 		testGitSourceCred("foo.ghe.com", "x-access-token", userToken2),
 	}
-	handler := NewGitHubAPIHandler(credentials)
 	url, err := url.Parse("https://api.foo.ghe.com/repos/github/dependabot-action")
 	if err != nil {
 		t.Errorf("parsing url: %v", err)
@@ -496,6 +496,7 @@ func TestGitHubAPIHandler_TokenFallback_In_Proxima(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			handler := NewGitHubAPIHandler(credentials, nil)
 			var capturedTokens []string
 			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
 				token := strings.TrimPrefix(r.Header.Get("Authorization"), "token ")
@@ -532,4 +533,169 @@ func TestGitHubAPIHandler_TokenFallback_In_Proxima(t *testing.T) {
 			}
 		})
 	}
+}
+
+type testGitHubAPIScopeRequester struct {
+	callCount int
+	result    *config.Credential
+	err       error
+}
+
+func (t *testGitHubAPIScopeRequester) RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (*config.Credential, error) {
+	t.callCount++
+	return t.result, t.err
+}
+
+func TestGitHubAPIHandler_JITAccessFallback(t *testing.T) {
+	staticToken := "ghp_static"
+	jitToken := "ghp_jit"
+	credentials := config.Credentials{
+		testGitSourceCred("github.com", "x-access-token", staticToken),
+		{
+			"type":            "jit_access",
+			"credential-type": "git_source",
+			"host":            "github.com",
+			"endpoint":        "https://dependabot.example.com/jit_access",
+		},
+	}
+	requester := &testGitHubAPIScopeRequester{
+		result: &config.Credential{
+			"username": "x-access-token",
+			"password": jitToken,
+		},
+	}
+	handler := NewGitHubAPIHandler(credentials, requester)
+
+	var capturedTokens []string
+	roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "token ")
+		capturedTokens = append(capturedTokens, token)
+		if token == jitToken {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("jit-ok"))}, nil
+		}
+		return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("not found"))}, nil
+	})
+
+	req := httptest.NewRequest("GET", "https://api.github.com:443/repos/example/internal-repo/releases?per_page=100", nil)
+	ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+	rsp := &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("initial"))}
+
+	_ = handleRequestAndClose(handler, req, ctx)
+	newRsp := handler.HandleResponse(rsp, ctx)
+	defer newRsp.Body.Close()
+
+	body, err := io.ReadAll(newRsp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, 200, newRsp.StatusCode)
+	assert.Equal(t, "jit-ok", string(body))
+	assert.Equal(t, []string{staticToken, jitToken}, capturedTokens)
+	assert.Equal(t, 1, requester.callCount)
+}
+
+func TestGitHubAPIHandler_DoesNotFallbackWithoutStaticCredentials(t *testing.T) {
+	credentials := config.Credentials{
+		{
+			"type":            "jit_access",
+			"credential-type": "git_source",
+			"host":            "github.com",
+			"endpoint":        "https://dependabot.example.com/jit_access",
+		},
+	}
+	requester := &testGitHubAPIScopeRequester{}
+	handler := NewGitHubAPIHandler(credentials, requester)
+
+	roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
+		t.Fatal("request without proxy-added auth should not be retried")
+		return nil, nil
+	})
+	req := httptest.NewRequest("GET", "https://api.github.com/repos/example/internal-repo/releases", nil)
+	ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+	rsp := &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("initial"))}
+
+	_ = handleRequestAndClose(handler, req, ctx)
+	newRsp := handler.HandleResponse(rsp, ctx)
+	defer newRsp.Body.Close()
+
+	assert.Equal(t, 404, newRsp.StatusCode)
+	assert.Equal(t, 0, requester.callCount)
+}
+
+func TestGitHubAPIHandler_FailedJITAccessIsNotRetriedForRepository(t *testing.T) {
+	credentials := config.Credentials{
+		testGitSourceCred("github.com", "x-access-token", "ghp_static"),
+		{
+			"type":            "jit_access",
+			"credential-type": "git_source",
+			"host":            "github.com",
+			"endpoint":        "https://dependabot.example.com/jit_access",
+		},
+	}
+	requester := &testGitHubAPIScopeRequester{err: errors.New("JIT access unavailable")}
+	handler := NewGitHubAPIHandler(credentials, requester)
+	roundTripCount := 0
+	roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
+		roundTripCount++
+		return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("not found"))}, nil
+	})
+
+	for range 2 {
+		req := httptest.NewRequest("GET", "https://api.github.com/repos/example/internal-repo/releases", nil)
+		ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+		rsp := &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("initial"))}
+		_ = handleRequestAndClose(handler, req, ctx)
+		newRsp := handler.HandleResponse(rsp, ctx)
+		newRsp.Body.Close()
+	}
+
+	assert.Equal(t, 1, requester.callCount)
+	assert.Equal(t, 1, roundTripCount)
+}
+
+func TestGitHubAPIHandler_JITAccessTokenIsCached(t *testing.T) {
+	staticToken := "ghp_static"
+	jitToken := "ghp_jit"
+	credentials := config.Credentials{
+		testGitSourceCred("github.com", "x-access-token", staticToken),
+		{
+			"type":            "jit_access",
+			"credential-type": "git_source",
+			"host":            "github.com",
+			"endpoint":        "https://dependabot.example.com/jit_access",
+		},
+	}
+	requester := &testGitHubAPIScopeRequester{
+		result: &config.Credential{
+			"username": "x-access-token",
+			"password": jitToken,
+		},
+	}
+	handler := NewGitHubAPIHandler(credentials, requester)
+
+	roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "token ")
+		if token == jitToken {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("jit-ok"))}, nil
+		}
+		return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader("denied"))}, nil
+	})
+
+	req1 := httptest.NewRequest("GET", "https://api.github.com/repos/dependabot/proxy", nil)
+	ctx1 := &goproxy.ProxyCtx{Req: req1, RoundTripper: roundTripper}
+	rsp1 := &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader("initial"))}
+	_ = handleRequestAndClose(handler, req1, ctx1)
+	newRsp1 := handler.HandleResponse(rsp1, ctx1)
+	defer newRsp1.Body.Close()
+	assert.Equal(t, 200, newRsp1.StatusCode)
+	assert.Equal(t, 1, requester.callCount)
+
+	req2 := httptest.NewRequest("GET", "https://api.github.com/repos/dependabot/proxy", nil)
+	ctx2 := &goproxy.ProxyCtx{Req: req2, RoundTripper: roundTripper}
+	rsp2 := &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader("initial"))}
+	_ = handleRequestAndClose(handler, req2, ctx2)
+	newRsp2 := handler.HandleResponse(rsp2, ctx2)
+	defer newRsp2.Body.Close()
+	assert.Equal(t, 200, newRsp2.StatusCode)
+
+	// Cached repo-scoped credentials should be retried before requesting JIT again.
+	assert.Equal(t, 1, requester.callCount)
 }
