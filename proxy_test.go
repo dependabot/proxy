@@ -37,7 +37,12 @@ func TestProxyHTTPRequest(t *testing.T) {
 	url, httpSrv := testHTTPServer(t)
 	defer httpSrv.Close()
 
-	rsp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		t.Errorf("initializing new request: %v", err)
+	}
+
+	rsp, err := client.Do(req)
 	if err != nil {
 		t.Errorf("making proxied request: %v", err)
 	}
@@ -63,7 +68,13 @@ func TestIPRestrictions(t *testing.T) {
 
 	for _, url := range httpTestCases {
 		t.Run(url, func(t *testing.T) {
-			rsp, err := client.Get(url)
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+			if err != nil {
+				t.Errorf("initializing new request: %v", err)
+				return
+			}
+
+			rsp, err := client.Do(req)
 			if err != nil {
 				t.Errorf("making proxied request: %v", err)
 				return
@@ -86,7 +97,13 @@ func TestIPRestrictions(t *testing.T) {
 	// the connection from being established while goproxy tries to setup TLS
 	for _, url := range httpsTestCases {
 		t.Run(url, func(t *testing.T) {
-			_, err := client.Get(url) //nolint:bodyclose // error expected, no body to close
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+			if err != nil {
+				t.Errorf("initializing new request: %v", err)
+				return
+			}
+
+			_, err = client.Do(req) //nolint:bodyclose // error expected, no body to close
 			assert.Error(t, err)
 		})
 	}
