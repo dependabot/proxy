@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -10,6 +12,11 @@ import (
 
 	"github.com/dependabot/proxy/internal/config"
 )
+
+func newTestRequest(t *testing.T, method, target string, body io.Reader) *http.Request {
+	t.Helper()
+	return httptest.NewRequestWithContext(t.Context(), method, target, body)
+}
 
 // handleRequestAndClose calls handler.HandleRequest and closes any response body.
 // Most handlers return nil responses, but the linter can't prove that.

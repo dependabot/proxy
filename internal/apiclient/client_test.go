@@ -143,7 +143,7 @@ func TestClient_RequestJITAccess(t *testing.T) {
 		client := apiclient.New(testServer.URL, jobToken, jobID)
 
 		proxyCtx := &goproxy.ProxyCtx{
-			Req: httptest.NewRequest("GET", "https://example.com", nil),
+			Req: httptest.NewRequestWithContext(t.Context(), "GET", "https://example.com", nil),
 		}
 		result, err := client.RequestJITAccess(proxyCtx, jitAccessEndpoint, "", "", accountName, repoName)
 
@@ -161,7 +161,7 @@ func TestClient_RequestJITAccess(t *testing.T) {
 		client := apiclient.New(testServer.URL, jobToken, jobID)
 
 		proxyCtx := &goproxy.ProxyCtx{
-			Req: httptest.NewRequest("GET", "https://example.com", nil),
+			Req: httptest.NewRequestWithContext(t.Context(), "GET", "https://example.com", nil),
 		}
 		_, err := client.RequestJITAccess(proxyCtx, "/endpoint", "", "", "this", "repo")
 
@@ -207,7 +207,7 @@ func TestClient_RequestJITAccess(t *testing.T) {
 			defer waitGroup.Done()
 
 			proxyCtx := &goproxy.ProxyCtx{
-				Req: httptest.NewRequest("GET", "https://example.com", nil),
+				Req: httptest.NewRequestWithContext(t.Context(), "GET", "https://example.com", nil),
 			}
 			credential, err := client.RequestJITAccess(proxyCtx, "/endpoint", "", "", "account", "repo-"+requestNumber)
 			require.NoError(t, err)

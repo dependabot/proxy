@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
@@ -71,7 +70,7 @@ func TestDockerRegistryHandler(t *testing.T) {
 	handler := NewDockerRegistryHandler(credentials, &http.Transport{}, getECRClient)
 
 	// Regular private registry
-	req := httptest.NewRequest("GET", "https://registry.hub.docker.com/my-repo", nil)
+	req := newTestRequest(t, "GET", "https://registry.hub.docker.com/my-repo", nil)
 	proxyCtx := &goproxy.ProxyCtx{}
 	_ = handleRequestAndClose(handler, req, proxyCtx)
 	rt, ok := proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
@@ -81,7 +80,7 @@ func TestDockerRegistryHandler(t *testing.T) {
 	assert.Equal(t, hubPassword, trans.Password, "correct password is set")
 
 	// Registry using URL not registry key
-	req = httptest.NewRequest("GET", "https://registry.hub.docker.com/my-repo", nil)
+	req = newTestRequest(t, "GET", "https://registry.hub.docker.com/my-repo", nil)
 	proxyCtx = &goproxy.ProxyCtx{}
 	_ = handleRequestAndClose(handler, req, proxyCtx)
 	rt, ok = proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
@@ -91,7 +90,7 @@ func TestDockerRegistryHandler(t *testing.T) {
 	assert.Equal(t, hubPassword, trans.Password, "correct password is set")
 
 	// Different private registry
-	req = httptest.NewRequest("GET", "https://docker.bigco.com/their-repo", nil)
+	req = newTestRequest(t, "GET", "https://docker.bigco.com/their-repo", nil)
 	proxyCtx = &goproxy.ProxyCtx{}
 	_ = handleRequestAndClose(handler, req, proxyCtx)
 	rt, ok = proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
@@ -101,7 +100,7 @@ func TestDockerRegistryHandler(t *testing.T) {
 	assert.Equal(t, bigCoPassword, trans.Password, "correct password is set")
 
 	// ECR
-	req = httptest.NewRequest("GET", "https://123456789123.dkr.ecr.us-east-2.amazonaws.com", nil)
+	req = newTestRequest(t, "GET", "https://123456789123.dkr.ecr.us-east-2.amazonaws.com", nil)
 	req = req.WithContext(context.WithValue(req.Context(), ecrContextKey{}, "ecr-request"))
 	proxyCtx = &goproxy.ProxyCtx{}
 	req = handleRequestAndClose(handler, req, proxyCtx)
@@ -116,7 +115,7 @@ func TestDockerRegistryHandler(t *testing.T) {
 	}
 
 	// ECR, again
-	req = httptest.NewRequest("GET", "https://123456789123.dkr.ecr.us-east-2.amazonaws.com", nil)
+	req = newTestRequest(t, "GET", "https://123456789123.dkr.ecr.us-east-2.amazonaws.com", nil)
 	proxyCtx = &goproxy.ProxyCtx{}
 	req = handleRequestAndClose(handler, req, proxyCtx)
 	_, ok = proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
@@ -124,7 +123,7 @@ func TestDockerRegistryHandler(t *testing.T) {
 	assertHasBasicAuth(t, req, ecrDockerUser, ecrDockerPassword, "has ecr credentials")
 
 	// ECR, mismatch:
-	req = httptest.NewRequest("GET", "https://123456789123.dkr.ecr.us-east-2Xamazonaws.com", nil)
+	req = newTestRequest(t, "GET", "https://123456789123.dkr.ecr.us-east-2Xamazonaws.com", nil)
 	proxyCtx = &goproxy.ProxyCtx{}
 	req = handleRequestAndClose(handler, req, proxyCtx)
 	_, ok = proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
@@ -132,28 +131,28 @@ func TestDockerRegistryHandler(t *testing.T) {
 	assertUnauthenticated(t, req, "leaked ecr credentials")
 
 	// Missing repo subdomain
-	req = httptest.NewRequest("GET", "https://bigco.com/their-repo", nil)
+	req = newTestRequest(t, "GET", "https://bigco.com/their-repo", nil)
 	proxyCtx = &goproxy.ProxyCtx{}
 	_ = handleRequestAndClose(handler, req, proxyCtx)
 	_, ok = proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.False(t, ok, "different subdomain request isn't assigned a docker registry transport")
 
 	// HTTP, not HTTPS
-	req = httptest.NewRequest("GET", "http://docker.bigco.com/their-repo", nil)
+	req = newTestRequest(t, "GET", "http://docker.bigco.com/their-repo", nil)
 	proxyCtx = &goproxy.ProxyCtx{}
 	_ = handleRequestAndClose(handler, req, proxyCtx)
 	_, ok = proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.False(t, ok, "request isn't assigned a docker registry transport")
 
 	// Not a GET request
-	req = httptest.NewRequest("POST", "https://docker.bigco.com/their-repo", nil)
+	req = newTestRequest(t, "POST", "https://docker.bigco.com/their-repo", nil)
 	proxyCtx = &goproxy.ProxyCtx{}
 	_ = handleRequestAndClose(handler, req, proxyCtx)
 	_, ok = proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.False(t, ok, "request isn't assigned a docker registry transport")
 
 	// Nexus, BasicAuth
-	req = httptest.NewRequest("GET", "https://nexus.someco.com/a-repo", nil)
+	req = newTestRequest(t, "GET", "https://nexus.someco.com/a-repo", nil)
 	proxyCtx = &goproxy.ProxyCtx{}
 	_ = handleRequestAndClose(handler, req, proxyCtx)
 	rt, ok = proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)

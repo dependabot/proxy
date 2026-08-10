@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"net/http/httptest"
 	"testing"
 
 	"github.com/dependabot/proxy/internal/config"
@@ -15,17 +14,17 @@ func TestDependabotAPIHandler_HandleRequest(t *testing.T) {
 		JobToken:    dependabotPassword,
 	})
 
-	req := httptest.NewRequest("GET", "https://api.dependabot.com/update_jobs/123/create_pull_request", nil)
+	req := newTestRequest(t, "GET", "https://api.dependabot.com/update_jobs/123/create_pull_request", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "", dependabotPassword, "dependabot repository request")
 
 	// HTTP, not HTTPS
-	req = httptest.NewRequest("GET", "http://api.dependabot.com/packages/somepkg", nil)
+	req = newTestRequest(t, "GET", "http://api.dependabot.com/packages/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "we always use HTTPS")
 
 	// missing subdomain
-	req = httptest.NewRequest("GET", "https://dependabot.com/packages/somepkg", nil)
+	req = newTestRequest(t, "GET", "https://dependabot.com/packages/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 }
@@ -39,7 +38,7 @@ func TestDependabotAPIHandler_CaseInsensitiveHostname(t *testing.T) {
 	})
 
 	// Request with lowercase hostname should still match uppercase endpoint
-	req := httptest.NewRequest("GET", "https://api.dependabot.com/update_jobs/123/create_pull_request", nil)
+	req := newTestRequest(t, "GET", "https://api.dependabot.com/update_jobs/123/create_pull_request", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "", dependabotPassword, "case-insensitive hostname matching")
 }

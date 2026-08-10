@@ -180,7 +180,8 @@ func checkConnectivity(network, address string) bool {
 	// A connected UDP dial sends no packets; it just asks the kernel to pick a
 	// route. That returns fast when the address family is disabled or has no
 	// route, as in single-stack Docker environments.
-	conn, err := net.DialTimeout(network, address, 100*time.Millisecond)
+	dialer := net.Dialer{Timeout: 100 * time.Millisecond}
+	conn, err := dialer.DialContext(context.Background(), network, address)
 	if err != nil {
 		return false
 	}

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -26,7 +25,7 @@ func TestGitHubAPIHandler_withUrlFallback(t *testing.T) {
 
 	handler := NewGitHubAPIHandler(usingURL)
 
-	req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
+	req := newTestRequest(t, "GET", "https://api.github.com/some-repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "token", "super-secret-token", "valid api request")
 }
@@ -62,22 +61,22 @@ func TestGitHubAPIHandler(t *testing.T) {
 			handler := NewGitHubAPIHandler(credentials)
 
 			// Valid API request, prioritises non-installation token
-			req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
+			req := newTestRequest(t, "GET", "https://api.github.com/some-repo", nil)
 			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", tt.personalAccessToken.GetString("password"), "valid api request")
 
 			// Valid API request with port, prioritises non-installation token
-			req = httptest.NewRequest("GET", "https://api.github.com:443/some-repo", nil)
+			req = newTestRequest(t, "GET", "https://api.github.com:443/some-repo", nil)
 			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", tt.personalAccessToken.GetString("password"), "valid api request with port")
 
 			// Different subdomain - not the GitHub API
-			req = httptest.NewRequest("GET", "https://github.com/some-repo", nil)
+			req = newTestRequest(t, "GET", "https://github.com/some-repo", nil)
 			req = handleRequestAndClose(handler, req, nil)
 			assertUnauthenticated(t, req, "different subdomain")
 
 			// HTTP, not HTTPS
-			req = httptest.NewRequest("GET", "http://api.github.com/some-repo", nil)
+			req = newTestRequest(t, "GET", "http://api.github.com/some-repo", nil)
 			req = handleRequestAndClose(handler, req, nil)
 			assertUnauthenticated(t, req, "http, not https")
 		})
@@ -87,7 +86,7 @@ func TestGitHubAPIHandler(t *testing.T) {
 		handler := NewGitHubAPIHandler(credentials)
 
 		// Valid API request, uses installation token
-		req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
+		req := newTestRequest(t, "GET", "https://api.github.com/some-repo", nil)
 		req = handleRequestAndClose(handler, req, nil)
 		assertHasTokenAuth(t, req, "token", installationCred.GetString("password"), "valid api request")
 
@@ -96,7 +95,7 @@ func TestGitHubAPIHandler(t *testing.T) {
 		handler = NewGitHubAPIHandler(credentials)
 
 		// Valid API request, uses installation token
-		req = httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
+		req = newTestRequest(t, "GET", "https://api.github.com/some-repo", nil)
 		req = handleRequestAndClose(handler, req, nil)
 		assertUnauthenticated(t, req, "Proxima is unauthenticated")
 		assertHasProximaHeader(t, req, proximaCred.GetString("password"), "valid api request")
@@ -156,7 +155,7 @@ func TestGitHubAPIHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 			handler := NewGitHubAPIHandler(tt.credentials)
 
 			// Valid github git request, prioritises non-installation token
-			req := httptest.NewRequest("GET", fmt.Sprintf("https://api.github.com/%s", tt.repoNWO), nil)
+			req := newTestRequest(t, "GET", fmt.Sprintf("https://api.github.com/%s", tt.repoNWO), nil)
 			req = handleRequestAndClose(handler, req, nil)
 
 			switch {
@@ -200,22 +199,22 @@ func TestGitHubAPIHandlerInProxima(t *testing.T) {
 			handler := NewGitHubAPIHandler(credentials)
 
 			// Valid API request, prioritises non-installation token
-			req := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
+			req := newTestRequest(t, "GET", "https://api.foo.ghe.com/some-repo", nil)
 			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", tt.personalAccessToken.GetString("password"), "valid api request")
 
 			// Valid API request with port, prioritises non-installation token
-			req = httptest.NewRequest("GET", "https://api.foo.ghe.com:443/some-repo", nil)
+			req = newTestRequest(t, "GET", "https://api.foo.ghe.com:443/some-repo", nil)
 			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", tt.personalAccessToken.GetString("password"), "valid api request with port")
 
 			// Different subdomain - not the GitHub API
-			req = httptest.NewRequest("GET", "https://ghe.com/some-repo", nil)
+			req = newTestRequest(t, "GET", "https://ghe.com/some-repo", nil)
 			req = handleRequestAndClose(handler, req, nil)
 			assertUnauthenticated(t, req, "different subdomain")
 
 			// HTTP, not HTTPS
-			req = httptest.NewRequest("GET", "http://api.foo.ghe.com/some-repo", nil)
+			req = newTestRequest(t, "GET", "http://api.foo.ghe.com/some-repo", nil)
 			req = handleRequestAndClose(handler, req, nil)
 			assertUnauthenticated(t, req, "http, not https")
 		})
@@ -225,7 +224,7 @@ func TestGitHubAPIHandlerInProxima(t *testing.T) {
 		handler := NewGitHubAPIHandler(credentials)
 
 		// Valid API request, uses installation token
-		req := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
+		req := newTestRequest(t, "GET", "https://api.foo.ghe.com/some-repo", nil)
 		req = handleRequestAndClose(handler, req, nil)
 		assertHasTokenAuth(t, req, "token", installationCred.GetString("password"), "valid api request")
 
@@ -253,17 +252,17 @@ func TestGitHubAPIHandlerWithMulipleHosts(t *testing.T) {
 			handler := NewGitHubAPIHandler(credentials)
 
 			// Request to github.com, using the correct token
-			req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
+			req := newTestRequest(t, "GET", "https://api.github.com/some-repo", nil)
 			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", tt.personalAccessToken.GetString("password"), "request to github.com")
 
 			// Request to foo.ghe.com, using the correct token
-			req = httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
+			req = newTestRequest(t, "GET", "https://api.foo.ghe.com/some-repo", nil)
 			req = handleRequestAndClose(handler, req, nil)
 			assertHasTokenAuth(t, req, "token", fooGheCred.GetString("password"), "request to foo.ghe.com")
 
 			// Different subdomain - not the GitHub API
-			req = httptest.NewRequest("GET", "https://github.com/some-repo", nil)
+			req = newTestRequest(t, "GET", "https://github.com/some-repo", nil)
 			req = handleRequestAndClose(handler, req, nil)
 			assertUnauthenticated(t, req, "different subdomain")
 		})
@@ -274,7 +273,7 @@ func TestGitHubAPIHandlerWithMulipleHosts(t *testing.T) {
 	handler := NewGitHubAPIHandler(credentials)
 
 	// Valid API request, uses only github.com token
-	req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
+	req := newTestRequest(t, "GET", "https://api.github.com/some-repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "token", githubCred.GetString("password"), "request to github.com")
 
@@ -283,7 +282,7 @@ func TestGitHubAPIHandlerWithMulipleHosts(t *testing.T) {
 	fooGhehandler := NewGitHubAPIHandler(fooGheCredentials)
 
 	// Valid API request, uses only foo.ghe.com token
-	fooGheReq := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
+	fooGheReq := newTestRequest(t, "GET", "https://api.foo.ghe.com/some-repo", nil)
 	fooGheReq = handleRequestAndClose(fooGhehandler, fooGheReq, nil)
 	assertHasTokenAuth(t, fooGheReq, "token", fooGheCred.GetString("password"), "request to foo.ghe.com")
 }
@@ -293,7 +292,7 @@ func TestGitHubAPIHandler_InstallationTokenFormat(t *testing.T) {
 	credentials := config.Credentials{installationCred}
 	handler := NewGitHubAPIHandler(credentials)
 
-	req := httptest.NewRequest("GET", "https://api.github.com/some-repo", nil)
+	req := newTestRequest(t, "GET", "https://api.github.com/some-repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "token", installationCred.GetString("password"), "valid api request")
 }
@@ -303,7 +302,7 @@ func TestGitHubAPIHandler_InstallationTokenFormat_Proxima(t *testing.T) {
 	credentials := config.Credentials{installationCred}
 	handler := NewGitHubAPIHandler(credentials)
 
-	req := httptest.NewRequest("GET", "https://api.foo.ghe.com/some-repo", nil)
+	req := newTestRequest(t, "GET", "https://api.foo.ghe.com/some-repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "token", installationCred.GetString("password"), "valid api request")
 }

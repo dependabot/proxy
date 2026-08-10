@@ -11,7 +11,7 @@ import (
 // newRequest builds a GET request to the given raw URL for use in tests.
 func newRequest(t *testing.T, rawURL string) *http.Request {
 	t.Helper()
-	return httptest.NewRequest(http.MethodGet, rawURL, nil)
+	return httptest.NewRequestWithContext(t.Context(), http.MethodGet, rawURL, nil)
 }
 
 // newRequestWithAuth builds a request that already carries an Authorization header,

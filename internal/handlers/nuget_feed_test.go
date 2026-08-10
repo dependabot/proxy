@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -138,84 +137,84 @@ func TestNugetFeedHandler(t *testing.T) {
 	assert.False(t, strings.Contains(logContents, "* authenticating nuget feed request (host: api.nuget.org, bearer auth)"), "don't authenticate a feed without a token or password")
 	assert.True(t, strings.Contains(logContents, "unauthorized for nuget feed https://nuget.example.com/auth-required/v3"), "authentication failure is reported")
 
-	req := httptest.NewRequest("GET", "https://corp.dependabot.com/nuget", nil)
+	req := newTestRequest(t, "GET", "https://corp.dependabot.com/nuget", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", dependabotToken, "dependabot feed request")
 
-	req = httptest.NewRequest("GET", "https://corp.deltaforce.com/somepkg", nil)
+	req = newTestRequest(t, "GET", "https://corp.deltaforce.com/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "deltaforce feed request")
 
 	// Base URL listed in the v3 feed index
-	req = httptest.NewRequest("GET", "https://pkg-search.dependabot.com/query", nil)
+	req = newTestRequest(t, "GET", "https://pkg-search.dependabot.com/query", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", dependabotToken, "url listed in feed index")
 
 	// Other URL listed in the v3 feed index
-	req = httptest.NewRequest("GET", "https://pkg-search.dependabot.com/autocomplete", nil)
+	req = newTestRequest(t, "GET", "https://pkg-search.dependabot.com/autocomplete", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", dependabotToken, "other url in feed index")
 
 	// Template URL not authenticated
-	req = httptest.NewRequest("GET", "https://pkg-search.dependabot.com/some.package/1.2.3/ReportAbuse", nil)
+	req = newTestRequest(t, "GET", "https://pkg-search.dependabot.com/some.package/1.2.3/ReportAbuse", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "Template URL")
 
 	// v2 API
-	req = httptest.NewRequest("GET", "https://nuget.example.com/v2/FindPackagesById()?Id='Some.Package'", nil)
+	req = newTestRequest(t, "GET", "https://nuget.example.com/v2/FindPackagesById()?Id='Some.Package'", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", dependabotToken, "authenticated v2 API")
 
 	// v2 API - redirected
-	req = httptest.NewRequest("GET", "https://redirected.example.com/v2/FindPackagesById()?Id='Some.Package'", nil)
+	req = newTestRequest(t, "GET", "https://redirected.example.com/v2/FindPackagesById()?Id='Some.Package'", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", dependabotToken, "redirected authenticated v2 API")
 
 	// Path mismatch
-	req = httptest.NewRequest("GET", "https://corp.dependabot.com/foo", nil)
+	req = newTestRequest(t, "GET", "https://corp.dependabot.com/foo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "Path mismatch")
 
 	// Missing repo subdomain
-	req = httptest.NewRequest("GET", "https://dependabot.com/nuget", nil)
+	req = newTestRequest(t, "GET", "https://dependabot.com/nuget", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 
 	// HTTP, not HTTPS
-	req = httptest.NewRequest("GET", "http://corp.dependabot.com/nuget", nil)
+	req = newTestRequest(t, "GET", "http://corp.dependabot.com/nuget", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", dependabotToken, "dependabot feed http request")
 
 	// HTTP, not HTTPS, path mismatch
-	req = httptest.NewRequest("GET", "http://corp.dependabot.com/feed", nil)
+	req = newTestRequest(t, "GET", "http://corp.dependabot.com/feed", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "Path mismatch")
 
 	// Not a GET request
-	req = httptest.NewRequest("POST", "https://corp.dependabot.com/nuget", nil)
+	req = newTestRequest(t, "POST", "https://corp.dependabot.com/nuget", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "post request")
 
 	// Azure DevOps
-	req = httptest.NewRequest("GET", "https://pkgs.dev.azure.com/dependabot/_packaging/dependabot/nuget/v3/index.json", nil)
+	req = newTestRequest(t, "GET", "https://pkgs.dev.azure.com/dependabot/_packaging/dependabot/nuget/v3/index.json", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "Azure DevOps feed request")
 
 	// Azure DevOps case insensitive
-	req = httptest.NewRequest("GET", "https://PKGS.dev.azure.com/dependabot/_packaging/dependabot/nuget/v3/index.json", nil)
+	req = newTestRequest(t, "GET", "https://PKGS.dev.azure.com/dependabot/_packaging/dependabot/nuget/v3/index.json", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "Azure DevOps case insensitive feed request")
 
 	// Reset buffer to catch log contents
 	buf.Reset()
-	req = httptest.NewRequest("GET", "https://pkgs.dev.azure.com/example/public/_packaging/some-feed/nuget/v3/some.package/index.json", nil)
+	req = newTestRequest(t, "GET", "https://pkgs.dev.azure.com/example/public/_packaging/some-feed/nuget/v3/some.package/index.json", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, "", dependabotToken, "Azure DevOps token handling")
 	logContents = buf.String()
 	assert.True(t, strings.Contains(logContents, ", basic auth for Azure DevOps)"), "expected Azure DevOps token handling")
 
 	// Check Azure token edge case in which it has a prepended ":" and is treated as a password successfully
-	req = httptest.NewRequest("GET", "https://pkgs.dev.azure.com/example/public/_packaging/some-feed2/nuget/v3/some.package/index.json", nil)
+	req = newTestRequest(t, "GET", "https://pkgs.dev.azure.com/example/public/_packaging/some-feed2/nuget/v3/some.package/index.json", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, "", dependabotToken, "Azure DevOps token handling")
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -32,7 +31,7 @@ func TestGitServerHandler_url(t *testing.T) {
 	handler := NewGitServerHandler(config.Credentials{cred}, nil)
 
 	// Valid github git request, prioritises non-installation token
-	req := httptest.NewRequest("GET", "https://github.com/account/repo", nil)
+	req := newTestRequest(t, "GET", "https://github.com/account/repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		cred["username"].(string),
@@ -65,7 +64,7 @@ func TestGitServerHandler(t *testing.T) {
 	handler := NewGitServerHandler(credentials, nil)
 
 	// Valid github git request, prioritises non-installation token
-	req := httptest.NewRequest("GET", "https://github.com/account/repo", nil)
+	req := newTestRequest(t, "GET", "https://github.com/account/repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		otherGitHubCred.GetString("username"),
@@ -73,7 +72,7 @@ func TestGitServerHandler(t *testing.T) {
 		"valid github request")
 
 	// Valid github git request, git user included but no password
-	req = httptest.NewRequest("GET", "https://git@github.com/account/repo", nil)
+	req = newTestRequest(t, "GET", "https://git@github.com/account/repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		otherGitHubCred.GetString("username"),
@@ -81,7 +80,7 @@ func TestGitServerHandler(t *testing.T) {
 		"valid github request")
 
 	// Valid bitbucket git request, prioritises non-installation token
-	req = httptest.NewRequest("GET", "https://bitbucket.org:443/account/repo", nil)
+	req = newTestRequest(t, "GET", "https://bitbucket.org:443/account/repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		bitBucketCred.GetString("username"),
@@ -89,7 +88,7 @@ func TestGitServerHandler(t *testing.T) {
 		"valid bitbucket request")
 
 	// Valid GHE request
-	req = httptest.NewRequest("GET", "https://ghe.some-corp.com/account/_dependabot", nil)
+	req = newTestRequest(t, "GET", "https://ghe.some-corp.com/account/_dependabot", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		gheCred.GetString("username"),
@@ -97,17 +96,17 @@ func TestGitServerHandler(t *testing.T) {
 		"valid ghe request")
 
 	// Special GHE dependabot-api endpoint
-	req = httptest.NewRequest("GET", "https://ghe.some-corp.com/_dependabot/update_jobs/123/details", nil)
+	req = newTestRequest(t, "GET", "https://ghe.some-corp.com/_dependabot/update_jobs/123/details", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "_dependabot api URL prefix")
 
 	// Different subdomain - not the GitHub API
-	req = httptest.NewRequest("GET", "https://api.github.com/account/repo", nil)
+	req = newTestRequest(t, "GET", "https://api.github.com/account/repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 
 	// HTTP, not HTTPS
-	req = httptest.NewRequest("GET", "http://github.com/account/repo", nil)
+	req = newTestRequest(t, "GET", "http://github.com/account/repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "http, not https")
 
@@ -119,7 +118,7 @@ func TestGitServerHandler(t *testing.T) {
 	handler = NewGitServerHandler(credentials, nil)
 
 	// Valid github git request, uses installation token
-	req = httptest.NewRequest("GET", "https://github.com/account/repo", nil)
+	req = newTestRequest(t, "GET", "https://github.com/account/repo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req,
 		installationCred.GetString("username"),
@@ -180,7 +179,7 @@ func TestGitServerHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 			handler := NewGitServerHandler(tt.credentials, nil)
 
 			// Valid github git request, prioritises non-installation token
-			req := httptest.NewRequest("GET", fmt.Sprintf("https://github.com/%s", tt.repoNWO), nil)
+			req := newTestRequest(t, "GET", fmt.Sprintf("https://github.com/%s", tt.repoNWO), nil)
 			req = handleRequestAndClose(handler, req, nil)
 
 			switch {
@@ -240,7 +239,7 @@ func TestGitServerHandlerNoRetry(t *testing.T) {
 	roundTripper := goproxy.RoundTripperFunc(func(*http.Request, *goproxy.ProxyCtx) (*http.Response, error) {
 		return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(""))}, nil
 	})
-	req := httptest.NewRequest("GET", url, nil)
+	req := newTestRequest(t, "GET", url, nil)
 	req.SetBasicAuth("x-access-token", "v1.token")
 	proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 
@@ -491,7 +490,7 @@ func TestGitServerHandler_RepositoryScopedCredentials(t *testing.T) {
 				return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(""))}, nil
 			})
 
-			req := httptest.NewRequest("GET", url, nil)
+			req := newTestRequest(t, "GET", url, nil)
 			proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(""))}
 

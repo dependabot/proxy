@@ -149,7 +149,7 @@ func TestOIDCRegistry_TryAuth_SingleCredential(t *testing.T) {
 	cred := azureCredWithURL("tenant-1", "client-1", "https://registry.example.com/packages")
 	r.Register(cred, []string{"url"}, "test registry")
 
-	req := httptest.NewRequest("GET", "https://registry.example.com/packages/some-package", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.example.com/packages/some-package", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.True(t, ok, "should authenticate")
@@ -180,7 +180,7 @@ func TestOIDCRegistry_TryAuth_SameHostDifferentPaths_NoCollision(t *testing.T) {
 	assert.NotEqual(t, keyA, keyB, "keys should be different")
 
 	// Request to feed-A should get feed-A's token
-	reqA := httptest.NewRequest("GET",
+	reqA := httptest.NewRequestWithContext(t.Context(), "GET",
 		"https://pkgs.dev.azure.com/org/_packaging/feed-A/npm/registry/@scope/package", nil)
 	ok := r.TryAuth(reqA, nil)
 	assert.True(t, ok, "feed-A request should be authenticated")
@@ -188,7 +188,7 @@ func TestOIDCRegistry_TryAuth_SameHostDifferentPaths_NoCollision(t *testing.T) {
 		"feed-A request should get feed-A's token")
 
 	// Request to feed-B should get feed-B's token
-	reqB := httptest.NewRequest("GET",
+	reqB := httptest.NewRequestWithContext(t.Context(), "GET",
 		"https://pkgs.dev.azure.com/org/_packaging/feed-B/npm/registry/@scope/package", nil)
 	ok = r.TryAuth(reqB, nil)
 	assert.True(t, ok, "feed-B request should be authenticated")
@@ -214,7 +214,7 @@ func TestOIDCRegistry_TryAuth_HostOnlyMatchesAnyPath(t *testing.T) {
 	r.Register(cred, []string{"url"}, "test registry")
 
 	// Should match any path on that host
-	req := httptest.NewRequest("GET", "https://registry.example.com/any/path/here", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.example.com/any/path/here", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.True(t, ok, "host-only credential should match any path")
@@ -229,7 +229,7 @@ func TestOIDCRegistry_TryAuth_NoMatch(t *testing.T) {
 	r.Register(cred, []string{"url"}, "test registry")
 
 	// Request to a different host
-	req := httptest.NewRequest("GET", "https://other.example.com/packages/something", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://other.example.com/packages/something", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.False(t, ok, "should not match different host")
@@ -245,7 +245,7 @@ func TestOIDCRegistry_TryAuth_WrongPathNoMatch(t *testing.T) {
 	r.Register(cred, []string{"url"}, "test registry")
 
 	// Request to same host but different feed path
-	req := httptest.NewRequest("GET",
+	req := httptest.NewRequestWithContext(t.Context(), "GET",
 		"https://pkgs.dev.azure.com/org/_packaging/feed-B/npm/registry/@scope/pkg", nil)
 	ok := r.TryAuth(req, nil)
 
@@ -263,7 +263,7 @@ func TestOIDCRegistry_CredentialForRequestConcurrentRegistration(t *testing.T) {
 	}
 	r.RegisterURL("https://registry.example.com/packages", credential, "test registry")
 
-	req := httptest.NewRequest("GET", "https://registry.example.com/packages/some-package", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.example.com/packages/some-package", nil)
 
 	var wg sync.WaitGroup
 	for i := range 50 {
@@ -305,7 +305,7 @@ func TestOIDCRegistry_RegisterURL(t *testing.T) {
 	r.RegisterURL("https://nuget.example.com/v3/package-content", oidcCred, "nuget resource")
 
 	// Request to discovered URL should be authenticated
-	req := httptest.NewRequest("GET",
+	req := httptest.NewRequestWithContext(t.Context(), "GET",
 		"https://nuget.example.com/v3/package-content/some-package/1.0.0", nil)
 	ok = r.TryAuth(req, nil)
 
@@ -321,7 +321,7 @@ func TestOIDCRegistry_TryAuth_PortMismatch(t *testing.T) {
 	r.Register(cred, []string{"url"}, "test registry")
 
 	// Request on default port (443) should not match cred on port 8443
-	req := httptest.NewRequest("GET", "https://registry.example.com/packages/something", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.example.com/packages/something", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.False(t, ok, "should not match different port")
@@ -359,7 +359,7 @@ func TestOIDCRegistry_TryAuth_PathSpecificBeatsHostOnly(t *testing.T) {
 	r.Register(hostOnlyCred, []string{"url"}, "test registry")
 	r.Register(pathSpecificCred, []string{"url"}, "test registry")
 
-	req := httptest.NewRequest("GET", "https://registry.example.com/packages/private/module.tgz", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.example.com/packages/private/module.tgz", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.True(t, ok, "path-specific credential should match request")
@@ -382,7 +382,7 @@ func TestOIDCRegistry_TryAuth_LongestPathPrefixWins(t *testing.T) {
 	r.Register(shortPrefixCred, []string{"url"}, "test registry")
 	r.Register(longPrefixCred, []string{"url"}, "test registry")
 
-	req := httptest.NewRequest("GET", "https://registry.example.com/packages/private/module.tgz", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.example.com/packages/private/module.tgz", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.True(t, ok, "longer path prefix should match request")
@@ -401,7 +401,7 @@ func TestOIDCRegistry_TryAuth_CaseInsensitiveHost(t *testing.T) {
 	r.Register(cred, []string{"url"}, "test registry")
 
 	// Request with different casing should still match
-	req := httptest.NewRequest("GET", "https://REGISTRY.EXAMPLE.COM/packages/something", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://REGISTRY.EXAMPLE.COM/packages/something", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.True(t, ok, "host matching should be case-insensitive")
@@ -438,7 +438,7 @@ func TestOIDCRegistry_TryAuth_Cloudsmith_UsesAPIKey(t *testing.T) {
 	cred := cloudsmithCred("my-org", "my-service", "https://cloudsmith.io", "https://dl.cloudsmith.io/basic/my-org/my-repo")
 	r.Register(cred, []string{"url"}, "test registry")
 
-	req := httptest.NewRequest("GET", "https://dl.cloudsmith.io/basic/my-org/my-repo/some-package", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://dl.cloudsmith.io/basic/my-org/my-repo/some-package", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.True(t, ok, "cloudsmith OIDC should authenticate")
@@ -473,7 +473,7 @@ func TestOIDCRegistry_TryAuth_GCP_UsesBearer(t *testing.T) {
 	cred := gcpCred("projects/123/locations/global/workloadIdentityPools/pool/providers/prov", "https://us-central1-python.pkg.dev/my-project/my-repo/simple")
 	r.Register(cred, []string{"url"}, "test registry")
 
-	req := httptest.NewRequest("GET", "https://us-central1-python.pkg.dev/my-project/my-repo/simple/some-package", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://us-central1-python.pkg.dev/my-project/my-repo/simple/some-package", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.True(t, ok, "GCP OIDC should authenticate")
@@ -492,7 +492,7 @@ func TestOIDCRegistry_TryAuth_GCP_DockerUsesBasicAuth(t *testing.T) {
 	cred := gcpCred("projects/123/locations/global/workloadIdentityPools/pool/providers/prov", "https://us-central1-docker.pkg.dev/my-project/my-repo")
 	r.Register(cred, []string{"url"}, "docker registry")
 
-	req := httptest.NewRequest("GET", "https://us-central1-docker.pkg.dev/my-project/my-repo/v2/some-image/manifests/latest", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://us-central1-docker.pkg.dev/my-project/my-repo/v2/some-image/manifests/latest", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.True(t, ok, "GCP OIDC should authenticate docker")
@@ -529,7 +529,7 @@ func TestOIDCRegistry_TryAuth_URLWithoutProtocol(t *testing.T) {
 	cred["url"] = "registry.example.com/packages"
 	r.Register(cred, []string{"url"}, "test registry")
 
-	req := httptest.NewRequest("GET", "https://registry.example.com/packages/something", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.example.com/packages/something", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.True(t, ok, "URL without protocol should be handled by ParseURLLax")
@@ -554,7 +554,7 @@ func TestOIDCRegistry_RegisterURL_MultipleOnSameHost(t *testing.T) {
 
 	// All three paths should authenticate
 	for _, path := range []string{"/v3/index.json", "/v3/package-content/Some.Package/1.0.0", "/v3/registrations/some.package/index.json"} {
-		req := httptest.NewRequest("GET", "https://nuget.example.com"+path, nil)
+		req := httptest.NewRequestWithContext(t.Context(), "GET", "https://nuget.example.com"+path, nil)
 		ok := r.TryAuth(req, nil)
 		assert.True(t, ok, "should authenticate: "+path)
 		assert.Equal(t, "Bearer __test_token__", req.Header.Get("Authorization"))

@@ -31,7 +31,7 @@ func TestCache_Disabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest("GET", URL, nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", URL, nil)
 	proxyCtx := &goproxy.ProxyCtx{
 		Req: req,
 	}
@@ -70,7 +70,7 @@ func TestCache(t *testing.T) {
 	}
 
 	t.Run("Cache miss", func(t *testing.T) {
-		req := httptest.NewRequest("GET", URL, nil)
+		req := httptest.NewRequestWithContext(t.Context(), "GET", URL, nil)
 		proxyCtx := &goproxy.ProxyCtx{
 			Req: req,
 		}
@@ -99,7 +99,7 @@ func TestCache(t *testing.T) {
 	})
 
 	t.Run("Cache hit", func(t *testing.T) {
-		req := httptest.NewRequest("GET", URL, nil)
+		req := httptest.NewRequestWithContext(t.Context(), "GET", URL, nil)
 		proxyCtx := &goproxy.ProxyCtx{
 			Req: req,
 		}
@@ -142,7 +142,7 @@ func Test_sanitize(t *testing.T) {
 }
 
 func Test_key(t *testing.T) {
-	req := httptest.NewRequest("GET", "https://github.com", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://github.com", nil)
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("User-Agent", "cli")
 	req.Header.Add("Connection", "keep-alive")
@@ -239,7 +239,7 @@ func Test_key(t *testing.T) {
 	})
 
 	t.Run("A request with no headers should result in a blank headerHash", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "https://github.com", nil)
+		req := httptest.NewRequestWithContext(t.Context(), "GET", "https://github.com", nil)
 		key := key(req)
 		if key.HeaderHash != "" {
 			t.Error("headerHash should be blank, got", key.HeaderHash)
@@ -251,7 +251,7 @@ func Test_key(t *testing.T) {
 	const upUrl = "https://github.com/octocat/Hello-World.git/git-upload-pack"
 	const upCT = "application/x-git-upload-pack-request"
 	mkUpReq := func(url, ct, body string) *http.Request {
-		r := httptest.NewRequest("POST", url, strings.NewReader(body))
+		r := httptest.NewRequestWithContext(t.Context(), "POST", url, strings.NewReader(body))
 		if ct != "" {
 			r.Header.Set("Content-Type", ct)
 		}
@@ -286,8 +286,8 @@ func Test_key(t *testing.T) {
 
 	t.Run("non-git POST is not normalized even with similar substrings", func(t *testing.T) {
 		const u = "https://api.github.com/graphql"
-		k1 := key(httptest.NewRequest("POST", u, strings.NewReader(`{"q":"have stuff agent=foo"}`)))
-		k2 := key(httptest.NewRequest("POST", u, strings.NewReader(`{"q":"have other agent=bar"}`)))
+		k1 := key(httptest.NewRequestWithContext(t.Context(), "POST", u, strings.NewReader(`{"q":"have stuff agent=foo"}`)))
+		k2 := key(httptest.NewRequestWithContext(t.Context(), "POST", u, strings.NewReader(`{"q":"have other agent=bar"}`)))
 		if k1 == k2 {
 			t.Error("non-git POSTs must not be normalized")
 		}
