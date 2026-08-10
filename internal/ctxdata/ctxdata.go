@@ -6,10 +6,10 @@ import (
 	"github.com/elazarl/goproxy"
 )
 
-type userData map[string]interface{}
+type userData map[string]any
 
 // GetValue retrieves a value from the user data store
-func GetValue(ctx *goproxy.ProxyCtx, key string) (interface{}, bool) {
+func GetValue(ctx *goproxy.ProxyCtx, key string) (any, bool) {
 	ud, ok := ctx.UserData.(userData)
 	if !ok {
 		return nil, false
@@ -42,7 +42,7 @@ func GetBuffer(ctx *goproxy.ProxyCtx, key string) (*bytes.Buffer, bool) {
 }
 
 // SetValue sets a value in the user data store
-func SetValue(ctx *goproxy.ProxyCtx, key string, value interface{}) {
+func SetValue(ctx *goproxy.ProxyCtx, key string, value any) {
 	var ud userData
 	ud, ok := ctx.UserData.(userData)
 	if !ok {

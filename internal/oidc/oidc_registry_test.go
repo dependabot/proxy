@@ -266,7 +266,7 @@ func TestOIDCRegistry_CredentialForRequestConcurrentRegistration(t *testing.T) {
 	req := httptest.NewRequest("GET", "https://registry.example.com/packages/some-package", nil)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(2)
 		go func(i int) {
 			defer wg.Done()
@@ -278,7 +278,7 @@ func TestOIDCRegistry_CredentialForRequestConcurrentRegistration(t *testing.T) {
 		}(i)
 		go func() {
 			defer wg.Done()
-			for j := 0; j < 100; j++ {
+			for range 100 {
 				_ = r.CredentialForRequest(req)
 			}
 		}()
