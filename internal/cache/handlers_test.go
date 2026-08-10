@@ -137,6 +137,7 @@ func TestCacheDoesNotWrapBodylessResponses(t *testing.T) {
 		method     string
 		statusCode int
 	}{
+		{name: "103", method: http.MethodGet, statusCode: http.StatusEarlyHints},
 		{name: "HEAD", method: http.MethodHead, statusCode: http.StatusOK},
 		{name: "204", method: http.MethodGet, statusCode: http.StatusNoContent},
 		{name: "304", method: http.MethodGet, statusCode: http.StatusNotModified},
@@ -145,6 +146,8 @@ func TestCacheDoesNotWrapBodylessResponses(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(test.method, URL, nil)
+			ctx := &goproxy.ProxyCtx{Req: request}
+			_, _ = cacher.OnRequest(request, ctx)
 			body := &BufferWithClose{}
 			response := &http.Response{
 				Request:          request,
@@ -154,7 +157,7 @@ func TestCacheDoesNotWrapBodylessResponses(t *testing.T) {
 				TransferEncoding: []string{"chunked"},
 			}
 
-			result := cacher.OnResponse(response, &goproxy.ProxyCtx{Req: request})
+			result := cacher.OnResponse(response, ctx)
 
 			if result.Body != http.NoBody {
 				t.Error("bodyless response body was wrapped")
@@ -165,7 +168,39 @@ func TestCacheDoesNotWrapBodylessResponses(t *testing.T) {
 			if len(result.TransferEncoding) != 0 || result.Header.Get("Transfer-Encoding") != "" {
 				t.Error("bodyless response retained transfer encoding")
 			}
+			if len(cacher.cacheDB) != 0 {
+				t.Error("bodyless response was cached")
+			}
 		})
+	}
+}
+
+func TestCachePreservesSwitchingProtocolsBody(t *testing.T) {
+	cacher, err := New(true, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, URL, nil)
+	ctx := &goproxy.ProxyCtx{Req: request}
+	_, _ = cacher.OnRequest(request, ctx)
+	body := &BufferWithClose{}
+	response := &http.Response{
+		Request:    request,
+		StatusCode: http.StatusSwitchingProtocols,
+		Body:       body,
+	}
+
+	result := cacher.OnResponse(response, ctx)
+
+	if result.Body != body {
+		t.Error("switching protocols response body was replaced")
+	}
+	if body.WasCloseCalled {
+		t.Error("switching protocols response body was closed")
+	}
+	if len(cacher.cacheDB) != 0 {
+		t.Error("switching protocols response was cached")
 	}
 }
 

@@ -214,6 +214,9 @@ func (d *DB) OnResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Respon
 		logrus.Warnln("Received nil response")
 		return resp
 	}
+	if resp.StatusCode == http.StatusSwitchingProtocols {
+		return resp
+	}
 	if responseMustNotHaveBody(resp) {
 		if resp.Body != nil && resp.Body != http.NoBody {
 			_ = resp.Body.Close()
@@ -269,7 +272,8 @@ func (d *DB) OnResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Respon
 }
 
 func responseMustNotHaveBody(resp *http.Response) bool {
-	return resp.StatusCode == http.StatusNoContent ||
+	return resp.StatusCode >= 100 && resp.StatusCode < 200 ||
+		resp.StatusCode == http.StatusNoContent ||
 		resp.StatusCode == http.StatusNotModified ||
 		resp.Request != nil && resp.Request.Method == http.MethodHead
 }
