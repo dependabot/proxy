@@ -27,7 +27,7 @@ const hexDigits = "0123456789abcdef"
 
 // parseHex4 decodes a 4-byte ASCII hex prefix without allocating a string.
 func parseHex4(b []byte) (n int, ok bool) {
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		c := b[i]
 		var v int
 		switch {

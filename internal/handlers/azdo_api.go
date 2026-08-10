@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/elazarl/goproxy"
@@ -90,10 +91,5 @@ func (h *AzureDevOpsAPIHandler) isHandledAzureDevOpsAPIRequest(req *http.Request
 }
 
 func isAzureDevOpsAPIHost(host string) bool {
-	for _, adoHost := range AzureDevOpsAPIHosts {
-		if host == adoHost {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(AzureDevOpsAPIHosts, host)
 }

@@ -146,7 +146,7 @@ func (h *DockerRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pr
 
 func defaultGetECRClient(region, keyID, secretKey string) (ecriface.ECRAPI, error) {
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(region),
+		Region:      new(region),
 		Credentials: credentials.NewStaticCredentials(keyID, secretKey, ""),
 	})
 	if err != nil {

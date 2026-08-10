@@ -72,7 +72,7 @@ func withAccessibleRepos(allowedRepos []string) testGitSourceCredOption {
 }
 
 func testGitSourceCred(host, username, password string, opts ...testGitSourceCredOption) config.Credential {
-	cred := map[string]interface{}{
+	cred := map[string]any{
 		"type":     "git_source",
 		"host":     host,
 		"username": username,
@@ -87,7 +87,7 @@ func testGitSourceCred(host, username, password string, opts ...testGitSourceCre
 }
 
 func testJITAccessCred(credentialType, host, endpoint string) config.Credential {
-	return map[string]interface{}{
+	return map[string]any{
 		"type":            "jit_access",
 		"credential-type": credentialType,
 		"host":            host,

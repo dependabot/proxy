@@ -24,9 +24,9 @@ type Config struct {
 	ProxyAuth   BasicAuthCredentials `json:"proxy_auth"`
 }
 
-// Credential is a wrapper around map[string]interface{}, which is the format
+// Credential is a wrapper around map[string]any, which is the format
 // of credential entries
-type Credential map[string]interface{}
+type Credential map[string]any
 
 // Type returns the credential's type
 func (c Credential) Type() string {
@@ -62,7 +62,7 @@ func (c Credential) GetListOfStrings(key string) []string {
 	switch val := value.(type) {
 	case []string:
 		return val
-	case []interface{}:
+	case []any:
 		strings := make([]string, len(val))
 		for i, v := range val {
 			if str, ok := v.(string); ok {
