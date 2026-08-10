@@ -26,10 +26,10 @@ var (
 )
 
 type ecrClient interface {
-	GetAuthorizationToken(context.Context, *ecr.GetAuthorizationTokenInput, ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error)
+	GetAuthorizationToken(ctx context.Context, input *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error)
 }
 
-type getECRClient func(context.Context, string, string, string) (ecrClient, error)
+type getECRClient func(ctx context.Context, region, keyID, secretKey string) (ecrClient, error)
 
 // DockerRegistryHandler handles requests to Docker registries, adding auth.
 type DockerRegistryHandler struct {
@@ -169,7 +169,7 @@ type dockerRegistryCredentials struct {
 	getECRClient getECRClient
 }
 
-func (c *dockerRegistryCredentials) getECRCredentials(requestCtx context.Context, ctx *goproxy.ProxyCtx) bool {
+func (c *dockerRegistryCredentials) getECRCredentials(requestCtx context.Context, proxyCtx *goproxy.ProxyCtx) bool {
 	if c.ecrUsername != "" && c.ecrPassword != "" {
 		return true
 	}
@@ -187,13 +187,13 @@ func (c *dockerRegistryCredentials) getECRCredentials(requestCtx context.Context
 	region := match[1]
 	ecrSvc, err := c.getECRClient(requestCtx, region, c.username, c.password)
 	if err != nil {
-		logging.RequestLogf(ctx, "! failed to initialize aws ecr client (key_id=%s)", c.username)
+		logging.RequestLogf(proxyCtx, "! failed to initialize aws ecr client (key_id=%s)", c.username)
 		return false
 	}
 
 	rsp, err := ecrSvc.GetAuthorizationToken(requestCtx, &ecr.GetAuthorizationTokenInput{})
 	if err != nil {
-		logging.RequestLogf(ctx, "! failed to get ecr authorization token (key_id=%s)", c.username)
+		logging.RequestLogf(proxyCtx, "! failed to get ecr authorization token (key_id=%s)", c.username)
 		return false
 	}
 
