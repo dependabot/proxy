@@ -17,8 +17,8 @@ import (
 // of fmt.Sprintf and logs it. All sequences of newlines and/or carriage
 // returns in the resulting entry are replaced with a space, any trailing
 // spaces are removed, and the entry is logged with a single trailing newline.
-// If p is given, the logged line is prefixed with a three-digit representation
-// of p.Session.
+// If proxyCtx is given, the logged line is prefixed with a three-digit
+// representation of proxyCtx.Session.
 func RequestLogf(proxyCtx *goproxy.ProxyCtx, format string, v ...any) {
 	formatted := fmt.Sprintf(format, v...)
 	message := replaceNewLines(formatted, " ")
@@ -29,8 +29,8 @@ func RequestLogf(proxyCtx *goproxy.ProxyCtx, format string, v ...any) {
 // semantics of fmt.Sprintf and logs it. If the resulting entry contains
 // newlines and/or carriage returns, they are preserved. The resulting
 // entry is truncated to 1024 bytes and it is logged with a single trailing
-// newline. If p is given, the first line logged is prefixed with a three-digit
-// representation of p.Session.
+// newline. If proxyCtx is given, the first line logged is prefixed with a
+// three-digit representation of proxyCtx.Session.
 func RequestMultilineLogf(proxyCtx *goproxy.ProxyCtx, format string, v ...any) {
 	formatted := fmt.Sprintf(format, v...)
 	message := replaceNewLines(formatted, "\n")

@@ -100,7 +100,7 @@ func (rt *dockerRegistryRoundTripper) RoundTrip(req *http.Request, proxyCtx *gop
 //
 // Fortunately, the github.com/stackrox/docker-registry-client/registry library's
 // TokenTransport implements the bulk of this flow for us, so we just need to
-// set the request context's RoundTripper accordingly.
+// set the proxy context's RoundTripper accordingly.
 func (h *DockerRegistryHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
