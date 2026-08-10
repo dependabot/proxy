@@ -51,7 +51,7 @@ func NewHexOrganizationHandler(creds config.Credentials) *HexOrganizationHandler
 }
 
 // HandleRequest adds auth to an npm registry request
-func (h *HexOrganizationHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *HexOrganizationHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") || !helpers.CheckHost(req, "repo.hex.pm") {
 		return req, nil
 	}
@@ -68,7 +68,7 @@ func (h *HexOrganizationHandler) HandleRequest(req *http.Request, ctx *goproxy.P
 	reqOrg := pathParts[1]
 	for _, cred := range h.credentials {
 		if cred.organization == reqOrg {
-			logging.RequestLogf(ctx, "* authenticating hex request (org: %s)", reqOrg)
+			logging.RequestLogf(proxyCtx, "* authenticating hex request (org: %s)", reqOrg)
 			helpers.SetRawAuthorization(req, cred.key)
 			return req, nil
 		}

@@ -12,7 +12,7 @@ import (
 )
 
 func TestRequestLogf(t *testing.T) {
-	p := &goproxy.ProxyCtx{Session: 128}
+	proxyCtx := &goproxy.ProxyCtx{Session: 128}
 
 	testCases := map[string]struct {
 		format   string
@@ -62,7 +62,7 @@ func TestRequestLogf(t *testing.T) {
 			var buf bytes.Buffer
 			log.SetOutput(&buf)
 
-			RequestLogf(p, tc.format, tc.argv...)
+			RequestLogf(proxyCtx, tc.format, tc.argv...)
 
 			actual := buf.String()
 			assert.True(t, strings.HasSuffix(actual, tc.expected))
@@ -71,7 +71,7 @@ func TestRequestLogf(t *testing.T) {
 }
 
 func TestRequestMultilineLogf(t *testing.T) {
-	p := &goproxy.ProxyCtx{Session: 128}
+	proxyCtx := &goproxy.ProxyCtx{Session: 128}
 
 	testCases := map[string]struct {
 		format   string
@@ -121,7 +121,7 @@ func TestRequestMultilineLogf(t *testing.T) {
 			var buf bytes.Buffer
 			log.SetOutput(&buf)
 
-			RequestMultilineLogf(p, tc.format, tc.argv...)
+			RequestMultilineLogf(proxyCtx, tc.format, tc.argv...)
 
 			actual := buf.String()
 			assert.True(t, strings.HasSuffix(actual, tc.expected))

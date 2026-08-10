@@ -11,9 +11,9 @@ import (
 	"github.com/elazarl/goproxy"
 
 	"github.com/dependabot/proxy/internal/config"
-	"github.com/dependabot/proxy/internal/ctxdata"
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
+	"github.com/dependabot/proxy/internal/proxyctx"
 	"github.com/dependabot/proxy/internal/threadsafe"
 )
 
@@ -219,7 +219,7 @@ const (
 )
 
 type ScopeRequester interface {
-	RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (*config.Credential, error)
+	RequestJITAccess(proxyCtx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (*config.Credential, error)
 }
 
 // NewGitServerHandler returns a new GitServerHandler, adding basic auth to
@@ -266,7 +266,7 @@ func (h *GitServerHandler) addJITAccess(cred config.Credential) {
 }
 
 // HandleRequest adds auth to a git server request
-func (h *GitServerHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *GitServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" {
 		return req, nil
 	}
@@ -280,11 +280,11 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCt
 		return req, nil
 	}
 
-	logging.RequestLogf(ctx, "* authenticating git server request (host: %s)", helpers.GetHost(req))
+	logging.RequestLogf(proxyCtx, "* authenticating git server request (host: %s)", helpers.GetHost(req))
 	credsToUse := creds[0]
 	helpers.SetBasicAuthorization(req, credsToUse.username, credsToUse.password)
-	if ctx != nil {
-		ctxdata.SetValue(ctx, addedAuthCtxKey, credsToUse)
+	if proxyCtx != nil {
+		proxyctx.SetValue(proxyCtx, addedAuthCtxKey, credsToUse)
 	}
 	if h.isGitUploadPackPost(req) && len(creds) > 1 {
 		// set up cloning of the req body in case we need to retry this request
@@ -297,8 +297,8 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCt
 			req.Body,
 		}
 		req.Body = cloner
-		if ctx != nil {
-			ctxdata.SetValue(ctx, reqBodyCtxKey, &bodyClone)
+		if proxyCtx != nil {
+			proxyctx.SetValue(proxyCtx, reqBodyCtxKey, &bodyClone)
 		}
 	}
 	return req, nil
@@ -368,21 +368,21 @@ func getCredentialsForRequest(r *http.Request, credentials *gitCredentialsMap, e
 // Here, we try to detect those responses, and retry the request without the
 // injected auth. If we get a 401 back, we use that response rather than the
 // original.
-func (h *GitServerHandler) HandleResponse(rsp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+func (h *GitServerHandler) HandleResponse(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if rsp == nil {
 		return rsp
 	}
 
 	// Make sure we treat GHES requests like GitHub API requests. Do not retry
-	if h.isGitHubAPIRequest(ctx.Req) {
+	if h.isGitHubAPIRequest(proxyCtx.Req) {
 		return rsp
 	}
 
 	if isPotentialAuthFailure(rsp.StatusCode) {
-		rsp = h.retryWithAlternateAuth(rsp, ctx)
+		rsp = h.retryWithAlternateAuth(rsp, proxyCtx)
 	}
 
-	if authUsed, ok := ctxdata.GetValue(ctx, addedAuthCtxKey); !ok || authUsed == nil {
+	if authUsed, ok := proxyctx.GetValue(proxyCtx, addedAuthCtxKey); !ok || authUsed == nil {
 		return rsp
 	}
 
@@ -391,57 +391,57 @@ func (h *GitServerHandler) HandleResponse(rsp *http.Response, ctx *goproxy.Proxy
 	}
 
 	// Retrying mutatative requests could be risky
-	if ctx.Req.Method != "GET" {
+	if proxyCtx.Req.Method != "GET" {
 		return rsp
 	}
 
-	logging.RequestLogf(ctx, "* auth'd git request returned 404, retrying without auth")
-	newReq := ctx.Req.Clone(ctx.Req.Context())
+	logging.RequestLogf(proxyCtx, "* auth'd git request returned 404, retrying without auth")
+	newReq := proxyCtx.Req.Clone(proxyCtx.Req.Context())
 	newReq.Header.Del("Authorization")
 
-	newRsp, err := ctx.RoundTrip(newReq)
+	newRsp, err := proxyCtx.RoundTrip(newReq)
 	if err != nil {
 		return rsp
 	}
 
 	if newRsp.StatusCode == 401 {
-		logging.RequestLogf(ctx, "* de-auth'd request returned 401, replacing response")
+		logging.RequestLogf(proxyCtx, "* de-auth'd request returned 401, replacing response")
 		helpers.DrainAndClose(rsp)
 		return newRsp
 	}
 
-	logging.RequestLogf(ctx, "* de-auth'd request returned %d, ignoring response", newRsp.StatusCode)
+	logging.RequestLogf(proxyCtx, "* de-auth'd request returned %d, ignoring response", newRsp.StatusCode)
 	helpers.DrainAndClose(newRsp)
 	return rsp
 }
 
-func (h *GitServerHandler) retryWithAlternateAuth(rsp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+func (h *GitServerHandler) retryWithAlternateAuth(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	// We don't expect mutation requests to the git server except when cloning
-	if ctx.Req.Method != "GET" && !h.isGitUploadPackPost(ctx.Req) {
+	if proxyCtx.Req.Method != "GET" && !h.isGitUploadPackPost(proxyCtx.Req) {
 		return rsp
 	}
 
 	// If this request url was previously tried and failed after trying all auth methods,
 	// then consider it a failure and don't retry again.
-	if _, ok := h.reposAlreadyTried.Get(ctx.Req.URL.String()); ok {
-		logging.RequestLogf(ctx, "* auth'd git request previously retried, won't retry again.")
+	if _, ok := h.reposAlreadyTried.Get(proxyCtx.Req.URL.String()); ok {
+		logging.RequestLogf(proxyCtx, "* auth'd git request previously retried, won't retry again.")
 		return rsp
 	}
 
 	var body []byte
-	bodyClone, _ := ctxdata.GetBuffer(ctx, reqBodyCtxKey)
+	bodyClone, _ := proxyctx.GetBuffer(proxyCtx, reqBodyCtxKey)
 	if bodyClone != nil {
 		body = bodyClone.Bytes()
 	}
 
-	username, password, reqWasAuthed := ctx.Req.BasicAuth()
-	for _, creds := range getCredentialsForRequest(ctx.Req, h.credentials, gitExtractOrgAndRepo) {
+	username, password, reqWasAuthed := proxyCtx.Req.BasicAuth()
+	for _, creds := range getCredentialsForRequest(proxyCtx.Req, h.credentials, gitExtractOrgAndRepo) {
 		// don't retry the request with the same auth that was previously used
 		if reqWasAuthed && creds.username == username && creds.password == password {
 			continue
 		}
 
-		newRsp := h.requestWithAlternativeAuth(ctx, body, creds)
+		newRsp := h.requestWithAlternativeAuth(proxyCtx, body, creds)
 		if newRsp != nil {
 			helpers.DrainAndClose(rsp)
 			return newRsp
@@ -450,9 +450,9 @@ func (h *GitServerHandler) retryWithAlternateAuth(rsp *http.Response, ctx *gopro
 
 	// All known credentials have been tried, try to JIT create access credentials
 	// to access the git repository.
-	jitCreds := h.getJITCredentialsForRequest(ctx)
+	jitCreds := h.getJITCredentialsForRequest(proxyCtx)
 	if jitCreds != nil {
-		newRsp := h.requestWithAlternativeAuth(ctx, body, jitCreds)
+		newRsp := h.requestWithAlternativeAuth(proxyCtx, body, jitCreds)
 		if newRsp != nil {
 			helpers.DrainAndClose(rsp)
 			return newRsp
@@ -461,50 +461,50 @@ func (h *GitServerHandler) retryWithAlternateAuth(rsp *http.Response, ctx *gopro
 
 	// The repo has failed all authentication attempts, mark the url
 	// as failed so we don't retry it again later
-	h.reposAlreadyTried.Set(ctx.Req.URL.String(), struct{}{})
+	h.reposAlreadyTried.Set(proxyCtx.Req.URL.String(), struct{}{})
 	return rsp
 }
 
-func (h *GitServerHandler) requestWithAlternativeAuth(ctx *goproxy.ProxyCtx, body []byte, creds *gitCredentials) *http.Response {
-	logging.RequestLogf(ctx, "* auth'd git request failed authentication, retrying with alternate provided auth")
-	newReq := ctx.Req.Clone(ctx.Req.Context())
+func (h *GitServerHandler) requestWithAlternativeAuth(proxyCtx *goproxy.ProxyCtx, body []byte, creds *gitCredentials) *http.Response {
+	logging.RequestLogf(proxyCtx, "* auth'd git request failed authentication, retrying with alternate provided auth")
+	newReq := proxyCtx.Req.Clone(proxyCtx.Req.Context())
 	if body != nil {
 		newReq.Body = io.NopCloser(bytes.NewReader(body))
 	}
 
 	helpers.SetBasicAuthorization(newReq, creds.username, creds.password)
-	newRsp, err := ctx.RoundTrip(newReq)
+	newRsp, err := proxyCtx.RoundTrip(newReq)
 	if err != nil {
 		return nil
 	}
 
 	if isPotentialAuthFailure(newRsp.StatusCode) {
-		logging.RequestLogf(ctx, "* re-auth'd request returned %d, ignoring response", newRsp.StatusCode)
+		logging.RequestLogf(proxyCtx, "* re-auth'd request returned %d, ignoring response", newRsp.StatusCode)
 		helpers.DrainAndClose(newRsp)
 		return nil
 	}
 
-	logging.RequestLogf(ctx, "* re-auth'd request returned %d, replacing response", newRsp.StatusCode)
+	logging.RequestLogf(proxyCtx, "* re-auth'd request returned %d, replacing response", newRsp.StatusCode)
 	return newRsp
 }
 
-func (h *GitServerHandler) getJITCredentialsForRequest(ctx *goproxy.ProxyCtx) *gitCredentials {
-	host := helpers.GetHost(ctx.Req)
+func (h *GitServerHandler) getJITCredentialsForRequest(proxyCtx *goproxy.ProxyCtx) *gitCredentials {
+	host := helpers.GetHost(proxyCtx.Req)
 	jitConfig := h.jitAccessByHost[host]
 	if jitConfig.endpoint == "" {
 		return nil
 	}
 
-	org, repo, ok := gitExtractOrgAndRepo(ctx.Req.URL.Path)
+	org, repo, ok := gitExtractOrgAndRepo(proxyCtx.Req.URL.Path)
 	if !ok {
 		return nil
 	}
 
-	logging.RequestLogf(ctx, "* requesting JIT access for git server request")
+	logging.RequestLogf(proxyCtx, "* requesting JIT access for git server request")
 	if h.client == nil {
 		return nil
 	}
-	credential, err := h.client.RequestJITAccess(ctx, jitConfig.endpoint, jitConfig.username, jitConfig.password, org, repo)
+	credential, err := h.client.RequestJITAccess(proxyCtx, jitConfig.endpoint, jitConfig.username, jitConfig.password, org, repo)
 	if credential == nil || err != nil {
 		return nil
 	}

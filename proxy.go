@@ -150,14 +150,14 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 	}
 }
 
-func handleForbidden(rsp *http.Response, p *goproxy.ProxyCtx) *http.Response {
-	if errors.Is(p.Error, dialer.ErrForbiddenRequest) {
-		return goproxy.NewResponse(p.Req, goproxy.ContentTypeText, http.StatusForbidden, "")
+func handleForbidden(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
+	if errors.Is(proxyCtx.Error, dialer.ErrForbiddenRequest) {
+		return goproxy.NewResponse(proxyCtx.Req, goproxy.ContentTypeText, http.StatusForbidden, "")
 	}
 	return rsp
 }
 
-func normaliseHost(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func normaliseHost(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	req.URL.Host = strings.ToLower(req.URL.Host)
 	req.Host = strings.ToLower(req.Host)
 	return req, nil
@@ -167,7 +167,7 @@ const (
 	metadataAPIHost = "metadata.google.internal"
 )
 
-func blockMetadataAPIHosts(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func blockMetadataAPIHosts(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.Host == metadataAPIHost || req.URL.Host == metadataAPIHost {
 		return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, "Forbidden")
 	}

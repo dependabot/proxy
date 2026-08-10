@@ -96,8 +96,8 @@ func (r *OIDCRegistry) RegisterURL(url string, cred *OIDCCredential, registryTyp
 //     prefix of the request path
 //
 // Returns true if the request was authenticated, false otherwise.
-func (r *OIDCRegistry) TryAuth(req *http.Request, ctx *goproxy.ProxyCtx) bool {
-	return r.TryAuthCredential(req, ctx, r.CredentialForRequest(req))
+func (r *OIDCRegistry) TryAuth(req *http.Request, proxyCtx *goproxy.ProxyCtx) bool {
+	return r.TryAuthCredential(req, proxyCtx, r.CredentialForRequest(req))
 }
 
 // CredentialForRequest returns the most specific OIDC credential matching the
@@ -141,7 +141,7 @@ func (r *OIDCRegistry) CredentialForRequest(req *http.Request) *OIDCCredential {
 // TryAuthCredential authenticates a request with a known OIDC credential.
 // Handlers use this when they have their own safe matching rule but want the
 // provider-specific OIDC header behavior to stay centralized here.
-func (r *OIDCRegistry) TryAuthCredential(req *http.Request, ctx *goproxy.ProxyCtx, credential *OIDCCredential) bool {
+func (r *OIDCRegistry) TryAuthCredential(req *http.Request, proxyCtx *goproxy.ProxyCtx, credential *OIDCCredential) bool {
 	if credential == nil {
 		return false
 	}
@@ -149,24 +149,24 @@ func (r *OIDCRegistry) TryAuthCredential(req *http.Request, ctx *goproxy.ProxyCt
 	host := strings.ToLower(helpers.GetHost(req))
 	token, err := GetOrRefreshOIDCToken(credential, req.Context())
 	if err != nil {
-		logging.RequestLogf(ctx, "* failed to get %s token via OIDC for %s: %v", credential.Provider(), host, err)
+		logging.RequestLogf(proxyCtx, "* failed to get %s token via OIDC for %s: %v", credential.Provider(), host, err)
 		return false
 	}
 
 	switch credential.parameters.(type) {
 	case *CloudsmithOIDCParameters:
-		logging.RequestLogf(ctx, "* authenticating request with OIDC API key (host: %s)", host)
+		logging.RequestLogf(proxyCtx, "* authenticating request with OIDC API key (host: %s)", host)
 		helpers.ReplaceAuthorization(req, "X-Api-Key", token)
 	case *GCPOIDCParameters:
 		if strings.HasSuffix(host, "-docker.pkg.dev") {
-			logging.RequestLogf(ctx, "* authenticating request with OIDC oauth2accesstoken (host: %s)", host)
+			logging.RequestLogf(proxyCtx, "* authenticating request with OIDC oauth2accesstoken (host: %s)", host)
 			helpers.SetBasicAuthorization(req, "oauth2accesstoken", token)
 		} else {
-			logging.RequestLogf(ctx, "* authenticating request with OIDC token (host: %s)", host)
+			logging.RequestLogf(proxyCtx, "* authenticating request with OIDC token (host: %s)", host)
 			helpers.SetBearerAuthorization(req, token)
 		}
 	default:
-		logging.RequestLogf(ctx, "* authenticating request with OIDC token (host: %s)", host)
+		logging.RequestLogf(proxyCtx, "* authenticating request with OIDC token (host: %s)", host)
 		helpers.SetBearerAuthorization(req, token)
 	}
 

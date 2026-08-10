@@ -34,7 +34,7 @@ func NewDependabotAPIHandler(envSettings config.ProxyEnvSettings) *DependabotAPI
 }
 
 // HandleRequest adds auth if the request is to the API endpoint
-func (h *DependabotAPIHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *DependabotAPIHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" {
 		return req, nil
 	}

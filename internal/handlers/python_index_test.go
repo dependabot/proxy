@@ -121,13 +121,13 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromHTML(t *test
 		},
 	})
 
-	ctx := &goproxy.ProxyCtx{}
+	proxyCtx := &goproxy.ProxyCtx{}
 	indexReq := httptest.NewRequest(
 		"GET",
 		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
 		nil,
 	)
-	indexReq = handleRequestAndClose(handler, indexReq, ctx)
+	indexReq = handleRequestAndClose(handler, indexReq, proxyCtx)
 	assertHasBasicAuth(t, indexReq, "user", "pass", "simple index request")
 
 	indexResp := &http.Response{
@@ -146,7 +146,7 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromHTML(t *test
 			</body></html>
 		`)),
 	}
-	handler.HandleResponse(indexResp, ctx)
+	handler.HandleResponse(indexResp, proxyCtx)
 
 	downloadReq := httptest.NewRequest(
 		"HEAD",
@@ -182,13 +182,13 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromJSON(t *test
 		},
 	})
 
-	ctx := &goproxy.ProxyCtx{}
+	proxyCtx := &goproxy.ProxyCtx{}
 	indexReq := httptest.NewRequest(
 		"GET",
 		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
 		nil,
 	)
-	indexReq = handleRequestAndClose(handler, indexReq, ctx)
+	indexReq = handleRequestAndClose(handler, indexReq, proxyCtx)
 	assertHasBasicAuth(t, indexReq, "user", "pass", "simple index request")
 
 	indexResp := &http.Response{
@@ -204,7 +204,7 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromJSON(t *test
 			]
 		}`)),
 	}
-	handler.HandleResponse(indexResp, ctx)
+	handler.HandleResponse(indexResp, proxyCtx)
 
 	downloadReq := httptest.NewRequest(
 		"GET",
@@ -261,9 +261,9 @@ func TestPythonIndexHandlerSkipsDiscoveryForAuthenticatedNonSimpleResponse(t *te
 		},
 	})
 
-	ctx := &goproxy.ProxyCtx{}
+	proxyCtx := &goproxy.ProxyCtx{}
 	nonSimpleReq := httptest.NewRequest("GET", "https://pkgs.example.com/org/project/status", nil)
-	nonSimpleReq = handleRequestAndClose(handler, nonSimpleReq, ctx)
+	nonSimpleReq = handleRequestAndClose(handler, nonSimpleReq, proxyCtx)
 	assertHasBasicAuth(t, nonSimpleReq, "user", "pass", "path-scoped python index request")
 
 	indexResp := &http.Response{
@@ -277,7 +277,7 @@ func TestPythonIndexHandlerSkipsDiscoveryForAuthenticatedNonSimpleResponse(t *te
 			</a>
 		`)),
 	}
-	handler.HandleResponse(indexResp, ctx)
+	handler.HandleResponse(indexResp, proxyCtx)
 
 	downloadReq := httptest.NewRequest(
 		"GET",
@@ -297,13 +297,13 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixPort(t *testing.T) {
 		},
 	})
 
-	ctx := &goproxy.ProxyCtx{}
+	proxyCtx := &goproxy.ProxyCtx{}
 	indexReq := httptest.NewRequest(
 		"GET",
 		"https://pkgs.example.com:8443/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
 		nil,
 	)
-	indexReq = handleRequestAndClose(handler, indexReq, ctx)
+	indexReq = handleRequestAndClose(handler, indexReq, proxyCtx)
 	assertHasBasicAuth(t, indexReq, "user", "pass", "simple index request")
 
 	indexResp := &http.Response{
@@ -317,7 +317,7 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixPort(t *testing.T) {
 			</a>
 		`)),
 	}
-	handler.HandleResponse(indexResp, ctx)
+	handler.HandleResponse(indexResp, proxyCtx)
 
 	downloadReq := httptest.NewRequest(
 		"GET",
@@ -345,13 +345,13 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixIPv6Host(t *testing.
 		},
 	})
 
-	ctx := &goproxy.ProxyCtx{}
+	proxyCtx := &goproxy.ProxyCtx{}
 	indexReq := httptest.NewRequest(
 		"GET",
 		"https://[2001:db8::1]/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
 		nil,
 	)
-	indexReq = handleRequestAndClose(handler, indexReq, ctx)
+	indexReq = handleRequestAndClose(handler, indexReq, proxyCtx)
 	assertHasBasicAuth(t, indexReq, "user", "pass", "simple index request")
 
 	indexResp := &http.Response{
@@ -365,7 +365,7 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixIPv6Host(t *testing.
 			</a>
 		`)),
 	}
-	handler.HandleResponse(indexResp, ctx)
+	handler.HandleResponse(indexResp, proxyCtx)
 
 	downloadReq := httptest.NewRequest(
 		"GET",
@@ -432,13 +432,13 @@ func TestPythonIndexHandlerSkipsDiscoveryForLargeSimpleResponse(t *testing.T) {
 		},
 	})
 
-	ctx := &goproxy.ProxyCtx{}
+	proxyCtx := &goproxy.ProxyCtx{}
 	indexReq := httptest.NewRequest(
 		"GET",
 		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
 		nil,
 	)
-	indexReq = handleRequestAndClose(handler, indexReq, ctx)
+	indexReq = handleRequestAndClose(handler, indexReq, proxyCtx)
 	assertHasBasicAuth(t, indexReq, "user", "pass", "simple index request")
 
 	downloadURL := "https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl"
@@ -450,7 +450,7 @@ func TestPythonIndexHandlerSkipsDiscoveryForLargeSimpleResponse(t *testing.T) {
 		},
 		Body: io.NopCloser(strings.NewReader(responseBody)),
 	}
-	handler.HandleResponse(indexResp, ctx)
+	handler.HandleResponse(indexResp, proxyCtx)
 
 	replayedBody, err := io.ReadAll(indexResp.Body)
 	if err != nil {

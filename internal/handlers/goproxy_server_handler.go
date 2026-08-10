@@ -60,13 +60,13 @@ func NewGoProxyServerHandler(creds config.Credentials) *GoProxyServerHandler {
 }
 
 // HandleRequest adds auth to a goproxy request
-func (h *GoProxyServerHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *GoProxyServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, ctx) {
+	if h.oidcRegistry.TryAuth(req, proxyCtx) {
 		return req, nil
 	}
 
@@ -76,7 +76,7 @@ func (h *GoProxyServerHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 			continue
 		}
 
-		logging.RequestLogf(ctx, "* authenticating goproxy request (host: %s)", req.URL.Hostname())
+		logging.RequestLogf(proxyCtx, "* authenticating goproxy request (host: %s)", req.URL.Hostname())
 		helpers.SetBasicAuthorization(req, cred.username, cred.password)
 
 		return req, nil

@@ -70,13 +70,13 @@ func NewOpenTofuRegistryHandler(credentials config.Credentials) *OpenTofuRegistr
 	return &handler
 }
 
-func (h *OpenTofuRegistryHandler) HandleRequest(request *http.Request, context *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *OpenTofuRegistryHandler) HandleRequest(request *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if request.URL.Scheme != "https" || !helpers.MethodPermitted(request, "GET", "HEAD") {
 		return request, nil
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(request, context) {
+	if h.oidcRegistry.TryAuth(request, proxyCtx) {
 		return request, nil
 	}
 
@@ -86,7 +86,7 @@ func (h *OpenTofuRegistryHandler) HandleRequest(request *http.Request, context *
 			continue
 		}
 
-		logging.RequestLogf(context, "* authenticating opentofu registry request (host: %s)", request.URL.Hostname())
+		logging.RequestLogf(proxyCtx, "* authenticating opentofu registry request (host: %s)", request.URL.Hostname())
 		request.Header.Set("Authorization", "Bearer "+cred.token)
 		return request, nil
 	}

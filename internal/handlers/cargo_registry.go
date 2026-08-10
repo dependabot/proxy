@@ -107,13 +107,13 @@ func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandl
 	return &handler
 }
 
-func (h *CargoRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *CargoRegistryHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, ctx) {
+	if h.oidcRegistry.TryAuth(req, proxyCtx) {
 		return req, nil
 	}
 
@@ -127,19 +127,19 @@ func (h *CargoRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 			continue
 		}
 
-		authenticateCargoRequest(req, cred, ctx)
+		authenticateCargoRequest(req, cred, proxyCtx)
 		return req, nil
 	}
 
 	return req, nil
 }
 
-func authenticateCargoRequest(req *http.Request, cred cargoRepositoryCredentials, ctx *goproxy.ProxyCtx) {
+func authenticateCargoRequest(req *http.Request, cred cargoRepositoryCredentials, proxyCtx *goproxy.ProxyCtx) {
 	if cred.token != "" {
-		logging.RequestLogf(ctx, "* authenticating cargo registry request (url: %s, host: %s, token auth)", cred.url, cred.host)
+		logging.RequestLogf(proxyCtx, "* authenticating cargo registry request (url: %s, host: %s, token auth)", cred.url, cred.host)
 		helpers.SetRawAuthorization(req, cred.token)
 	} else if cred.password != "" {
-		logging.RequestLogf(ctx, "* authenticating cargo registry request (url: %s, host: %s, basic auth)", cred.url, cred.host)
+		logging.RequestLogf(proxyCtx, "* authenticating cargo registry request (url: %s, host: %s, basic auth)", cred.url, cred.host)
 		helpers.SetBasicAuthorization(req, cred.username, cred.password)
 	}
 }

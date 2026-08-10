@@ -18,8 +18,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
-	"github.com/dependabot/proxy/internal/ctxdata"
 	"github.com/dependabot/proxy/internal/gitproto"
+	"github.com/dependabot/proxy/internal/proxyctx"
 )
 
 // DB contains the metadata of the disk cache
@@ -162,7 +162,7 @@ const (
 )
 
 // OnRequest checks to see if the response is cached, if so responds with the cached data.
-func (d *DB) OnRequest(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if d == nil {
 		// caching disabled
 		return r, nil
@@ -183,14 +183,14 @@ func (d *DB) OnRequest(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *
 	d.calls++
 
 	key := key(r)
-	ctxdata.SetValue(ctx, keyValue, key)
+	proxyctx.SetValue(proxyCtx, keyValue, key)
 	if entry, ok := d.cacheDB[key]; ok {
 		f, err := os.Open(entry.FilePath)
 		if err != nil {
 			logrus.Errorln("failed to open cache file:", err)
 			return r, nil
 		}
-		ctxdata.SetValue(ctx, wasCached, true)
+		proxyctx.SetValue(proxyCtx, wasCached, true)
 		d.cached++
 		resp := &http.Response{}
 		resp.Request = r
@@ -204,7 +204,7 @@ func (d *DB) OnRequest(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *
 }
 
 // OnResponse caches the data in the DB and writes the data to disk.
-func (d *DB) OnResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if d == nil {
 		// caching disabled
 		return resp
@@ -214,7 +214,7 @@ func (d *DB) OnResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Respon
 		logrus.Warnln("Received nil response")
 		return resp
 	}
-	k, ok := ctxdata.GetValue(ctx, keyValue)
+	k, ok := proxyctx.GetValue(proxyCtx, keyValue)
 	if !ok {
 		// can't calculate key as response body is empty
 		// this happens when the OnRequest decides not to cache
@@ -350,8 +350,8 @@ func (t *teeReader) Close() error {
 }
 
 // WasResponseCached returns true if the response was cached.
-func WasResponseCached(ctx *goproxy.ProxyCtx) bool {
-	cached, ok := ctxdata.GetBool(ctx, wasCached)
+func WasResponseCached(proxyCtx *goproxy.ProxyCtx) bool {
+	cached, ok := proxyctx.GetBool(proxyCtx, wasCached)
 	if !ok {
 		return false
 	}

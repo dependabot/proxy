@@ -10,9 +10,9 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/dependabot/proxy/internal/config"
-	"github.com/dependabot/proxy/internal/ctxdata"
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
+	"github.com/dependabot/proxy/internal/proxyctx"
 )
 
 // GitHubAPIHandler handles requests destined for the GitHub API, adding auth
@@ -51,7 +51,7 @@ func NewGitHubAPIHandler(creds config.Credentials) *GitHubAPIHandler {
 }
 
 // HandleRequest adds auth to a GitHub API request
-func (h *GitHubAPIHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *GitHubAPIHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if !h.isHandledGitHubAPIRequest(req) {
 		return req, nil
 	}
@@ -66,59 +66,59 @@ func (h *GitHubAPIHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCt
 	}
 
 	if creds[0].username == reservedProximaIdentity {
-		logging.RequestLogf(ctx, "* accessing github api with alternate identity %s", host)
+		logging.RequestLogf(proxyCtx, "* accessing github api with alternate identity %s", host)
 		req.Header.Set("X-GitHub-PSI-JWT", creds[0].password)
 	} else {
-		logging.RequestLogf(ctx, "* authenticating github api request with token for %s", host)
+		logging.RequestLogf(proxyCtx, "* authenticating github api request with token for %s", host)
 		req.Header.Set("Authorization", "token "+creds[0].password)
 	}
-	if ctx != nil {
-		ctxdata.SetValue(ctx, ghAPIAddedAuthCtxKey, true)
+	if proxyCtx != nil {
+		proxyctx.SetValue(proxyCtx, ghAPIAddedAuthCtxKey, true)
 	}
 	return req, nil
 }
 
 // HandleResponse handles retrying failed auth responses with alternate credentials
 // when there are multiple tokens configured for the github api.
-func (h *GitHubAPIHandler) HandleResponse(rsp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+func (h *GitHubAPIHandler) HandleResponse(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if rsp == nil {
 		return rsp
 	}
-	if addedAuth, ok := ctxdata.GetBool(ctx, ghAPIAddedAuthCtxKey); !ok || !addedAuth {
+	if addedAuth, ok := proxyctx.GetBool(proxyCtx, ghAPIAddedAuthCtxKey); !ok || !addedAuth {
 		return rsp
 	}
-	if !h.isHandledGitHubAPIRequest(ctx.Req) {
+	if !h.isHandledGitHubAPIRequest(proxyCtx.Req) {
 		return rsp
 	}
 	if !isPotentialAuthFailure(rsp.StatusCode) {
 		return rsp
 	}
 
-	username, password, reqWasAuthed := ctx.Req.BasicAuth()
-	for _, creds := range getCredentialsForRequest(ctx.Req, h.credentials, gitHubAPIExtractOrgAndRepo) {
+	username, password, reqWasAuthed := proxyCtx.Req.BasicAuth()
+	for _, creds := range getCredentialsForRequest(proxyCtx.Req, h.credentials, gitHubAPIExtractOrgAndRepo) {
 		// don't retry the request with the same auth that was previously used
 		if reqWasAuthed && creds.username == username && creds.password == password {
 			continue
 		}
 
-		newReq := ctx.Req.Clone(ctx.Req.Context())
+		newReq := proxyCtx.Req.Clone(proxyCtx.Req.Context())
 		if creds.username == reservedProximaIdentity {
-			logging.RequestLogf(ctx, "* auth'd github api request failed authentication, retrying with alternate identity")
+			logging.RequestLogf(proxyCtx, "* auth'd github api request failed authentication, retrying with alternate identity")
 			newReq.Header.Set("X-GitHub-PSI-JWT", creds.password)
 		} else {
-			logging.RequestLogf(ctx, "* auth'd github api request failed authentication, retrying with alternate provided auth")
+			logging.RequestLogf(proxyCtx, "* auth'd github api request failed authentication, retrying with alternate provided auth")
 			newReq.Header.Set("Authorization", "token "+creds.password)
 		}
-		newRsp, err := ctx.RoundTrip(newReq)
+		newRsp, err := proxyCtx.RoundTrip(newReq)
 		if err != nil {
 			return rsp
 		}
 		if !isPotentialAuthFailure(newRsp.StatusCode) {
 			helpers.DrainAndClose(rsp)
-			logging.RequestLogf(ctx, "* re-auth'd request returned %d, replacing response", newRsp.StatusCode)
+			logging.RequestLogf(proxyCtx, "* re-auth'd request returned %d, replacing response", newRsp.StatusCode)
 			return newRsp
 		}
-		logging.RequestLogf(ctx, "* re-auth'd request returned %d, ignoring response", newRsp.StatusCode)
+		logging.RequestLogf(proxyCtx, "* re-auth'd request returned %d, ignoring response", newRsp.StatusCode)
 		helpers.DrainAndClose(newRsp)
 	}
 	return rsp

@@ -268,13 +268,13 @@ func handleV3Response(body io.Reader, url string) (v3Urls []string) {
 }
 
 // HandleRequest adds auth to an nuget feed request
-func (h *NugetFeedHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *NugetFeedHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if (req.URL.Scheme != "http" && req.URL.Scheme != "https") || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
 	// Try OIDC credentials first (HTTPS only to avoid leaking tokens over plaintext)
-	if req.URL.Scheme == "https" && h.oidcRegistry.TryAuth(req, ctx) {
+	if req.URL.Scheme == "https" && h.oidcRegistry.TryAuth(req, proxyCtx) {
 		return req, nil
 	}
 
@@ -284,7 +284,7 @@ func (h *NugetFeedHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCt
 			continue
 		}
 
-		authenticateNugetRequest(req, cred, ctx)
+		authenticateNugetRequest(req, cred, proxyCtx)
 
 		return req, nil
 	}
@@ -292,21 +292,21 @@ func (h *NugetFeedHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCt
 	return req, nil
 }
 
-func authenticateNugetRequest(req *http.Request, cred nugetFeedCredentials, ctx *goproxy.ProxyCtx) {
+func authenticateNugetRequest(req *http.Request, cred nugetFeedCredentials, proxyCtx *goproxy.ProxyCtx) {
 	token := cred.token
 	if token == "" && cred.password != "" {
 		token = cred.username + ":" + cred.password
 	}
 	username, password, found := strings.Cut(token, ":")
 	if found {
-		logging.RequestLogf(ctx, "* authenticating nuget feed request (host: %s, basic auth)", req.URL.Hostname())
+		logging.RequestLogf(proxyCtx, "* authenticating nuget feed request (host: %s, basic auth)", req.URL.Hostname())
 		helpers.SetBasicAuthorization(req, username, password)
 	} else if token != "" {
 		if shouldTreatTokenAsPassword(req.URL) {
-			logging.RequestLogf(ctx, "* authenticating nuget feed request (host: %s, basic auth for Azure DevOps)", req.URL.Hostname())
+			logging.RequestLogf(proxyCtx, "* authenticating nuget feed request (host: %s, basic auth for Azure DevOps)", req.URL.Hostname())
 			helpers.SetBasicAuthorization(req, "", token)
 		} else {
-			logging.RequestLogf(ctx, "* authenticating nuget feed request (host: %s, bearer auth)", req.URL.Hostname())
+			logging.RequestLogf(proxyCtx, "* authenticating nuget feed request (host: %s, bearer auth)", req.URL.Hostname())
 			helpers.SetBearerAuthorization(req, token)
 		}
 	}

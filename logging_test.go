@@ -77,7 +77,7 @@ func TestURLWithoutCredentials(t *testing.T) {
 func TestRequestLogger(t *testing.T) {
 	req, err := http.NewRequestWithContext(context.Background(), "GET", "https://github.com:443", nil)
 	require.NoError(t, err)
-	p := &goproxy.ProxyCtx{Session: 128}
+	proxyCtx := &goproxy.ProxyCtx{Session: 128}
 
 	cases := map[string]struct {
 		setup     func(l *requestLogger)
@@ -90,7 +90,7 @@ func TestRequestLogger(t *testing.T) {
 		},
 		"request": {
 			setup: func(l *requestLogger) {
-				_, resp := l.logRequest(req, p)
+				_, resp := l.logRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
 					resp.Body.Close()
 				}
@@ -99,11 +99,11 @@ func TestRequestLogger(t *testing.T) {
 		},
 		"requests": {
 			setup: func(l *requestLogger) {
-				_, resp := l.logRequest(req, p)
+				_, resp := l.logRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
 					resp.Body.Close()
 				}
-				_, resp = l.logRequest(req, p)
+				_, resp = l.logRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
 					resp.Body.Close()
 				}
@@ -131,7 +131,7 @@ func TestRequestLogger(t *testing.T) {
 }`,
 					)),
 				}
-				resp = l.logResponse(resp, p)
+				resp = l.logResponse(resp, proxyCtx)
 				if resp != nil && resp.Body != nil {
 					resp.Body.Close()
 				}
