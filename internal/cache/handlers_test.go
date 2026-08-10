@@ -125,6 +125,50 @@ func TestCache(t *testing.T) {
 	})
 }
 
+func TestCacheDoesNotWrapBodylessResponses(t *testing.T) {
+	cacheDir := t.TempDir()
+	cacher, err := New(true, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name       string
+		method     string
+		statusCode int
+	}{
+		{name: "HEAD", method: http.MethodHead, statusCode: http.StatusOK},
+		{name: "204", method: http.MethodGet, statusCode: http.StatusNoContent},
+		{name: "304", method: http.MethodGet, statusCode: http.StatusNotModified},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, URL, nil)
+			body := &BufferWithClose{}
+			response := &http.Response{
+				Request:          request,
+				StatusCode:       test.statusCode,
+				Header:           http.Header{"Transfer-Encoding": {"chunked"}},
+				Body:             body,
+				TransferEncoding: []string{"chunked"},
+			}
+
+			result := cacher.OnResponse(response, &goproxy.ProxyCtx{Req: request})
+
+			if result.Body != http.NoBody {
+				t.Error("bodyless response body was wrapped")
+			}
+			if !body.WasCloseCalled {
+				t.Error("original response body was not closed")
+			}
+			if len(result.TransferEncoding) != 0 || result.Header.Get("Transfer-Encoding") != "" {
+				t.Error("bodyless response retained transfer encoding")
+			}
+		})
+	}
+}
+
 func Test_sanitize(t *testing.T) {
 	var tests = []struct {
 		Input, Expected string

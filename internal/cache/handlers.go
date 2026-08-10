@@ -214,6 +214,15 @@ func (d *DB) OnResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Respon
 		logrus.Warnln("Received nil response")
 		return resp
 	}
+	if responseMustNotHaveBody(resp) {
+		if resp.Body != nil && resp.Body != http.NoBody {
+			_ = resp.Body.Close()
+		}
+		resp.Body = http.NoBody
+		resp.TransferEncoding = nil
+		resp.Header.Del("Transfer-Encoding")
+		return resp
+	}
 	k, ok := ctxdata.GetValue(ctx, keyValue)
 	if !ok {
 		// can't calculate key as response body is empty
@@ -257,6 +266,12 @@ func (d *DB) OnResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Respon
 		d.cacheDB[key] = entry
 	})
 	return resp
+}
+
+func responseMustNotHaveBody(resp *http.Response) bool {
+	return resp.StatusCode == http.StatusNoContent ||
+		resp.StatusCode == http.StatusNotModified ||
+		resp.Request != nil && resp.Request.Method == http.MethodHead
 }
 
 var sanitizeRegex = regexp.MustCompile(`\W`)
