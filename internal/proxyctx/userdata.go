@@ -1,4 +1,4 @@
-package ctxdata
+package proxyctx
 
 import (
 	"bytes"
@@ -9,8 +9,8 @@ import (
 type userData map[string]any
 
 // GetValue retrieves a value from the user data store
-func GetValue(ctx *goproxy.ProxyCtx, key string) (any, bool) {
-	ud, ok := ctx.UserData.(userData)
+func GetValue(proxyCtx *goproxy.ProxyCtx, key string) (any, bool) {
+	ud, ok := proxyCtx.UserData.(userData)
 	if !ok {
 		return nil, false
 	}
@@ -20,8 +20,8 @@ func GetValue(ctx *goproxy.ProxyCtx, key string) (any, bool) {
 }
 
 // GetBool retrieves a boolean value from the user data store
-func GetBool(ctx *goproxy.ProxyCtx, key string) (bool, bool) {
-	val, ok := GetValue(ctx, key)
+func GetBool(proxyCtx *goproxy.ProxyCtx, key string) (bool, bool) {
+	val, ok := GetValue(proxyCtx, key)
 	if !ok {
 		return false, false
 	}
@@ -31,8 +31,8 @@ func GetBool(ctx *goproxy.ProxyCtx, key string) (bool, bool) {
 }
 
 // GetBuffer retrieves a bytes.Buffer value from the user data store
-func GetBuffer(ctx *goproxy.ProxyCtx, key string) (*bytes.Buffer, bool) {
-	val, ok := GetValue(ctx, key)
+func GetBuffer(proxyCtx *goproxy.ProxyCtx, key string) (*bytes.Buffer, bool) {
+	val, ok := GetValue(proxyCtx, key)
 	if !ok {
 		return nil, false
 	}
@@ -42,12 +42,12 @@ func GetBuffer(ctx *goproxy.ProxyCtx, key string) (*bytes.Buffer, bool) {
 }
 
 // SetValue sets a value in the user data store
-func SetValue(ctx *goproxy.ProxyCtx, key string, value any) {
+func SetValue(proxyCtx *goproxy.ProxyCtx, key string, value any) {
 	var ud userData
-	ud, ok := ctx.UserData.(userData)
+	ud, ok := proxyCtx.UserData.(userData)
 	if !ok {
 		ud = userData{}
-		ctx.UserData = ud
+		proxyCtx.UserData = ud
 	}
 
 	ud[key] = value

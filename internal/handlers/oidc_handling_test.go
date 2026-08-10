@@ -18,7 +18,7 @@ import (
 )
 
 type oidcHandler interface {
-	HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response)
+	HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response)
 }
 
 type mockHttpRequest struct {
@@ -1767,13 +1767,13 @@ func TestPythonOIDCAuthenticatesDiscoveredDownloadPrefix(t *testing.T) {
 		},
 	})
 
-	ctx := &goproxy.ProxyCtx{}
+	proxyCtx := &goproxy.ProxyCtx{}
 	indexReq := httptest.NewRequest(
 		"GET",
 		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
 		nil,
 	)
-	indexReq = handleRequestAndClose(handler, indexReq, ctx)
+	indexReq = handleRequestAndClose(handler, indexReq, proxyCtx)
 	assertHasTokenAuth(t, indexReq, "Bearer", "__oidc_token__", "simple index request should use OIDC token")
 
 	indexResp := &http.Response{
@@ -1789,7 +1789,7 @@ func TestPythonOIDCAuthenticatesDiscoveredDownloadPrefix(t *testing.T) {
 			</body></html>
 		`)),
 	}
-	handler.HandleResponse(indexResp, ctx)
+	handler.HandleResponse(indexResp, proxyCtx)
 
 	downloadReq := httptest.NewRequest(
 		"HEAD",

@@ -8,10 +8,10 @@ import (
 
 	"github.com/elazarl/goproxy"
 
-	"github.com/dependabot/proxy/internal/ctxdata"
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
 	"github.com/dependabot/proxy/internal/oidc"
+	"github.com/dependabot/proxy/internal/proxyctx"
 )
 
 const (
@@ -97,15 +97,15 @@ func (s *pythonIndexDownloadAuthStore) authFor(req *http.Request) (pythonIndexAu
 	return matched, true
 }
 
-func (h *PythonIndexHandler) applyAuth(req *http.Request, ctx *goproxy.ProxyCtx, auth pythonIndexAuth) bool {
+func (h *PythonIndexHandler) applyAuth(req *http.Request, proxyCtx *goproxy.ProxyCtx, auth pythonIndexAuth) bool {
 	if auth.oidc != nil {
-		return h.oidcRegistry.TryAuthCredential(req, ctx, auth.oidc)
+		return h.oidcRegistry.TryAuthCredential(req, proxyCtx, auth.oidc)
 	}
 	if !auth.hasBasic {
 		return false
 	}
 
-	logging.RequestLogf(ctx, "* authenticating python index request (host: %s)", req.URL.Hostname())
+	logging.RequestLogf(proxyCtx, "* authenticating python index request (host: %s)", req.URL.Hostname())
 
 	token := auth.basic.token
 	if token == "" && auth.basic.password != "" {
@@ -118,23 +118,23 @@ func (h *PythonIndexHandler) applyAuth(req *http.Request, ctx *goproxy.ProxyCtx,
 	return true
 }
 
-func rememberPythonIndexResponseAuth(ctx *goproxy.ProxyCtx, baseURL *url.URL, auth pythonIndexAuth) {
-	if ctx == nil || baseURL == nil {
+func rememberPythonIndexResponseAuth(proxyCtx *goproxy.ProxyCtx, baseURL *url.URL, auth pythonIndexAuth) {
+	if proxyCtx == nil || baseURL == nil {
 		return
 	}
 
-	ctxdata.SetValue(ctx, pythonIndexResponseAuthKey, pythonIndexResponseAuth{
+	proxyctx.SetValue(proxyCtx, pythonIndexResponseAuthKey, pythonIndexResponseAuth{
 		auth:    auth,
 		baseURL: *baseURL,
 	})
 }
 
-func pythonIndexResponseAuthFromContext(ctx *goproxy.ProxyCtx) (pythonIndexResponseAuth, bool) {
-	if ctx == nil {
+func pythonIndexResponseAuthFromContext(proxyCtx *goproxy.ProxyCtx) (pythonIndexResponseAuth, bool) {
+	if proxyCtx == nil {
 		return pythonIndexResponseAuth{}, false
 	}
 
-	value, ok := ctxdata.GetValue(ctx, pythonIndexResponseAuthKey)
+	value, ok := proxyctx.GetValue(proxyCtx, pythonIndexResponseAuthKey)
 	if !ok {
 		return pythonIndexResponseAuth{}, false
 	}

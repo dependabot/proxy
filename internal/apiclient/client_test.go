@@ -142,10 +142,10 @@ func TestClient_RequestJITAccess(t *testing.T) {
 
 		client := apiclient.New(testServer.URL, jobToken, jobID)
 
-		ctx := &goproxy.ProxyCtx{
+		proxyCtx := &goproxy.ProxyCtx{
 			Req: httptest.NewRequest("GET", "https://example.com", nil),
 		}
-		result, err := client.RequestJITAccess(ctx, jitAccessEndpoint, "", "", accountName, repoName)
+		result, err := client.RequestJITAccess(proxyCtx, jitAccessEndpoint, "", "", accountName, repoName)
 
 		assert.NoError(t, err)
 		assert.Equal(t, &config.Credential{"username": "username", "password": "password"}, result)
@@ -160,10 +160,10 @@ func TestClient_RequestJITAccess(t *testing.T) {
 
 		client := apiclient.New(testServer.URL, jobToken, jobID)
 
-		ctx := &goproxy.ProxyCtx{
+		proxyCtx := &goproxy.ProxyCtx{
 			Req: httptest.NewRequest("GET", "https://example.com", nil),
 		}
-		_, err := client.RequestJITAccess(ctx, "/endpoint", "", "", "this", "repo")
+		_, err := client.RequestJITAccess(proxyCtx, "/endpoint", "", "", "this", "repo")
 
 		assert.Equal(t, "failed to request additional scope Not Implemented", err.Error())
 	})
@@ -206,10 +206,10 @@ func TestClient_RequestJITAccess(t *testing.T) {
 		makeRequest := func(requestNumber string) {
 			defer waitGroup.Done()
 
-			ctx := &goproxy.ProxyCtx{
+			proxyCtx := &goproxy.ProxyCtx{
 				Req: httptest.NewRequest("GET", "https://example.com", nil),
 			}
-			credential, err := client.RequestJITAccess(ctx, "/endpoint", "", "", "account", "repo-"+requestNumber)
+			credential, err := client.RequestJITAccess(proxyCtx, "/endpoint", "", "", "account", "repo-"+requestNumber)
 			require.NoError(t, err)
 			assert.Equal(t, "world-"+requestNumber, (*credential)["hello"], "Response should contain request number")
 		}

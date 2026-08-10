@@ -57,13 +57,13 @@ func NewHelmRegistryHandler(creds config.Credentials) *HelmRegistryHandler {
 }
 
 // HandleRequest adds auth to a helm registry request
-func (h *HelmRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *HelmRegistryHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, ctx) {
+	if h.oidcRegistry.TryAuth(req, proxyCtx) {
 		return req, nil
 	}
 
@@ -73,7 +73,7 @@ func (h *HelmRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Prox
 			continue
 		}
 
-		logging.RequestLogf(ctx, "* authenticating helm registry request (host: %s)", req.URL.Hostname())
+		logging.RequestLogf(proxyCtx, "* authenticating helm registry request (host: %s)", req.URL.Hostname())
 		helpers.SetBasicAuthorization(req, cred.username, cred.password)
 
 		return req, nil

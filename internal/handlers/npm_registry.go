@@ -60,7 +60,7 @@ func NewNPMRegistryHandler(creds config.Credentials) *NPMRegistryHandler {
 }
 
 // HandleRequest adds auth to an npm registry request
-func (h *NPMRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *NPMRegistryHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
@@ -72,7 +72,7 @@ func (h *NPMRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, ctx) {
+	if h.oidcRegistry.TryAuth(req, proxyCtx) {
 		return req, nil
 	}
 
@@ -115,10 +115,10 @@ func (h *NPMRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 
 		username, password, found := strings.Cut(cred.token, ":")
 		if found {
-			logging.RequestLogf(ctx, "* authenticating npm registry request (host: %s, basic auth)", reqHost)
+			logging.RequestLogf(proxyCtx, "* authenticating npm registry request (host: %s, basic auth)", reqHost)
 			helpers.SetBasicAuthorization(req, username, password)
 		} else {
-			logging.RequestLogf(ctx, "* authenticating npm registry request (host: %s, token auth)", reqHost)
+			logging.RequestLogf(proxyCtx, "* authenticating npm registry request (host: %s, token auth)", reqHost)
 			helpers.SetBearerAuthorization(req, cred.token)
 		}
 		return req, nil

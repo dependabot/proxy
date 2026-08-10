@@ -56,13 +56,13 @@ func NewRubyGemsServerHandler(creds config.Credentials) *RubyGemsServerHandler {
 }
 
 // HandleRequest adds auth to a rubygems server request
-func (h *RubyGemsServerHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *RubyGemsServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, ctx) {
+	if h.oidcRegistry.TryAuth(req, proxyCtx) {
 		return req, nil
 	}
 
@@ -76,7 +76,7 @@ func (h *RubyGemsServerHandler) HandleRequest(req *http.Request, ctx *goproxy.Pr
 			continue
 		}
 
-		logging.RequestLogf(ctx, "* authenticating rubygems server request (host: %s)", req.URL.Hostname())
+		logging.RequestLogf(proxyCtx, "* authenticating rubygems server request (host: %s)", req.URL.Hostname())
 
 		// ignore `found` because it's okay for the password to be an empty string
 		username, password, _ := strings.Cut(cred.token, ":")

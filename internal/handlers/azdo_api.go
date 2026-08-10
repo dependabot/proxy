@@ -56,7 +56,7 @@ func NewAzureDevOpsAPIHandler(creds config.Credentials) *AzureDevOpsAPIHandler {
 }
 
 // HandleRequest adds auth to an Azure DevOps API request
-func (h *AzureDevOpsAPIHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *AzureDevOpsAPIHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if !h.isHandledAzureDevOpsAPIRequest(req) {
 		return req, nil
 	}
@@ -71,14 +71,14 @@ func (h *AzureDevOpsAPIHandler) HandleRequest(req *http.Request, ctx *goproxy.Pr
 		return req, nil
 	}
 
-	logging.RequestLogf(ctx, "* authenticating azure devops api request with token for %s", host)
+	logging.RequestLogf(proxyCtx, "* authenticating azure devops api request with token for %s", host)
 	helpers.SetBasicAuthorization(req, creds[0].username, creds[0].password)
 
 	// Azure DevOps requires an api-version to be set for requests. Add it if it is not present.
 	var queryParams = req.URL.Query()
 	if !queryParams.Has("api-version") {
 		queryParams.Add("api-version", "7.2-preview")
-		logging.RequestLogf(ctx, "* added default api-version to query parameters for azure devops api request")
+		logging.RequestLogf(proxyCtx, "* added default api-version to query parameters for azure devops api request")
 	}
 
 	req.URL.RawQuery = queryParams.Encode()

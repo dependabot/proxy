@@ -23,31 +23,31 @@ func NewRequestLogger() *requestLogger {
 	return &requestLogger{}
 }
 
-func (l *requestLogger) logRequest(req *http.Request, p *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-	logging.RequestLogf(p, "%s %s", req.Method, urlWithoutCredentials(req.URL))
+func (l *requestLogger) logRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	logging.RequestLogf(proxyCtx, "%s %s", req.Method, urlWithoutCredentials(req.URL))
 	return req, nil
 }
 
-func (l *requestLogger) logResponse(rsp *http.Response, p *goproxy.ProxyCtx) *http.Response {
+func (l *requestLogger) logResponse(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if rsp == nil {
-		logging.RequestLogf(p, "No response from server")
+		logging.RequestLogf(proxyCtx, "No response from server")
 		return rsp
 	}
 
 	if rsp.Request == nil {
-		logging.RequestLogf(p, "%d (No request on response object)", rsp.StatusCode)
+		logging.RequestLogf(proxyCtx, "%d (No request on response object)", rsp.StatusCode)
 		return rsp
 	}
 
 	if rsp.Request.URL == nil {
-		logging.RequestLogf(p, "%d (No URL on response.Request object)", rsp.StatusCode)
+		logging.RequestLogf(proxyCtx, "%d (No URL on response.Request object)", rsp.StatusCode)
 		return rsp
 	}
 
-	logging.RequestLogf(p, "%d %s", rsp.StatusCode, urlWithoutCredentials(rsp.Request.URL))
+	logging.RequestLogf(proxyCtx, "%d %s", rsp.StatusCode, urlWithoutCredentials(rsp.Request.URL))
 
 	if _, logForStatusCode := responseBodyLoggingStatusCodes[rsp.StatusCode]; logForStatusCode {
-		logResponseBody(rsp, p, 1024)
+		logResponseBody(rsp, proxyCtx, 1024)
 	}
 
 	return rsp
@@ -99,12 +99,12 @@ func newMultiReadCloser(rcs ...io.ReadCloser) io.ReadCloser {
 	}
 }
 
-func logResponseBody(rsp *http.Response, p *goproxy.ProxyCtx, maxBytes int) {
+func logResponseBody(rsp *http.Response, proxyCtx *goproxy.ProxyCtx, maxBytes int) {
 	if maxBytes > 0 {
 		bodyBytes := make([]byte, maxBytes)
 		n, err := io.ReadFull(rsp.Body, bodyBytes)
 		if n > 0 {
-			logging.RequestMultilineLogf(p, "Remote response: %s", string(bodyBytes[:n]))
+			logging.RequestMultilineLogf(proxyCtx, "Remote response: %s", string(bodyBytes[:n]))
 
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				rsp.Body.Close()
@@ -117,7 +117,7 @@ func logResponseBody(rsp *http.Response, p *goproxy.ProxyCtx, maxBytes int) {
 		bodyBytes, _ := io.ReadAll(rsp.Body)
 		rsp.Body.Close()
 
-		logging.RequestMultilineLogf(p, "Remote response: %s", string(bodyBytes))
+		logging.RequestMultilineLogf(proxyCtx, "Remote response: %s", string(bodyBytes))
 		rsp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
 }

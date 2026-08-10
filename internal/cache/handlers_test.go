@@ -32,13 +32,13 @@ func TestCache_Disabled(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("GET", URL, nil)
-	ctx := &goproxy.ProxyCtx{
+	proxyCtx := &goproxy.ProxyCtx{
 		Req: req,
 	}
 
 	// OnRequest doesn't change the request, so we don't need to check that.
 	// If cached there will be a response.
-	_, resp := cacher.OnRequest(req, ctx)
+	_, resp := cacher.OnRequest(req, proxyCtx)
 	if resp != nil {
 		resp.Body.Close()
 		t.Error("Cache is not disabled")
@@ -47,8 +47,8 @@ func TestCache_Disabled(t *testing.T) {
 	// Verify that we didn't read the body of the response to cache it.
 	originalBody := io.NopCloser(bytes.NewBufferString(""))
 	resp2 := &http.Response{Body: originalBody}
-	ctx.Resp = resp2
-	resp3 := cacher.OnResponse(resp2, ctx)
+	proxyCtx.Resp = resp2
+	resp3 := cacher.OnResponse(resp2, proxyCtx)
 	defer resp3.Body.Close()
 	if originalBody != resp3.Body {
 		t.Error("Cache is not disabled")
@@ -71,11 +71,11 @@ func TestCache(t *testing.T) {
 
 	t.Run("Cache miss", func(t *testing.T) {
 		req := httptest.NewRequest("GET", URL, nil)
-		ctx := &goproxy.ProxyCtx{
+		proxyCtx := &goproxy.ProxyCtx{
 			Req: req,
 		}
 
-		_, resp := cacher.OnRequest(req, ctx)
+		_, resp := cacher.OnRequest(req, proxyCtx)
 		if resp != nil {
 			resp.Body.Close()
 			t.Error("No cache should exist yet")
@@ -87,7 +87,7 @@ func TestCache(t *testing.T) {
 			StatusCode: 200,
 			Body:       io.NopCloser(bytes.NewBufferString(body)),
 		}
-		resp = cacher.OnResponse(resp, ctx)
+		resp = cacher.OnResponse(resp, proxyCtx)
 		result, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if len(cacher.cacheDB) != 1 {
@@ -100,12 +100,12 @@ func TestCache(t *testing.T) {
 
 	t.Run("Cache hit", func(t *testing.T) {
 		req := httptest.NewRequest("GET", URL, nil)
-		ctx := &goproxy.ProxyCtx{
+		proxyCtx := &goproxy.ProxyCtx{
 			Req: req,
 		}
 
 		// a cached response means OnRequest returns a resp
-		_, resp := cacher.OnRequest(req, ctx)
+		_, resp := cacher.OnRequest(req, proxyCtx)
 		if resp == nil {
 			t.Error("Request should be cached")
 		} else {
@@ -117,7 +117,7 @@ func TestCache(t *testing.T) {
 			StatusCode: 200,
 			Body:       io.NopCloser(bytes.NewBufferString("")),
 		}
-		resp = cacher.OnResponse(resp, ctx)
+		resp = cacher.OnResponse(resp, proxyCtx)
 		resp.Body.Close()
 		if len(cacher.cacheDB) != 1 {
 			t.Error("cache should have 1 entry, got", len(cacher.cacheDB))

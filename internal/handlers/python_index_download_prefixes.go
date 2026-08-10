@@ -28,12 +28,12 @@ type simpleJSONResponse struct {
 // authenticated Simple API responses. Some indexes return file URLs outside
 // the configured /simple/ prefix (for example, /pypi/download/...), so the
 // request matcher needs one extra prefix learned from the registry response.
-func (h *PythonIndexHandler) HandleResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+func (h *PythonIndexHandler) HandleResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if resp == nil || resp.Body == nil || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return resp
 	}
 
-	responseAuth, ok := pythonIndexResponseAuthFromContext(ctx)
+	responseAuth, ok := pythonIndexResponseAuthFromContext(proxyCtx)
 	if !ok || !isPythonSimpleAPIPath(responseAuth.baseURL.Path) || !isSimpleAPIResponse(resp) {
 		return resp
 	}

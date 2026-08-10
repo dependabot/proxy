@@ -64,13 +64,13 @@ func NewHexRepositoryHandler(creds config.Credentials) *HexRepositoryHandler {
 }
 
 // HandleRequest adds auth to a registry request
-func (h *HexRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *HexRepositoryHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, ctx) {
+	if h.oidcRegistry.TryAuth(req, proxyCtx) {
 		return req, nil
 	}
 
@@ -84,7 +84,7 @@ func (h *HexRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 			continue
 		}
 
-		logging.RequestLogf(ctx, "* authenticating hex repository request (host: %s)", req.URL.Hostname())
+		logging.RequestLogf(proxyCtx, "* authenticating hex repository request (host: %s)", req.URL.Hostname())
 		helpers.SetRawAuthorization(req, cred.authKey)
 
 		return req, nil

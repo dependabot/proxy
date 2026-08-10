@@ -82,7 +82,7 @@ type dockerRegistryRoundTripper struct {
 	transport http.RoundTripper
 }
 
-func (rt *dockerRegistryRoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Response, error) {
+func (rt *dockerRegistryRoundTripper) RoundTrip(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
 	return rt.transport.RoundTrip(req)
 }
 
@@ -101,13 +101,13 @@ func (rt *dockerRegistryRoundTripper) RoundTrip(req *http.Request, ctx *goproxy.
 // Fortunately, the github.com/stackrox/docker-registry-client/registry library's
 // TokenTransport implements the bulk of this flow for us, so we just need to
 // set the request context's RoundTripper accordingly.
-func (h *DockerRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *DockerRegistryHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, ctx) {
+	if h.oidcRegistry.TryAuth(req, proxyCtx) {
 		return req, nil
 	}
 
@@ -121,11 +121,11 @@ func (h *DockerRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pr
 			continue
 		}
 
-		if cred.getECRCredentials(req.Context(), ctx) {
-			logging.RequestLogf(ctx, "* authenticating docker ecr request (host: %s)", req.URL.Hostname())
+		if cred.getECRCredentials(req.Context(), proxyCtx) {
+			logging.RequestLogf(proxyCtx, "* authenticating docker ecr request (host: %s)", req.URL.Hostname())
 			helpers.SetBasicAuthorization(req, cred.ecrUsername, cred.ecrPassword)
 		} else {
-			logging.RequestLogf(ctx, "* authenticating docker registry request (host: %s)", req.URL.Hostname())
+			logging.RequestLogf(proxyCtx, "* authenticating docker registry request (host: %s)", req.URL.Hostname())
 			transport := &registry.BasicTransport{
 				Transport: &registry.TokenTransport{
 					Transport: h.transport,
@@ -136,7 +136,7 @@ func (h *DockerRegistryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pr
 				Username: cred.getUsername(),
 				Password: cred.getPassword(),
 			}
-			ctx.RoundTripper = &dockerRegistryRoundTripper{
+			proxyCtx.RoundTripper = &dockerRegistryRoundTripper{
 				transport: transport,
 			}
 		}

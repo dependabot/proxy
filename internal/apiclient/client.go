@@ -100,10 +100,10 @@ func WithTransport(transport *http.Transport) ClientOpt {
 // RequestJITAccess asks the API to create a token with access to the specified repository.
 // If username and password are provided, they are used for basic auth; otherwise the client's
 // default token is used in the Authorization header.
-func (c *Client) RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (*config.Credential, error) {
+func (c *Client) RequestJITAccess(proxyCtx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (*config.Credential, error) {
 	url := c.newURL("%s", endpoint)
 
-	if err := c.jitRateLimit.Acquire(ctx.Req.Context(), 1); err != nil {
+	if err := c.jitRateLimit.Acquire(proxyCtx.Req.Context(), 1); err != nil {
 		return nil, fmt.Errorf("failed to acquire rate limit lock: %w", err)
 	}
 	defer c.jitRateLimit.Release(1)
@@ -111,10 +111,10 @@ func (c *Client) RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, userna
 	repoData := map[string]string{"account": account, "repository": repo}
 	payload, err := json.Marshal(repoData)
 	if err != nil {
-		logging.RequestLogf(ctx, "Failed marshalling scope request: %v", err)
+		logging.RequestLogf(proxyCtx, "Failed marshalling scope request: %v", err)
 		return nil, err
 	}
-	req, err := c.newRequest(ctx.Req.Context(), "POST", url, string(payload))
+	req, err := c.newRequest(proxyCtx.Req.Context(), "POST", url, string(payload))
 	if err != nil {
 		return nil, err
 	}
@@ -129,18 +129,18 @@ func (c *Client) RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, userna
 	defer rsp.Body.Close()
 	data, err := io.ReadAll(rsp.Body)
 	if err != nil {
-		logging.RequestLogf(ctx, "Failed reading scope response: %v", err)
+		logging.RequestLogf(proxyCtx, "Failed reading scope response: %v", err)
 		return nil, err
 	}
 	if rsp.StatusCode != 200 {
-		logging.RequestLogf(ctx, "Failed to request additional scope: %d %v", rsp.StatusCode, string(data))
+		logging.RequestLogf(proxyCtx, "Failed to request additional scope: %d %v", rsp.StatusCode, string(data))
 		return nil, fmt.Errorf("failed to request additional scope %s", string(data))
 	}
 
 	credentials := &config.Credential{}
 	err = json.Unmarshal(data, &credentials)
 	if err != nil {
-		logging.RequestLogf(ctx, "Failed unmarshalling scope response: %v", err)
+		logging.RequestLogf(proxyCtx, "Failed unmarshalling scope response: %v", err)
 		return nil, err
 	}
 

@@ -51,13 +51,13 @@ func TestHandlerMetrics(t *testing.T) {
 		"single request": {
 			generateRequestMetrics: func(h *Handler) {
 				req := httptest.NewRequest("GET", "https://example.com/", nil)
-				ctx := &goproxy.ProxyCtx{Req: req}
-				_, resp := h.HandleRequest(req, ctx)
+				proxyCtx := &goproxy.ProxyCtx{Req: req}
+				_, resp := h.HandleRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
 					resp.Body.Close()
 				}
 				time.Sleep(200 * time.Millisecond)
-				rsp := h.HandleResponse(&http.Response{StatusCode: 201}, ctx)
+				rsp := h.HandleResponse(&http.Response{StatusCode: 201}, proxyCtx)
 				if rsp != nil && rsp.Body != nil {
 					rsp.Body.Close()
 				}
@@ -80,14 +80,14 @@ func TestHandlerMetrics(t *testing.T) {
 		"single request to subdomain api.github.com": {
 			generateRequestMetrics: func(h *Handler) {
 				req := httptest.NewRequest("GET", "https://api.github.com/", nil)
-				ctx := &goproxy.ProxyCtx{Req: req}
-				_, resp := h.HandleRequest(req, ctx)
+				proxyCtx := &goproxy.ProxyCtx{Req: req}
+				_, resp := h.HandleRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
 					resp.Body.Close()
 				}
 				// Simulate a delay to test the timing metric
 				time.Sleep(200 * time.Millisecond)
-				rsp := h.HandleResponse(&http.Response{StatusCode: 200}, ctx)
+				rsp := h.HandleResponse(&http.Response{StatusCode: 200}, proxyCtx)
 				if rsp != nil && rsp.Body != nil {
 					rsp.Body.Close()
 				}
@@ -109,12 +109,12 @@ func TestHandlerMetrics(t *testing.T) {
 			generateRequestMetrics: func(h *Handler) {
 				for _, host := range []string{"https://thing.pypi.org/", "https://pypi.org/"} {
 					req := httptest.NewRequest("GET", host, nil)
-					ctx := &goproxy.ProxyCtx{Req: req}
-					_, resp := h.HandleRequest(req, ctx)
+					proxyCtx := &goproxy.ProxyCtx{Req: req}
+					_, resp := h.HandleRequest(req, proxyCtx)
 					if resp != nil && resp.Body != nil {
 						resp.Body.Close()
 					}
-					rsp := h.HandleResponse(&http.Response{StatusCode: 200}, ctx)
+					rsp := h.HandleResponse(&http.Response{StatusCode: 200}, proxyCtx)
 					if rsp != nil && rsp.Body != nil {
 						rsp.Body.Close()
 					}
@@ -137,12 +137,12 @@ func TestHandlerMetrics(t *testing.T) {
 			generateRequestMetrics: func(h *Handler) {
 				for _, host := range []string{"https://foo.github.com/", "https://github.com/"} {
 					req := httptest.NewRequest("GET", host, nil)
-					ctx := &goproxy.ProxyCtx{Req: req}
-					_, resp := h.HandleRequest(req, ctx)
+					proxyCtx := &goproxy.ProxyCtx{Req: req}
+					_, resp := h.HandleRequest(req, proxyCtx)
 					if resp != nil && resp.Body != nil {
 						resp.Body.Close()
 					}
-					rsp := h.HandleResponse(&http.Response{StatusCode: 200}, ctx)
+					rsp := h.HandleResponse(&http.Response{StatusCode: 200}, proxyCtx)
 					if rsp != nil && rsp.Body != nil {
 						rsp.Body.Close()
 					}
@@ -165,12 +165,12 @@ func TestHandlerMetrics(t *testing.T) {
 			generateRequestMetrics: func(h *Handler) {
 				for _, host := range []string{"https://foo.pkg.github.com/", "https://bar.pkg.github.com/"} {
 					req := httptest.NewRequest("GET", host, nil)
-					ctx := &goproxy.ProxyCtx{Req: req}
-					_, resp := h.HandleRequest(req, ctx)
+					proxyCtx := &goproxy.ProxyCtx{Req: req}
+					_, resp := h.HandleRequest(req, proxyCtx)
 					if resp != nil && resp.Body != nil {
 						resp.Body.Close()
 					}
-					rsp := h.HandleResponse(&http.Response{StatusCode: 200}, ctx)
+					rsp := h.HandleResponse(&http.Response{StatusCode: 200}, proxyCtx)
 					if rsp != nil && rsp.Body != nil {
 						rsp.Body.Close()
 					}

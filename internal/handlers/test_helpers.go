@@ -15,8 +15,8 @@ import (
 // Most handlers return nil responses, but the linter can't prove that.
 func handleRequestAndClose(handler interface {
 	HandleRequest(*http.Request, *goproxy.ProxyCtx) (*http.Request, *http.Response)
-}, req *http.Request, ctx *goproxy.ProxyCtx) *http.Request {
-	req, resp := handler.HandleRequest(req, ctx)
+}, req *http.Request, proxyCtx *goproxy.ProxyCtx) *http.Request {
+	req, resp := handler.HandleRequest(req, proxyCtx)
 	if resp != nil && resp.Body != nil {
 		resp.Body.Close()
 	}

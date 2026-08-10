@@ -66,13 +66,13 @@ func NewPubRepositoryHandler(credentials config.Credentials) *PubRepositoryHandl
 	return &handler
 }
 
-func (h *PubRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *PubRepositoryHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, ctx) {
+	if h.oidcRegistry.TryAuth(req, proxyCtx) {
 		return req, nil
 	}
 
@@ -82,7 +82,7 @@ func (h *PubRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.Pro
 			continue
 		}
 
-		logging.RequestLogf(ctx, "* authenticating pub repository request (url: %s)", cred.url)
+		logging.RequestLogf(proxyCtx, "* authenticating pub repository request (url: %s)", cred.url)
 		helpers.SetBearerAuthorization(req, cred.token)
 
 		return req, nil

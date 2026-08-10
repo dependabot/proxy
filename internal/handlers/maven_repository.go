@@ -62,13 +62,13 @@ func NewMavenRepositoryHandler(creds config.Credentials) *MavenRepositoryHandler
 }
 
 // HandleRequest adds auth to a maven repository request
-func (h *MavenRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *MavenRepositoryHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if (req.URL.Scheme != "http" && req.URL.Scheme != "https") || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, ctx) {
+	if h.oidcRegistry.TryAuth(req, proxyCtx) {
 		return req, nil
 	}
 
@@ -78,7 +78,7 @@ func (h *MavenRepositoryHandler) HandleRequest(req *http.Request, ctx *goproxy.P
 			continue
 		}
 
-		logging.RequestLogf(ctx, "* authenticating maven repository request (host: %s)", req.URL.Hostname())
+		logging.RequestLogf(proxyCtx, "* authenticating maven repository request (host: %s)", req.URL.Hostname())
 		helpers.SetBasicAuthorization(req, cred.username, cred.password)
 
 		return req, nil

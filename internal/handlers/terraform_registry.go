@@ -71,13 +71,13 @@ func NewTerraformRegistryHandler(credentials config.Credentials) *TerraformRegis
 	return &handler
 }
 
-func (h *TerraformRegistryHandler) HandleRequest(request *http.Request, context *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *TerraformRegistryHandler) HandleRequest(request *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if request.URL.Scheme != "https" || !helpers.MethodPermitted(request, "GET", "HEAD") {
 		return request, nil
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(request, context) {
+	if h.oidcRegistry.TryAuth(request, proxyCtx) {
 		return request, nil
 	}
 
@@ -87,7 +87,7 @@ func (h *TerraformRegistryHandler) HandleRequest(request *http.Request, context 
 			continue
 		}
 
-		logging.RequestLogf(context, "* authenticating terraform registry request (host: %s)", request.URL.Hostname())
+		logging.RequestLogf(proxyCtx, "* authenticating terraform registry request (host: %s)", request.URL.Hostname())
 		helpers.SetBearerAuthorization(request, cred.token)
 		return request, nil
 	}

@@ -391,7 +391,7 @@ func TestGitHubAPIHandler_TokenFallback(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var capturedTokens []string
-			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
+			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
 				token := strings.TrimPrefix(r.Header.Get("Authorization"), "token ")
 				capturedTokens = append(capturedTokens, token)
 				if token == tt.authToken {
@@ -402,13 +402,13 @@ func TestGitHubAPIHandler_TokenFallback(t *testing.T) {
 
 			parsedUrl, _ := url.Parse(tt.url)
 			req := &http.Request{Method: "GET", URL: parsedUrl, Header: http.Header{}}
-			ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+			proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: tt.respCode, Body: io.NopCloser(strings.NewReader("hello"))}
 
 			// tag request with auth so we'll handle retries
-			_ = handleRequestAndClose(handler, req, ctx)
+			_ = handleRequestAndClose(handler, req, proxyCtx)
 
-			newRsp := handler.HandleResponse(rsp, ctx)
+			newRsp := handler.HandleResponse(rsp, proxyCtx)
 			defer newRsp.Body.Close()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")
@@ -497,7 +497,7 @@ func TestGitHubAPIHandler_TokenFallback_In_Proxima(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var capturedTokens []string
-			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
+			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
 				token := strings.TrimPrefix(r.Header.Get("Authorization"), "token ")
 				capturedTokens = append(capturedTokens, token)
 				if token == tt.authToken {
@@ -507,13 +507,13 @@ func TestGitHubAPIHandler_TokenFallback_In_Proxima(t *testing.T) {
 			})
 
 			req := &http.Request{Method: "GET", URL: url, Header: http.Header{}}
-			ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+			proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: tt.respCode, Body: io.NopCloser(strings.NewReader("hello"))}
 
 			// tag request with auth so we'll handle retries
-			_ = handleRequestAndClose(handler, req, ctx)
+			_ = handleRequestAndClose(handler, req, proxyCtx)
 
-			newRsp := handler.HandleResponse(rsp, ctx)
+			newRsp := handler.HandleResponse(rsp, proxyCtx)
 			defer newRsp.Body.Close()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")

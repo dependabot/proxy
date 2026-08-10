@@ -18,7 +18,7 @@ import (
 
 	"github.com/dependabot/proxy/internal/apiclient"
 	"github.com/dependabot/proxy/internal/config"
-	"github.com/dependabot/proxy/internal/ctxdata"
+	"github.com/dependabot/proxy/internal/proxyctx"
 )
 
 func TestGitServerHandler_url(t *testing.T) {
@@ -208,22 +208,22 @@ func TestGitServerHandler404Retry(t *testing.T) {
 		t.Errorf("parsing url: %v", err)
 	}
 
-	roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Response, error) {
+	roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
 		assert.Equal(t, "", r.Header.Get("Authorization"), "auth should be removed")
 		return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(""))}, nil
 	})
 	req := &http.Request{Method: "GET", URL: url, Header: http.Header{}}
 	req.SetBasicAuth("user", "pass")
-	ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+	proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 
-	newRsp := handler.HandleResponse(rsp, ctx)
+	newRsp := handler.HandleResponse(rsp, proxyCtx)
 	assert.Equal(t, 404, newRsp.StatusCode, "no retry without addedAuthCtxKey")
 
-	ctxdata.SetValue(ctx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
+	proxyctx.SetValue(proxyCtx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
 	if newRsp.Body != nil {
 		newRsp.Body.Close()
 	}
-	newRsp = handler.HandleResponse(rsp, ctx)
+	newRsp = handler.HandleResponse(rsp, proxyCtx)
 	if newRsp != nil && newRsp.Body != nil {
 		defer newRsp.Body.Close()
 	}
@@ -242,17 +242,17 @@ func TestGitServerHandlerNoRetry(t *testing.T) {
 	})
 	req := httptest.NewRequest("GET", url, nil)
 	req.SetBasicAuth("x-access-token", "v1.token")
-	ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+	proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 
-	newRsp := handler.HandleResponse(rsp, ctx)
+	newRsp := handler.HandleResponse(rsp, proxyCtx)
 	assert.Equal(t, 404, newRsp.StatusCode, "")
 
 	// Ensure we _don't_ retry
-	ctxdata.SetValue(ctx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
+	proxyctx.SetValue(proxyCtx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
 	if newRsp.Body != nil {
 		newRsp.Body.Close()
 	}
-	newRsp = handler.HandleResponse(rsp, ctx)
+	newRsp = handler.HandleResponse(rsp, proxyCtx)
 	if newRsp != nil && newRsp.Body != nil {
 		defer newRsp.Body.Close()
 	}
@@ -325,7 +325,7 @@ func TestGitServerHandler_TokenFallback(t *testing.T) {
 			handler := NewGitServerHandler(credentials, nil)
 
 			var capturedTokens []string
-			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
+			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
 				_, token, _ := r.BasicAuth()
 				capturedTokens = append(capturedTokens, token)
 				if token == tt.authToken {
@@ -336,11 +336,11 @@ func TestGitServerHandler_TokenFallback(t *testing.T) {
 
 			req, err := http.NewRequestWithContext(context.Background(), "GET", "https://github.com/github/dependabot-action/info/refs?service=git-upload-pack", nil)
 			require.NoError(t, err, "failed to create request")
-			ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+			proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: tt.respCode, Body: io.NopCloser(strings.NewReader("hello"))}
 
-			_ = handleRequestAndClose(handler, req, ctx)
-			newRsp := handler.HandleResponse(rsp, ctx)
+			_ = handleRequestAndClose(handler, req, proxyCtx)
+			newRsp := handler.HandleResponse(rsp, proxyCtx)
 			defer newRsp.Body.Close()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")
@@ -409,7 +409,7 @@ func TestGitServerHandler_TokenFallbackWithPost(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var capturedTokens []string
-			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
+			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
 				body, err := io.ReadAll(r.Body)
 				require.NoError(t, err, "failed to read req body")
 				assert.Equal(t, "test body", string(body), "request body mismatch")
@@ -425,17 +425,17 @@ func TestGitServerHandler_TokenFallbackWithPost(t *testing.T) {
 
 			req, err := http.NewRequestWithContext(context.Background(), "POST", tt.url, io.NopCloser(strings.NewReader("test body")))
 			require.NoError(t, err, "failed to create request")
-			ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+			proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: tt.respCode, Body: io.NopCloser(strings.NewReader(""))}
 
-			req = handleRequestAndClose(handler, req, ctx)
+			req = handleRequestAndClose(handler, req, proxyCtx)
 			// trigger cloning body
-			rtResp, err := roundTripper(req, ctx)
+			rtResp, err := roundTripper(req, proxyCtx)
 			if rtResp != nil && rtResp.Body != nil {
 				rtResp.Body.Close()
 			}
 			require.NoError(t, err, "first request err")
-			newRsp := handler.HandleResponse(rsp, ctx)
+			newRsp := handler.HandleResponse(rsp, proxyCtx)
 			defer newRsp.Body.Close()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")
@@ -452,9 +452,9 @@ func TestGitServerHandler_NoCloneWithSingleCredPost(t *testing.T) {
 
 	req, err := http.NewRequestWithContext(context.Background(), "POST", "https://github.com/github/dependabot-action/git-upload-pack", io.NopCloser(strings.NewReader("test body")))
 	require.NoError(t, err, "failed to create request")
-	ctx := &goproxy.ProxyCtx{Req: req}
-	_ = handleRequestAndClose(handler, req, ctx)
-	_, found := ctxdata.GetBuffer(ctx, reqBodyCtxKey)
+	proxyCtx := &goproxy.ProxyCtx{Req: req}
+	_ = handleRequestAndClose(handler, req, proxyCtx)
+	_, found := proxyctx.GetBuffer(proxyCtx, reqBodyCtxKey)
 
 	assert.False(t, found, "expect clone buffer not present")
 }
@@ -485,17 +485,17 @@ func TestGitServerHandler_RepositoryScopedCredentials(t *testing.T) {
 	for name, url := range tests {
 		t.Run(name, func(t *testing.T) {
 			var capturedTokens []string
-			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, c *goproxy.ProxyCtx) (*http.Response, error) {
+			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
 				_, token, _ := r.BasicAuth()
 				capturedTokens = append(capturedTokens, token)
 				return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(""))}, nil
 			})
 
 			req := httptest.NewRequest("GET", url, nil)
-			ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+			proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(""))}
 
-			newRsp := handler.HandleResponse(rsp, ctx)
+			newRsp := handler.HandleResponse(rsp, proxyCtx)
 			defer newRsp.Body.Close()
 			assert.Equal(t, []string{
 				otherGitHubCred.GetString("password"),
@@ -513,7 +513,7 @@ type TestScopeRequester struct {
 
 const jitToken = "newToken"
 
-func (t *TestScopeRequester) RequestJITAccess(ctx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (*config.Credential, error) {
+func (t *TestScopeRequester) RequestJITAccess(proxyCtx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (*config.Credential, error) {
 	t.receivedRequest = true
 
 	return &config.Credential{
@@ -547,7 +547,7 @@ func TestGitServerHandler_RequestJITAccess(t *testing.T) {
 				t.Errorf("parsing url: %v", err)
 			}
 
-			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Response, error) {
+			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
 				_, pass, ok := r.BasicAuth()
 				if !ok {
 					return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(""))}, nil
@@ -559,10 +559,10 @@ func TestGitServerHandler_RequestJITAccess(t *testing.T) {
 			})
 			req := &http.Request{Method: "GET", URL: url, Header: http.Header{}}
 			req.SetBasicAuth("user", "pass")
-			ctx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+			proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 
-			ctxdata.SetValue(ctx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
-			newRsp := handler.HandleResponse(rsp, ctx)
+			proxyctx.SetValue(proxyCtx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
+			newRsp := handler.HandleResponse(rsp, proxyCtx)
 			defer newRsp.Body.Close()
 			assert.Equal(t, test.jitAccessEndpoint != "", testClient.receivedRequest, "request more scope unexpected")
 			if test.jitAccessEndpoint != "" {
@@ -648,7 +648,7 @@ func TestJITEndpointUsesExplicitAuthWhenProvided(t *testing.T) {
 	require.NoError(t, err)
 
 	// RoundTripper delegates to http.DefaultTransport so retries go through httpmock
-	roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Response, error) {
+	roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
 		return http.DefaultTransport.RoundTrip(r)
 	})
 	proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}

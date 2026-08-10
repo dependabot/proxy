@@ -59,13 +59,13 @@ func NewComposerHandler(creds config.Credentials) *ComposerHandler {
 }
 
 // HandleRequest adds auth to a composer registry request
-func (h *ComposerHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *ComposerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
 	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, ctx) {
+	if h.oidcRegistry.TryAuth(req, proxyCtx) {
 		return req, nil
 	}
 
@@ -80,10 +80,10 @@ func (h *ComposerHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx
 		}
 
 		if cred.token != "" {
-			logging.RequestLogf(ctx, "* authenticating composer registry request (host: %s, token auth)", req.URL.Hostname())
+			logging.RequestLogf(proxyCtx, "* authenticating composer registry request (host: %s, token auth)", req.URL.Hostname())
 			helpers.SetBearerAuthorization(req, cred.token)
 		} else {
-			logging.RequestLogf(ctx, "* authenticating composer registry request (host: %s, basic auth)", req.URL.Hostname())
+			logging.RequestLogf(proxyCtx, "* authenticating composer registry request (host: %s, basic auth)", req.URL.Hostname())
 			helpers.SetBasicAuthorization(req, cred.username, cred.password)
 		}
 

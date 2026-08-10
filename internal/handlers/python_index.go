@@ -82,18 +82,18 @@ func NewPythonIndexHandler(creds config.Credentials) *PythonIndexHandler {
 }
 
 // HandleRequest adds auth to a python index request
-func (h *PythonIndexHandler) HandleRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (h *PythonIndexHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if req.URL.Scheme != "https" || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
-	if auth, ok := h.downloadAuth.authFor(req); ok && h.applyAuth(req, ctx, auth) {
+	if auth, ok := h.downloadAuth.authFor(req); ok && h.applyAuth(req, proxyCtx, auth) {
 		return req, nil
 	}
 
 	// Try OIDC credentials first
-	if credential := h.oidcRegistry.CredentialForRequest(req); h.oidcRegistry.TryAuthCredential(req, ctx, credential) {
-		rememberPythonIndexResponseAuth(ctx, req.URL, pythonIndexAuth{oidc: credential})
+	if credential := h.oidcRegistry.CredentialForRequest(req); h.oidcRegistry.TryAuthCredential(req, proxyCtx, credential) {
+		rememberPythonIndexResponseAuth(proxyCtx, req.URL, pythonIndexAuth{oidc: credential})
 		return req, nil
 	}
 
@@ -105,8 +105,8 @@ func (h *PythonIndexHandler) HandleRequest(req *http.Request, ctx *goproxy.Proxy
 		}
 
 		auth := pythonIndexAuth{basic: cred, hasBasic: true}
-		h.applyAuth(req, ctx, auth)
-		rememberPythonIndexResponseAuth(ctx, req.URL, auth)
+		h.applyAuth(req, proxyCtx, auth)
+		rememberPythonIndexResponseAuth(proxyCtx, req.URL, auth)
 
 		return req, nil
 	}

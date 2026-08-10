@@ -19,10 +19,10 @@ import (
 // spaces are removed, and the entry is logged with a single trailing newline.
 // If p is given, the logged line is prefixed with a three-digit representation
 // of p.Session.
-func RequestLogf(ctx *goproxy.ProxyCtx, format string, v ...any) {
+func RequestLogf(proxyCtx *goproxy.ProxyCtx, format string, v ...any) {
 	formatted := fmt.Sprintf(format, v...)
 	message := replaceNewLines(formatted, " ")
-	requestLog(ctx, message)
+	requestLog(proxyCtx, message)
 }
 
 // RequestMultilineLogf builds a log entry from format and v according to the
@@ -31,22 +31,22 @@ func RequestLogf(ctx *goproxy.ProxyCtx, format string, v ...any) {
 // entry is truncated to 1024 bytes and it is logged with a single trailing
 // newline. If p is given, the first line logged is prefixed with a three-digit
 // representation of p.Session.
-func RequestMultilineLogf(ctx *goproxy.ProxyCtx, format string, v ...any) {
+func RequestMultilineLogf(proxyCtx *goproxy.ProxyCtx, format string, v ...any) {
 	formatted := fmt.Sprintf(format, v...)
 	message := replaceNewLines(formatted, "\n")
-	requestLog(ctx, message)
+	requestLog(proxyCtx, message)
 }
 
-func requestLog(ctx *goproxy.ProxyCtx, message string) {
+func requestLog(proxyCtx *goproxy.ProxyCtx, message string) {
 	format := "%s"
 	argv := []any{trimSpace(message)}
-	if ctx != nil {
+	if proxyCtx != nil {
 		// Log the request number as a 3-digit number
-		reqId := ctx.Session % 1000
+		reqId := proxyCtx.Session % 1000
 		format = "[%03d] " + format
 		argv = append([]any{reqId}, argv...)
 
-		if cache.WasResponseCached(ctx) {
+		if cache.WasResponseCached(proxyCtx) {
 			format += " (cached)"
 		}
 	}
