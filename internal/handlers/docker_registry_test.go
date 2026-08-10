@@ -1,19 +1,22 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/service/ecr"
-	"github.com/aws/aws-sdk-go/service/ecr/ecriface"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/elazarl/goproxy"
 	"github.com/stackrox/docker-registry-client/registry"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/dependabot/proxy/internal/config"
 )
+
+type ecrContextKey struct{}
 
 func TestDockerRegistryHandler(t *testing.T) {
 	hubUser := "solomon"
@@ -56,8 +59,14 @@ func TestDockerRegistryHandler(t *testing.T) {
 			"password": hubPassword,
 		},
 	}
-	getECRClient := func(region, keyID, secretKey string) (ecriface.ECRAPI, error) {
-		return &mockECRClient{user: ecrDockerUser, token: ecrDockerPassword}, nil
+	mockECR := &mockECRClient{user: ecrDockerUser, token: ecrDockerPassword}
+	var factoryContext context.Context
+	getECRClient := func(ctx context.Context, region, keyID, secretKey string) (ecrClient, error) {
+		factoryContext = ctx
+		assert.Equal(t, "us-east-2", region, "ecr region is parsed from the registry host")
+		assert.Equal(t, ecrKeyID, keyID, "docker username is used as the aws access key id")
+		assert.Equal(t, ecrSecretKey, secretKey, "docker password is used as the aws secret access key")
+		return mockECR, nil
 	}
 	handler := NewDockerRegistryHandler(credentials, &http.Transport{}, getECRClient)
 
@@ -93,11 +102,18 @@ func TestDockerRegistryHandler(t *testing.T) {
 
 	// ECR
 	req = httptest.NewRequest("GET", "https://123456789123.dkr.ecr.us-east-2.amazonaws.com", nil)
+	req = req.WithContext(context.WithValue(req.Context(), ecrContextKey{}, "ecr-request"))
 	ctx = &goproxy.ProxyCtx{}
 	req = handleRequestAndClose(handler, req, ctx)
 	_, ok = ctx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.False(t, ok, "ecr request isn't assigned a docker registry transport")
 	assertHasBasicAuth(t, req, ecrDockerUser, ecrDockerPassword, "has ecr credentials")
+	if assert.NotNil(t, factoryContext, "client factory receives a context") {
+		assert.Equal(t, "ecr-request", factoryContext.Value(ecrContextKey{}), "client factory receives request context")
+	}
+	if assert.NotNil(t, mockECR.requestContext, "ecr request receives a context") {
+		assert.Equal(t, "ecr-request", mockECR.requestContext.Value(ecrContextKey{}), "ecr request receives request context")
+	}
 
 	// ECR, again
 	req = httptest.NewRequest("GET", "https://123456789123.dkr.ecr.us-east-2.amazonaws.com", nil)
@@ -149,15 +165,20 @@ func TestDockerRegistryHandler(t *testing.T) {
 }
 
 type mockECRClient struct {
-	ecriface.ECRAPI
-	user  string
-	token string
+	user           string
+	token          string
+	requestContext context.Context
 }
 
-func (c *mockECRClient) GetAuthorizationToken(*ecr.GetAuthorizationTokenInput) (*ecr.GetAuthorizationTokenOutput, error) {
+func (c *mockECRClient) GetAuthorizationToken(
+	ctx context.Context,
+	_ *ecr.GetAuthorizationTokenInput,
+	_ ...func(*ecr.Options),
+) (*ecr.GetAuthorizationTokenOutput, error) {
+	c.requestContext = ctx
 	authToken := base64.StdEncoding.EncodeToString([]byte(c.user + ":" + c.token))
 	return &ecr.GetAuthorizationTokenOutput{
-		AuthorizationData: []*ecr.AuthorizationData{
+		AuthorizationData: []types.AuthorizationData{
 			{
 				AuthorizationToken: new(authToken),
 			},
