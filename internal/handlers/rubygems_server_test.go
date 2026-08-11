@@ -39,39 +39,39 @@ func TestRubyGemsServerHandler(t *testing.T) {
 	}
 	handler := NewRubyGemsServerHandler(credentials)
 
-	req := httptest.NewRequest("GET", "https://corp.dependabot.com/gems", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://corp.dependabot.com/gems", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, dependabotToken, "", "dependabot registry request")
 
-	req = httptest.NewRequest("GET", "https://corp.deltaforce.com/somepkg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://corp.deltaforce.com/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "deltaforce registry request")
 
-	req = httptest.NewRequest("GET", "https://example.com/gems/somepkg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://example.com/gems/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "deltaforce registry request")
 
-	req = httptest.NewRequest("GET", "https://example.com/path/to/gems/somepkg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://example.com/path/to/gems/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, pathUser, pathPassword, "path-specific registry request")
 
 	// Path mismatch
-	req = httptest.NewRequest("GET", "https://corp.dependabot.com/foo", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://corp.dependabot.com/foo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "Path mismatch")
 
 	// Missing repo subdomain
-	req = httptest.NewRequest("GET", "https://dependabot.com/gems", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://dependabot.com/gems", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 
 	// HTTP, not HTTPS
-	req = httptest.NewRequest("GET", "http://corp.dependabot.com/gems", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "http://corp.dependabot.com/gems", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "http, not https")
 
 	// Not a GET request
-	req = httptest.NewRequest("POST", "https://corp.dependabot.com/gems", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "POST", "https://corp.dependabot.com/gems", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "post request")
 }

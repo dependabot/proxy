@@ -35,7 +35,7 @@ func TestIsUploadPackRequest(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(tc.method, tc.url, nil)
+			req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.url, nil)
 			if tc.contentType != "" {
 				req.Header.Set("Content-Type", tc.contentType)
 			}

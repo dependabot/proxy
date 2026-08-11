@@ -52,7 +52,7 @@ script/test          # Run tests in Docker with race detection (-race -count=2)
 go test ./...        # Run tests locally
 ```
 
-**Test pattern**: Tests use `httptest.NewRequest()` and test helper functions from [test_helpers.go](../internal/handlers/test_helpers.go):
+**Test pattern**: Handler tests use `httptest.NewRequestWithContext(t.Context(), method, target, body)` and test helper functions from [test_helpers.go](../internal/handlers/test_helpers.go):
 
 - `testGitSourceCred(host, username, password, opts...)` - create test credentials
 - `assertHasTokenAuth(t, req, "Bearer", token, "msg")` - verify auth header

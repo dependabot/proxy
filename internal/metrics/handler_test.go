@@ -44,13 +44,13 @@ func TestHandlerMetrics(t *testing.T) {
 	handler := NewHandler(mockMetricsCollector)
 
 	tests := map[string]struct {
-		generateRequestMetrics func(h *Handler)
+		generateRequestMetrics func(t *testing.T, h *Handler)
 		expMetricCount         int
 		validateMetric         func(*testing.T, string)
 	}{
 		"single request": {
-			generateRequestMetrics: func(h *Handler) {
-				req := httptest.NewRequest("GET", "https://example.com/", nil)
+			generateRequestMetrics: func(t *testing.T, h *Handler) {
+				req := httptest.NewRequestWithContext(t.Context(), "GET", "https://example.com/", nil)
 				proxyCtx := &goproxy.ProxyCtx{Req: req}
 				_, resp := h.HandleRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
@@ -78,8 +78,8 @@ func TestHandlerMetrics(t *testing.T) {
 			expMetricCount: 2,
 		},
 		"single request to subdomain api.github.com": {
-			generateRequestMetrics: func(h *Handler) {
-				req := httptest.NewRequest("GET", "https://api.github.com/", nil)
+			generateRequestMetrics: func(t *testing.T, h *Handler) {
+				req := httptest.NewRequestWithContext(t.Context(), "GET", "https://api.github.com/", nil)
 				proxyCtx := &goproxy.ProxyCtx{Req: req}
 				_, resp := h.HandleRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
@@ -106,9 +106,9 @@ func TestHandlerMetrics(t *testing.T) {
 			},
 		},
 		"two requests to different subdomains": {
-			generateRequestMetrics: func(h *Handler) {
+			generateRequestMetrics: func(t *testing.T, h *Handler) {
 				for _, host := range []string{"https://thing.pypi.org/", "https://pypi.org/"} {
-					req := httptest.NewRequest("GET", host, nil)
+					req := httptest.NewRequestWithContext(t.Context(), "GET", host, nil)
 					proxyCtx := &goproxy.ProxyCtx{Req: req}
 					_, resp := h.HandleRequest(req, proxyCtx)
 					if resp != nil && resp.Body != nil {
@@ -134,9 +134,9 @@ func TestHandlerMetrics(t *testing.T) {
 			},
 		},
 		"two requests to different subdomains for github.com": {
-			generateRequestMetrics: func(h *Handler) {
+			generateRequestMetrics: func(t *testing.T, h *Handler) {
 				for _, host := range []string{"https://foo.github.com/", "https://github.com/"} {
-					req := httptest.NewRequest("GET", host, nil)
+					req := httptest.NewRequestWithContext(t.Context(), "GET", host, nil)
 					proxyCtx := &goproxy.ProxyCtx{Req: req}
 					_, resp := h.HandleRequest(req, proxyCtx)
 					if resp != nil && resp.Body != nil {
@@ -162,9 +162,9 @@ func TestHandlerMetrics(t *testing.T) {
 			},
 		},
 		"two requests to different subdomains for pkg.github.com": {
-			generateRequestMetrics: func(h *Handler) {
+			generateRequestMetrics: func(t *testing.T, h *Handler) {
 				for _, host := range []string{"https://foo.pkg.github.com/", "https://bar.pkg.github.com/"} {
-					req := httptest.NewRequest("GET", host, nil)
+					req := httptest.NewRequestWithContext(t.Context(), "GET", host, nil)
 					proxyCtx := &goproxy.ProxyCtx{Req: req}
 					_, resp := h.HandleRequest(req, proxyCtx)
 					if resp != nil && resp.Body != nil {
@@ -199,7 +199,7 @@ func TestHandlerMetrics(t *testing.T) {
 			mockMetricsCollector.On("SendMetric", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("float64"), mock.AnythingOfType("map[string]string")).Return(nil).Times(tc.expMetricCount)
 
 			// Run the generateRequestMetrics function
-			tc.generateRequestMetrics(handler)
+			tc.generateRequestMetrics(t, handler)
 
 			mockMetricsCollector.AssertNumberOfCalls(t, "SendMetric", tc.expMetricCount)
 

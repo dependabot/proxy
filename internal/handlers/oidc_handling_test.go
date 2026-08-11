@@ -1668,7 +1668,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 
 			// check URLs are authenticated
 			for _, urlToAuth := range tc.urlsToAuthenticate {
-				req := httptest.NewRequest("GET", urlToAuth, nil)
+				req := httptest.NewRequestWithContext(t.Context(), "GET", urlToAuth, nil)
 				req = handleRequestAndClose(handler, req, nil)
 				switch tc.provider {
 				case "cloudsmith":
@@ -1732,12 +1732,12 @@ func TestPythonOIDCSimpleSuffixStripping(t *testing.T) {
 	handler := NewPythonIndexHandler(creds)
 
 	// /+simple/ should be stripped → registered as /org/feed-A/
-	reqA := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-A/pkg/a", nil)
+	reqA := httptest.NewRequestWithContext(t.Context(), "GET", "https://pkgs.example.com/org/feed-A/pkg/a", nil)
 	reqA = handleRequestAndClose(handler, reqA, nil)
 	assertHasTokenAuth(t, reqA, "Bearer", "__token_A__", "feed-A request should use token A")
 
 	// /simple should be stripped → registered as /org/feed-B/
-	reqB := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-B/pkg/b", nil)
+	reqB := httptest.NewRequestWithContext(t.Context(), "GET", "https://pkgs.example.com/org/feed-B/pkg/b", nil)
 	reqB = handleRequestAndClose(handler, reqB, nil)
 	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B request should use token B")
 }
@@ -1768,11 +1768,11 @@ func TestPythonOIDCAuthenticatesDiscoveredDownloadPrefix(t *testing.T) {
 	})
 
 	proxyCtx := &goproxy.ProxyCtx{}
-	indexReq := httptest.NewRequest(
+	indexReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
-		nil,
-	)
+		nil)
+
 	indexReq = handleRequestAndClose(handler, indexReq, proxyCtx)
 	assertHasTokenAuth(t, indexReq, "Bearer", "__oidc_token__", "simple index request should use OIDC token")
 
@@ -1791,11 +1791,11 @@ func TestPythonOIDCAuthenticatesDiscoveredDownloadPrefix(t *testing.T) {
 	}
 	handler.HandleResponse(indexResp, proxyCtx)
 
-	downloadReq := httptest.NewRequest(
+	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"HEAD",
 		"https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
-		nil,
-	)
+		nil)
+
 	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
 	assertHasTokenAuth(t, downloadReq, "Bearer", "__oidc_token__", "discovered download request should use OIDC token")
 }
@@ -1841,12 +1841,12 @@ func TestNPMOIDCSameHostDifferentPaths(t *testing.T) {
 	handler := NewNPMRegistryHandler(creds)
 
 	// Request to feed-A path should get token A
-	reqA := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-A/some-package", nil)
+	reqA := httptest.NewRequestWithContext(t.Context(), "GET", "https://pkgs.example.com/org/feed-A/some-package", nil)
 	reqA = handleRequestAndClose(handler, reqA, nil)
 	assertHasTokenAuth(t, reqA, "Bearer", "__token_A__", "feed-A should use token A")
 
 	// Request to feed-B path should get token B
-	reqB := httptest.NewRequest("GET", "https://pkgs.example.com/org/feed-B/some-package", nil)
+	reqB := httptest.NewRequestWithContext(t.Context(), "GET", "https://pkgs.example.com/org/feed-B/some-package", nil)
 	reqB = handleRequestAndClose(handler, reqB, nil)
 	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B should use token B")
 }
@@ -1894,12 +1894,12 @@ func TestTerraformOIDCSameHostDifferentPaths(t *testing.T) {
 	handler := NewTerraformRegistryHandler(creds)
 
 	// Request to feed-A path should get token A
-	reqA := httptest.NewRequest("GET", "https://terraform.example.com/org/feed-A/v1/providers/org/name", nil)
+	reqA := httptest.NewRequestWithContext(t.Context(), "GET", "https://terraform.example.com/org/feed-A/v1/providers/org/name", nil)
 	reqA = handleRequestAndClose(handler, reqA, nil)
 	assertHasTokenAuth(t, reqA, "Bearer", "__token_A__", "feed-A should use token A")
 
 	// Request to feed-B path should get token B
-	reqB := httptest.NewRequest("GET", "https://terraform.example.com/org/feed-B/v1/providers/org/name", nil)
+	reqB := httptest.NewRequestWithContext(t.Context(), "GET", "https://terraform.example.com/org/feed-B/v1/providers/org/name", nil)
 	reqB = handleRequestAndClose(handler, reqB, nil)
 	assertHasTokenAuth(t, reqB, "Bearer", "__token_B__", "feed-B should use token B")
 }
