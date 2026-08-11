@@ -1,18 +1,16 @@
 package gitproto
 
 import (
-	"bytes"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParsePktLine_Empty(t *testing.T) {
 	pkts, ok := parsePktLine(nil)
-	if !ok {
-		t.Error("expected ok=true for empty input")
-	}
-	if len(pkts) != 0 {
-		t.Fatalf("expected 0 packets, got %d", len(pkts))
-	}
+	assert.True(t, ok)
+	assert.Empty(t, pkts)
 }
 
 func TestParsePktLine_SpecialPackets(t *testing.T) {
@@ -23,8 +21,9 @@ func TestParsePktLine_SpecialPackets(t *testing.T) {
 	}
 	for input, want := range cases {
 		pkts, ok := parsePktLine([]byte(input))
-		if !ok || len(pkts) != 1 || pkts[0].typ != want {
-			t.Errorf("input %q: got %+v ok=%v, want type %d", input, pkts, ok, want)
+		assert.True(t, ok)
+		if assert.Len(t, pkts, 1) {
+			assert.Equal(t, want, pkts[0].typ)
 		}
 	}
 }
@@ -32,28 +31,30 @@ func TestParsePktLine_SpecialPackets(t *testing.T) {
 func TestParsePktLine_DataPacket(t *testing.T) {
 	// "000ahello\n" = length 0x000a (10), payload "hello\n"
 	pkts, ok := parsePktLine([]byte("000ahello\n"))
-	if !ok || len(pkts) != 1 || pkts[0].typ != pktData || string(pkts[0].payload) != "hello\n" {
-		t.Errorf("got %+v ok=%v", pkts, ok)
+	assert.True(t, ok)
+	if assert.Len(t, pkts, 1) {
+		assert.Equal(t, pktData, pkts[0].typ)
+		assert.Equal(t, "hello\n", string(pkts[0].payload))
 	}
 }
 
 func TestParsePktLine_MalformedAndTruncated(t *testing.T) {
 	// Bad hex prefix.
-	if _, ok := parsePktLine([]byte("gggghi")); ok {
-		t.Error("expected ok=false for malformed length prefix")
-	}
+	pkts, ok := parsePktLine([]byte("gggghi"))
+	assert.False(t, ok)
+	assert.Nil(t, pkts)
 	// Length claims 0x0020 but only 9 bytes available.
-	if _, ok := parsePktLine([]byte("0020short")); ok {
-		t.Error("expected ok=false for truncated packet")
-	}
+	pkts, ok = parsePktLine([]byte("0020short"))
+	assert.False(t, ok)
+	assert.Nil(t, pkts)
 	// Length 3 is reserved; we treat as malformed.
-	if _, ok := parsePktLine([]byte("00030000")); ok {
-		t.Error("expected ok=false for reserved length 3")
-	}
+	pkts, ok = parsePktLine([]byte("00030000"))
+	assert.False(t, ok)
+	assert.Nil(t, pkts)
 	// Less than 4 bytes.
-	if _, ok := parsePktLine([]byte("ab")); ok {
-		t.Error("expected ok=false for sub-prefix input")
-	}
+	pkts, ok = parsePktLine([]byte("ab"))
+	assert.False(t, ok)
+	assert.Nil(t, pkts)
 }
 
 func TestParsePktLine_RealV1Body(t *testing.T) {
@@ -64,17 +65,11 @@ func TestParsePktLine_RealV1Body(t *testing.T) {
 		"0032have 553c2077f0edc3d5dc5d17262f6aa498e69d6f8e\n" +
 		"0009done\n"
 	pkts, ok := parsePktLine([]byte(input))
-	if !ok {
-		t.Fatal("expected ok=true for well-formed v1 body")
-	}
+	require.True(t, ok)
 	wantTypes := []pktType{pktData, pktData, pktFlush, pktData, pktData}
-	if len(pkts) != len(wantTypes) {
-		t.Fatalf("got %d packets, want %d", len(pkts), len(wantTypes))
-	}
+	require.Len(t, pkts, len(wantTypes))
 	for i, want := range wantTypes {
-		if pkts[i].typ != want {
-			t.Errorf("packet %d: got type %d, want %d", i, pkts[i].typ, want)
-		}
+		assert.Equal(t, want, pkts[i].typ)
 	}
 }
 
@@ -87,21 +82,15 @@ func TestParsePktLine_RealV2Body(t *testing.T) {
 		"0009done\n" +
 		"0000"
 	pkts, ok := parsePktLine([]byte(input))
-	if !ok || len(pkts) != 7 {
-		t.Fatalf("got %d packets ok=%v, want 7 ok=true", len(pkts), ok)
-	}
-	if pkts[2].typ != pktDelim || pkts[6].typ != pktFlush {
-		t.Error("special packets misidentified")
-	}
+	require.True(t, ok)
+	require.Len(t, pkts, 7)
+	assert.Equal(t, pktDelim, pkts[2].typ)
+	assert.Equal(t, pktFlush, pkts[6].typ)
 }
 
 func TestEncodePktLine_RoundTrip(t *testing.T) {
 	input := []byte("000ahello\n" + "0000" + "0001" + "000aworld\n" + "0002")
 	pkts, ok := parsePktLine(input)
-	if !ok {
-		t.Fatal("parse failed on well-formed input")
-	}
-	if got := encodePktLine(pkts); !bytes.Equal(got, input) {
-		t.Errorf("round-trip mismatch:\n  in:  %q\n  out: %q", input, got)
-	}
+	require.True(t, ok)
+	assert.Equal(t, input, encodePktLine(pkts))
 }

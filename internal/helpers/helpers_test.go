@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // newRequest builds a GET request to the given raw URL for use in tests.
@@ -29,9 +31,7 @@ func TestSetBasicAuthorization(t *testing.T) {
 		SetBasicAuthorization(req, "user", "pass")
 
 		want := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:pass"))
-		if got := req.Header.Get("Authorization"); got != want {
-			t.Errorf("Authorization = %q, want %q", got, want)
-		}
+		assert.Equal(t, want, req.Header.Get("Authorization"))
 	})
 
 	t.Run("clears pre-existing Authorization header", func(t *testing.T) {
@@ -39,12 +39,8 @@ func TestSetBasicAuthorization(t *testing.T) {
 		SetBasicAuthorization(req, "user", "pass")
 
 		want := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:pass"))
-		if got := req.Header.Get("Authorization"); got != want {
-			t.Errorf("Authorization = %q, want %q", got, want)
-		}
-		if vals := req.Header["Authorization"]; len(vals) != 1 {
-			t.Errorf("expected exactly 1 Authorization value, got %d: %v", len(vals), vals)
-		}
+		assert.Equal(t, want, req.Header.Get("Authorization"))
+		assert.Len(t, req.Header["Authorization"], 1)
 	})
 
 	t.Run("encodes empty username correctly", func(t *testing.T) {
@@ -52,9 +48,7 @@ func TestSetBasicAuthorization(t *testing.T) {
 		SetBasicAuthorization(req, "", "token")
 
 		want := "Basic " + base64.StdEncoding.EncodeToString([]byte(":token"))
-		if got := req.Header.Get("Authorization"); got != want {
-			t.Errorf("Authorization = %q, want %q", got, want)
-		}
+		assert.Equal(t, want, req.Header.Get("Authorization"))
 	})
 }
 
@@ -63,21 +57,15 @@ func TestSetBearerAuthorization(t *testing.T) {
 		req := newRequest(t, "https://example.com")
 		SetBearerAuthorization(req, "my-token")
 
-		if got := req.Header.Get("Authorization"); got != "Bearer my-token" {
-			t.Errorf("Authorization = %q, want %q", got, "Bearer my-token")
-		}
+		assert.Equal(t, "Bearer my-token", req.Header.Get("Authorization"))
 	})
 
 	t.Run("clears pre-existing Authorization header", func(t *testing.T) {
 		req := newRequestWithAuth(t, "https://example.com", "Basic dXNlcjpwYXNz")
 		SetBearerAuthorization(req, "new-token")
 
-		if got := req.Header.Get("Authorization"); got != "Bearer new-token" {
-			t.Errorf("Authorization = %q, want %q", got, "Bearer new-token")
-		}
-		if vals := req.Header["Authorization"]; len(vals) != 1 {
-			t.Errorf("expected exactly 1 Authorization value, got %d: %v", len(vals), vals)
-		}
+		assert.Equal(t, "Bearer new-token", req.Header.Get("Authorization"))
+		assert.Len(t, req.Header["Authorization"], 1)
 	})
 }
 
@@ -86,21 +74,15 @@ func TestSetGitHubAPITokenAuthorization(t *testing.T) {
 		req := newRequest(t, "https://api.github.com")
 		SetGitHubAPITokenAuthorization(req, "ghp_abc123")
 
-		if got := req.Header.Get("Authorization"); got != "token ghp_abc123" {
-			t.Errorf("Authorization = %q, want %q", got, "token ghp_abc123")
-		}
+		assert.Equal(t, "token ghp_abc123", req.Header.Get("Authorization"))
 	})
 
 	t.Run("clears pre-existing Authorization header", func(t *testing.T) {
 		req := newRequestWithAuth(t, "https://api.github.com", "token old-token")
 		SetGitHubAPITokenAuthorization(req, "new-token")
 
-		if got := req.Header.Get("Authorization"); got != "token new-token" {
-			t.Errorf("Authorization = %q, want %q", got, "token new-token")
-		}
-		if vals := req.Header["Authorization"]; len(vals) != 1 {
-			t.Errorf("expected exactly 1 Authorization value, got %d: %v", len(vals), vals)
-		}
+		assert.Equal(t, "token new-token", req.Header.Get("Authorization"))
+		assert.Len(t, req.Header["Authorization"], 1)
 	})
 }
 
@@ -109,21 +91,15 @@ func TestSetRawAuthorization(t *testing.T) {
 		req := newRequest(t, "https://example.com")
 		SetRawAuthorization(req, "Bearer already-formatted")
 
-		if got := req.Header.Get("Authorization"); got != "Bearer already-formatted" {
-			t.Errorf("Authorization = %q, want %q", got, "Bearer already-formatted")
-		}
+		assert.Equal(t, "Bearer already-formatted", req.Header.Get("Authorization"))
 	})
 
 	t.Run("clears pre-existing Authorization header", func(t *testing.T) {
 		req := newRequestWithAuth(t, "https://example.com", "Bearer stale")
 		SetRawAuthorization(req, "token new-raw")
 
-		if got := req.Header.Get("Authorization"); got != "token new-raw" {
-			t.Errorf("Authorization = %q, want %q", got, "token new-raw")
-		}
-		if vals := req.Header["Authorization"]; len(vals) != 1 {
-			t.Errorf("expected exactly 1 Authorization value, got %d: %v", len(vals), vals)
-		}
+		assert.Equal(t, "token new-raw", req.Header.Get("Authorization"))
+		assert.Len(t, req.Header["Authorization"], 1)
 	})
 }
 
@@ -132,12 +108,8 @@ func TestReplaceAuthorization_CustomKey(t *testing.T) {
 		req := newRequest(t, "https://cloudsmith.example.com")
 		ReplaceAuthorization(req, "X-Api-Key", "my-api-key")
 
-		if got := req.Header.Get("X-Api-Key"); got != "my-api-key" {
-			t.Errorf("X-Api-Key = %q, want %q", got, "my-api-key")
-		}
-		if got := req.Header.Get("Authorization"); got != "" {
-			t.Errorf("Authorization should be empty, got %q", got)
-		}
+		assert.Equal(t, "my-api-key", req.Header.Get("X-Api-Key"))
+		assert.Empty(t, req.Header.Get("Authorization"))
 	})
 
 	t.Run("clears pre-existing Authorization header before setting custom key", func(t *testing.T) {
@@ -145,12 +117,8 @@ func TestReplaceAuthorization_CustomKey(t *testing.T) {
 		req.Header.Set("X-Api-Key", "old-key")
 		ReplaceAuthorization(req, "X-Api-Key", "new-key")
 
-		if got := req.Header.Get("X-Api-Key"); got != "new-key" {
-			t.Errorf("X-Api-Key = %q, want %q", got, "new-key")
-		}
-		if vals := req.Header["X-Api-Key"]; len(vals) != 1 {
-			t.Errorf("expected exactly 1 X-Api-Key value, got %d: %v", len(vals), vals)
-		}
+		assert.Equal(t, "new-key", req.Header.Get("X-Api-Key"))
+		assert.Len(t, req.Header["X-Api-Key"], 1)
 	})
 }
 
@@ -240,9 +208,7 @@ func TestUrlMatchesRequest(t *testing.T) {
 			req := &http.Request{URL: reqURL}
 
 			result := UrlMatchesRequest(req, tt.urlStr, tt.pathMatch)
-			if result != tt.expected {
-				t.Errorf("urlMatchesRequest() = %v, expected %v", result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }

@@ -204,9 +204,7 @@ func TestGitServerHandler404Retry(t *testing.T) {
 	handler := NewGitServerHandler(credentials, nil)
 	rsp := &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader(""))}
 	url, err := url.Parse("https://example.com")
-	if err != nil {
-		t.Errorf("parsing url: %v", err)
-	}
+	require.NoError(t, err)
 
 	roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
 		assert.Equal(t, "", r.Header.Get("Authorization"), "auth should be removed")
@@ -454,9 +452,10 @@ func TestGitServerHandler_NoCloneWithSingleCredPost(t *testing.T) {
 	require.NoError(t, err, "failed to create request")
 	proxyCtx := &goproxy.ProxyCtx{Req: req}
 	_ = handleRequestAndClose(handler, req, proxyCtx)
-	_, found := proxyctx.GetBuffer(proxyCtx, reqBodyCtxKey)
+	buffer, found := proxyctx.GetBuffer(proxyCtx, reqBodyCtxKey)
 
 	assert.False(t, found, "expect clone buffer not present")
+	assert.Nil(t, buffer)
 }
 
 func TestGitServerHandler_RepositoryScopedCredentials(t *testing.T) {
@@ -543,9 +542,7 @@ func TestGitServerHandler_RequestJITAccess(t *testing.T) {
 			handler := NewGitServerHandler(credentials, testClient)
 			rsp := &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader(""))}
 			url, err := url.Parse(test.url)
-			if err != nil {
-				t.Errorf("parsing url: %v", err)
-			}
+			require.NoError(t, err)
 
 			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
 				_, pass, ok := r.BasicAuth()

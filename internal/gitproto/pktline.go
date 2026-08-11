@@ -45,7 +45,7 @@ func parseHex4(b []byte) (n int, ok bool) {
 	return n, true
 }
 
-// parsePktLine returns ok=false on malformed or truncated input so callers
+// parsePktLine returns nil, false on malformed or truncated input so callers
 // can fall back to opaque hashing of the original bytes.
 func parsePktLine(data []byte) (packets []packet, ok bool) {
 	for len(data) > 0 {

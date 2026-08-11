@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
 )
@@ -38,13 +39,9 @@ func TestProxyHTTPRequest(t *testing.T) {
 	defer httpSrv.Close()
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
-	if err != nil {
-		t.Fatalf("initializing new request: %v", err)
-	}
+	require.NoError(t, err)
 	rsp, err := client.Do(req)
-	if err != nil {
-		t.Errorf("making proxied request: %v", err)
-	}
+	require.NoError(t, err)
 	defer rsp.Body.Close()
 	assert.Equal(t, 200, rsp.StatusCode)
 }
@@ -68,14 +65,9 @@ func TestIPRestrictions(t *testing.T) {
 	for _, url := range httpTestCases {
 		t.Run(url, func(t *testing.T) {
 			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
-			if err != nil {
-				t.Fatalf("initializing new request: %v", err)
-			}
+			require.NoError(t, err)
 			rsp, err := client.Do(req)
-			if err != nil {
-				t.Errorf("making proxied request: %v", err)
-				return
-			}
+			require.NoError(t, err)
 			defer rsp.Body.Close()
 
 			assert.Equal(t, 403, rsp.StatusCode)
@@ -95,9 +87,7 @@ func TestIPRestrictions(t *testing.T) {
 	for _, url := range httpsTestCases {
 		t.Run(url, func(t *testing.T) {
 			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
-			if err != nil {
-				t.Fatalf("initializing new request: %v", err)
-			}
+			require.NoError(t, err)
 			_, err = client.Do(req) //nolint:bodyclose // error expected, no body to close
 			assert.Error(t, err)
 		})
@@ -147,15 +137,11 @@ func TestMetadataAPIRestriction(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.url, func(t *testing.T) {
 			req, err := http.NewRequestWithContext(context.Background(), "GET", tc.url, nil)
-			if err != nil {
-				t.Errorf("initializing new request: %v", err)
-			}
+			require.NoError(t, err)
 			req.Host = tc.host
 
 			rsp, err := client.Do(req)
-			if err != nil {
-				t.Errorf("making proxied request: %v", err)
-			}
+			require.NoError(t, err)
 			defer rsp.Body.Close()
 
 			assert.Equal(t, 403, rsp.StatusCode)
@@ -180,26 +166,18 @@ func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*ht
 
 	lc := net.ListenConfig{}
 	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Errorf("net.Listen: %v", err)
-	}
+	require.NoError(t, err)
 	srv.Addr = ln.Addr().String()
 
 	go func() {
-		if err := srv.Serve(ln); err != http.ErrServerClosed {
-			t.Errorf("ListenAndServe: %v", err)
-		}
+		assert.ErrorIs(t, srv.Serve(ln), http.ErrServerClosed)
 	}()
 
 	// Build a client for the proxy
 	proxyURL, err := url.Parse("http://" + srv.Addr)
-	if err != nil {
-		t.Errorf("url.Parse: %v", err)
-	}
+	require.NoError(t, err)
 	rootCAs := x509.NewCertPool()
-	if ok := rootCAs.AppendCertsFromPEM([]byte(testProxyConfig.CA.Cert)); !ok {
-		t.Fatal("AppendCertsFromPEM not ok")
-	}
+	require.True(t, rootCAs.AppendCertsFromPEM([]byte(testProxyConfig.CA.Cert)))
 	client := &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyURL(proxyURL),
@@ -224,15 +202,11 @@ func testHTTPServer(t *testing.T) (string, *http.Server) {
 
 	lc := net.ListenConfig{}
 	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Errorf("net.Listen: %v", err)
-	}
+	require.NoError(t, err)
 	srv.Addr = ln.Addr().String()
 
 	go func() {
-		if err := srv.Serve(ln); err != http.ErrServerClosed {
-			t.Errorf("ListenAndServe: %v", err)
-		}
+		assert.ErrorIs(t, srv.Serve(ln), http.ErrServerClosed)
 	}()
 
 	return "http://" + srv.Addr, srv

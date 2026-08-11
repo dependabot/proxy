@@ -13,6 +13,7 @@ import (
 
 	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
 )
@@ -31,15 +32,10 @@ func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {
 		"tenant-id": "test-tenant-id",
 		"client-id": "test-client-id",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error creating OIDC credential: %v", err)
-	}
+	require.NoError(t, err)
 
 	// ensure of type azure
-	_, ok := creds.parameters.(*AzureOIDCParameters)
-	if !ok {
-		t.Fatalf("expected AzureOIDCParameters, but got %T", creds.parameters)
-	}
+	require.IsType(t, &AzureOIDCParameters{}, creds.parameters)
 
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
@@ -49,9 +45,7 @@ func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {
 		Count: 1,
 		Value: "abc",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error creating JSON responder: %v", err)
-	}
+	require.NoError(t, err)
 	httpmock.RegisterResponder("GET", "https://example.com/token", jsonResponder)
 
 	// mock Azure OIDC token request
@@ -77,16 +71,12 @@ func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {
 	// request the token - should succeed
 	ctx := context.Background()
 	token, err := GetOrRefreshOIDCToken(creds, ctx)
-	if err != nil {
-		t.Fatalf("unexpected error getting OIDC token on first try")
-	}
+	require.NoError(t, err)
 	assert.Equal(t, "__test_token__", token, "expected token to match mocked value")
 
 	// request the token again - should succeed
 	token, err = GetOrRefreshOIDCToken(creds, ctx)
-	if err != nil {
-		t.Fatalf("unexpected error getting OIDC token on second try")
-	}
+	require.NoError(t, err)
 	assert.Equal(t, "__test_token__", token, "expected token to match mocked value")
 
 	// ensure only one request was actually made
@@ -107,15 +97,10 @@ func TestFailedAuthenticationIsNotRetried(t *testing.T) {
 		"tenant-id": "test-tenant-id",
 		"client-id": "test-client-id",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error creating OIDC credential: %v", err)
-	}
+	require.NoError(t, err)
 
 	// ensure of type azure
-	_, ok := creds.parameters.(*AzureOIDCParameters)
-	if !ok {
-		t.Fatalf("expected AzureOIDCParameters, but got %T", creds.parameters)
-	}
+	require.IsType(t, &AzureOIDCParameters{}, creds.parameters)
 
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
@@ -125,9 +110,7 @@ func TestFailedAuthenticationIsNotRetried(t *testing.T) {
 		Count: 1,
 		Value: "abc",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error creating JSON responder: %v", err)
-	}
+	require.NoError(t, err)
 	httpmock.RegisterResponder("GET", "https://example.com/token", jsonResponder)
 
 	// mock Azure OIDC token request
@@ -147,16 +130,12 @@ func TestFailedAuthenticationIsNotRetried(t *testing.T) {
 
 	// request the token - should fail
 	ctx := context.Background()
-	token, err := GetOrRefreshOIDCToken(creds, ctx)
-	if err == nil {
-		t.Fatalf("expected error getting OIDC token on first try, but got token: %s", token)
-	}
+	_, err = GetOrRefreshOIDCToken(creds, ctx)
+	assert.Error(t, err)
 
 	// request the token again - should fail
-	token, err = GetOrRefreshOIDCToken(creds, ctx)
-	if err == nil {
-		t.Fatalf("expected error getting OIDC token on second try, but got token: %s", token)
-	}
+	_, err = GetOrRefreshOIDCToken(creds, ctx)
+	assert.Error(t, err)
 
 	// ensure only one request was actually made
 	assert.Equal(t, 1, requestsReceived, "expected only one token request due to failed authentication being cached")
@@ -369,18 +348,11 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 
 			actual, _ := CreateOIDCCredential(tc.cred)
 			if tc.expectedParameters == nil {
-				if actual != nil {
-					t.Fatalf("expected no credential, but got %+v", actual)
-				}
-
-				// otherwise good
+				assert.Nil(t, actual)
 				return
 			}
 
-			if actual == nil {
-				t.Fatalf("expected credential, but got nil")
-				return
-			}
+			require.NotNil(t, actual)
 
 			// check type
 			assert.Equal(t, tc.expectedParameters.Name(), actual.Provider())

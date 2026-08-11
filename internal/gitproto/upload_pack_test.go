@@ -1,11 +1,11 @@
 package gitproto
 
 import (
-	"bytes"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func normalize(body string) string {
@@ -39,9 +39,7 @@ func TestIsUploadPackRequest(t *testing.T) {
 			if tc.contentType != "" {
 				req.Header.Set("Content-Type", tc.contentType)
 			}
-			if got := IsUploadPackRequest(req); got != tc.want {
-				t.Errorf("got %v, want %v", got, tc.want)
-			}
+			assert.Equal(t, tc.want, IsUploadPackRequest(req))
 		})
 	}
 }
@@ -63,25 +61,19 @@ func TestNormalizeUploadPackBody(t *testing.T) {
 		body2 := "00a3want " + oidA + " multi_ack_detailed no-done side-band-64k thin-pack no-progress ofs-delta deepen-since deepen-not agent=git/2.9.5\n" +
 			"0032want " + oidB + "\n0000" +
 			"0032have " + oidH1 + "\n0009done\n"
-		if normalize(body1) != normalize(body2) {
-			t.Errorf("normalized bodies differ:\n  %q\n  %q", normalize(body1), normalize(body2))
-		}
+		assert.Equal(t, normalize(body1), normalize(body2))
 	})
 
 	t.Run("different haves do not collide", func(t *testing.T) {
 		body1 := "0032want " + oidA + "\n0000" + "0032have " + oidH1 + "\n0009done\n"
 		body2 := "0032want " + oidA + "\n0000" + "0032have " + oidH2 + "\n0009done\n"
-		if normalize(body1) == normalize(body2) {
-			t.Error("haves drive the upstream pack and must not collapse")
-		}
+		assert.NotEqual(t, normalize(body1), normalize(body2))
 	})
 
 	t.Run("different wants do not collide", func(t *testing.T) {
 		body1 := "0032want " + oidA + "\n0009done\n"
 		body2 := "0032want " + oidC + "\n0009done\n"
-		if normalize(body1) == normalize(body2) {
-			t.Error("different wants must not collide")
-		}
+		assert.NotEqual(t, normalize(body1), normalize(body2))
 	})
 
 	t.Run("response-shaping fields stay distinct", func(t *testing.T) {
@@ -97,9 +89,7 @@ func TestNormalizeUploadPackBody(t *testing.T) {
 		seen := make(map[string]string)
 		for name, body := range bodies {
 			n := normalize(body)
-			if other, ok := seen[n]; ok {
-				t.Errorf("collision: %q == %q", name, other)
-			}
+			assert.NotContains(t, seen, n)
 			seen[n] = name
 		}
 	})
@@ -107,42 +97,31 @@ func TestNormalizeUploadPackBody(t *testing.T) {
 	t.Run("v2 ls-refs ref-prefix is preserved", func(t *testing.T) {
 		body1 := "0014command=ls-refs\n0015agent=git/2.43.0\n001bref-prefix refs/heads/\n0000"
 		body2 := "0014command=ls-refs\n0015agent=git/2.43.0\n001aref-prefix refs/tags/\n0000"
-		if normalize(body1) == normalize(body2) {
-			t.Error("different ref-prefix must not collide")
-		}
+		assert.NotEqual(t, normalize(body1), normalize(body2))
 	})
 
 	t.Run("v2 fetch agent drift collapses", func(t *testing.T) {
 		body1 := "0012command=fetch\n001bagent=git/2.43.0-Linux\n0001000ddeepen 1\n0032want " + oidA + "\n0009done\n0000"
 		body2 := "0012command=fetch\n001bagent=git/2.53.0-Linux\n0001000ddeepen 1\n0032want " + oidA + "\n0009done\n0000"
-		if normalize(body1) != normalize(body2) {
-			t.Error("v2 agent drift must not affect normalization")
-		}
+		assert.Equal(t, normalize(body1), normalize(body2))
 	})
 
 	t.Run("v1 inline agent stripped, other capabilities kept", func(t *testing.T) {
 		body1 := "0080want " + oidA + " multi_ack_detailed no-done side-band-64k thin-pack ofs-delta agent=git/2.43.0\n0009done\n"
 		body2 := "0080want " + oidA + " multi_ack_detailed no-done side-band-64k thin-pack ofs-delta agent=git/2.53.0\n0009done\n"
 		got := normalize(body1)
-		if got != normalize(body2) {
-			t.Errorf("agent-only difference must collapse:\n  %q\n  %q", got, normalize(body2))
-		}
-		if !strings.Contains(got, "thin-pack") || strings.Contains(got, "agent=") {
-			t.Errorf("got %q", got)
-		}
+		assert.Equal(t, normalize(body2), got)
+		assert.Contains(t, got, "thin-pack")
+		assert.NotContains(t, got, "agent=")
 	})
 
 	t.Run("malformed body returned unchanged", func(t *testing.T) {
 		body := []byte("this is not pkt-line data")
-		if got := NormalizeUploadPackBody(body); !bytes.Equal(got, body) {
-			t.Errorf("got %q", got)
-		}
+		assert.Equal(t, body, NormalizeUploadPackBody(body))
 	})
 
 	t.Run("empty body produces empty output", func(t *testing.T) {
-		if got := NormalizeUploadPackBody(nil); len(got) != 0 {
-			t.Errorf("got %q", got)
-		}
+		assert.Empty(t, NormalizeUploadPackBody(nil))
 	})
 
 	// session-id is a per-invocation UUID added in Git 2.36 (April 2022).
@@ -150,28 +129,25 @@ func TestNormalizeUploadPackBody(t *testing.T) {
 		body1 := "0012command=fetch\n0015agent=git/2.43.0\n0016session-id=abcdef\n00010032want " + oidA + "\n0009done\n0000"
 		body2 := "0012command=fetch\n0015agent=git/2.43.0\n0016session-id=fedcba\n00010032want " + oidA + "\n0009done\n0000"
 		got := normalize(body1)
-		if got != normalize(body2) || strings.Contains(got, "session-id=") {
-			t.Errorf("got %q", got)
-		}
+		assert.Equal(t, normalize(body2), got)
+		assert.NotContains(t, got, "session-id=")
 	})
 
 	t.Run("v1 inline session-id stripped alongside agent", func(t *testing.T) {
 		body1 := "009awant " + oidA + " multi_ack_detailed no-done side-band-64k thin-pack ofs-delta agent=git/2.43.0 session-id=aaa-1\n0009done\n"
 		body2 := "009awant " + oidA + " multi_ack_detailed no-done side-band-64k thin-pack ofs-delta agent=git/2.53.0 session-id=zzz-2\n0009done\n"
 		got := normalize(body1)
-		if got != normalize(body2) ||
-			strings.Contains(got, "session-id=") || strings.Contains(got, "agent=") ||
-			!strings.Contains(got, "thin-pack") {
-			t.Errorf("got %q", got)
-		}
+		assert.Equal(t, normalize(body2), got)
+		assert.NotContains(t, got, "session-id=")
+		assert.NotContains(t, got, "agent=")
+		assert.Contains(t, got, "thin-pack")
 	})
 
 	// Prefix matching is exact: substrings of stripped tokens must survive.
 	t.Run("'haven' and 'session-ids' prefixes are not stripped", func(t *testing.T) {
 		body := "000ehaven foo\n0014session-ids=keep\n0009done\n"
 		got := normalize(body)
-		if !strings.Contains(got, "haven foo") || !strings.Contains(got, "session-ids=keep") {
-			t.Errorf("got %q", got)
-		}
+		assert.Contains(t, got, "haven foo")
+		assert.Contains(t, got, "session-ids=keep")
 	})
 }
