@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -54,59 +55,59 @@ func TestPythonIndexHandler(t *testing.T) {
 	}
 	handler := NewPythonIndexHandler(credentials)
 
-	req := newTestRequest(t, "GET", "https://corp.dependabot.com/pyreg", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://corp.dependabot.com/pyreg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, dependabotToken, "", "dependabot registry request")
 
-	req = newTestRequest(t, "GET", "https://corp.deltaforce.com/somepkg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://corp.deltaforce.com/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "deltaforce registry request")
 
-	req = newTestRequest(t, "GET", "https://example.com/somepkg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://example.com/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "deltaforce registry request")
 
 	// Path mismatch
-	req = newTestRequest(t, "GET", "https://corp.dependabot.com/foo", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://corp.dependabot.com/foo", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "dependabot registry request")
 
-	req = newTestRequest(t, "GET", "https://pypy.com/other/pgk/a", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://pypy.com/other/pgk/a", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "other registry request")
 
 	// Path mismatch on /+simple
-	req = newTestRequest(t, "GET", "https://pypy.com/dependabot/pgk/a", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://pypy.com/dependabot/pgk/a", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, "dependabot", "sec123", "dependabot pypy registry request")
 
 	// Path mismatch on /simple
-	req = newTestRequest(t, "GET", "https://pypy.com/simple/pgk/a", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://pypy.com/simple/pgk/a", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, "simple", "sec245", "simple pypy registry request")
 
 	// Missing repo subdomain
-	req = newTestRequest(t, "GET", "https://dependabot.com/pyreg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://dependabot.com/pyreg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 
 	// HTTP, not HTTPS
-	req = newTestRequest(t, "GET", "http://corp.dependabot.com/pyreg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "http://corp.dependabot.com/pyreg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "http, not https")
 
 	// Not a GET request
-	req = newTestRequest(t, "POST", "https://corp.dependabot.com/pyreg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "POST", "https://corp.dependabot.com/pyreg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "post request")
 
 	// Azure DevOps
-	req = newTestRequest(t, "GET", "https://pkgs.dev.azure.com/somepkg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://pkgs.dev.azure.com/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "azure devops registry request")
 
 	// Azure DevOps case insensitive
-	req = newTestRequest(t, "GET", "https://PKGS.dev.azure.com/somepkg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://PKGS.dev.azure.com/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "azure devops case insensitive registry request")
 }
@@ -121,7 +122,7 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromHTML(t *test
 	})
 
 	proxyCtx := &goproxy.ProxyCtx{}
-	indexReq := newTestRequest(t,
+	indexReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
 		nil)
@@ -147,7 +148,7 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromHTML(t *test
 	}
 	handler.HandleResponse(indexResp, proxyCtx)
 
-	downloadReq := newTestRequest(t,
+	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"HEAD",
 		"https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
 		nil)
@@ -155,7 +156,7 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromHTML(t *test
 	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
 	assertHasBasicAuth(t, downloadReq, "user", "pass", "discovered download request")
 
-	samePrefixReq := newTestRequest(t,
+	samePrefixReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/another-package/2.0.0/another-package-2.0.0.whl",
 		nil)
@@ -163,7 +164,7 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromHTML(t *test
 	samePrefixReq = handleRequestAndClose(handler, samePrefixReq, &goproxy.ProxyCtx{})
 	assertHasBasicAuth(t, samePrefixReq, "user", "pass", "same discovered download prefix request")
 
-	otherOrgReq := newTestRequest(t,
+	otherOrgReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com/other-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
 		nil)
@@ -182,7 +183,7 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromJSON(t *test
 	})
 
 	proxyCtx := &goproxy.ProxyCtx{}
-	indexReq := newTestRequest(t,
+	indexReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
 		nil)
@@ -205,7 +206,7 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromJSON(t *test
 	}
 	handler.HandleResponse(indexResp, proxyCtx)
 
-	downloadReq := newTestRequest(t,
+	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
 		nil)
@@ -261,7 +262,7 @@ func TestPythonIndexHandlerSkipsDiscoveryForAuthenticatedNonSimpleResponse(t *te
 	})
 
 	proxyCtx := &goproxy.ProxyCtx{}
-	nonSimpleReq := newTestRequest(t, "GET", "https://pkgs.example.com/org/project/status", nil)
+	nonSimpleReq := httptest.NewRequestWithContext(t.Context(), "GET", "https://pkgs.example.com/org/project/status", nil)
 	nonSimpleReq = handleRequestAndClose(handler, nonSimpleReq, proxyCtx)
 	assertHasBasicAuth(t, nonSimpleReq, "user", "pass", "path-scoped python index request")
 
@@ -278,7 +279,7 @@ func TestPythonIndexHandlerSkipsDiscoveryForAuthenticatedNonSimpleResponse(t *te
 	}
 	handler.HandleResponse(indexResp, proxyCtx)
 
-	downloadReq := newTestRequest(t,
+	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com/org/other-project/_packaging/feed/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
 		nil)
@@ -297,7 +298,7 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixPort(t *testing.T) {
 	})
 
 	proxyCtx := &goproxy.ProxyCtx{}
-	indexReq := newTestRequest(t,
+	indexReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com:8443/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
 		nil)
@@ -318,7 +319,7 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixPort(t *testing.T) {
 	}
 	handler.HandleResponse(indexResp, proxyCtx)
 
-	downloadReq := newTestRequest(t,
+	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com:8443/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
 		nil)
@@ -326,7 +327,7 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixPort(t *testing.T) {
 	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
 	assertHasBasicAuth(t, downloadReq, "user", "pass", "discovered download request on custom port")
 
-	defaultPortReq := newTestRequest(t,
+	defaultPortReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
 		nil)
@@ -345,7 +346,7 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixIPv6Host(t *testing.
 	})
 
 	proxyCtx := &goproxy.ProxyCtx{}
-	indexReq := newTestRequest(t,
+	indexReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://[2001:db8::1]/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
 		nil)
@@ -366,7 +367,7 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixIPv6Host(t *testing.
 	}
 	handler.HandleResponse(indexResp, proxyCtx)
 
-	downloadReq := newTestRequest(t,
+	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://[2001:db8::1]/my-org/project-id/_packaging/feed-id/pypi/download/my-package/1.0.0/my-package-1.0.0.whl",
 		nil)
@@ -400,7 +401,7 @@ func TestPythonIndexDownloadAuthStoreEvictsOldestEntryAtLimit(t *testing.T) {
 		t.Fatalf("expected %d stored prefixes, got %d", maxPythonIndexDownloadAuthEntries, entryCount)
 	}
 
-	evictedReq := newTestRequest(t,
+	evictedReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com/org/project/_packaging/feed-0/pypi/download/pkg/1.0/pkg.whl",
 		nil)
@@ -409,7 +410,7 @@ func TestPythonIndexDownloadAuthStoreEvictsOldestEntryAtLimit(t *testing.T) {
 		t.Fatal("oldest discovered download prefix should be evicted")
 	}
 
-	retainedReq := newTestRequest(t,
+	retainedReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		fmt.Sprintf(
 			"https://pkgs.example.com/org/project/_packaging/feed-%d/pypi/download/pkg/1.0/pkg.whl",
@@ -432,7 +433,7 @@ func TestPythonIndexHandlerSkipsDiscoveryForLargeSimpleResponse(t *testing.T) {
 	})
 
 	proxyCtx := &goproxy.ProxyCtx{}
-	indexReq := newTestRequest(t,
+	indexReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/",
 		nil)
@@ -459,7 +460,7 @@ func TestPythonIndexHandlerSkipsDiscoveryForLargeSimpleResponse(t *testing.T) {
 		t.Fatal("large Simple API response body was not replayed unchanged")
 	}
 
-	downloadReq := newTestRequest(t, "GET", downloadURL, nil)
+	downloadReq := httptest.NewRequestWithContext(t.Context(), "GET", downloadURL, nil)
 	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
 	assertUnauthenticated(t, downloadReq, "large Simple API response should not be used for discovery")
 }

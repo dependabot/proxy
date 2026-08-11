@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,27 +20,27 @@ func TestAzureDevOpsAPIHandler(t *testing.T) {
 	handler := NewAzureDevOpsAPIHandler(credentials)
 
 	// Valid ADO hostname API request
-	req := newTestRequest(t, "GET", "https://dpdbot.dev.azure.com/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://dpdbot.dev.azure.com/", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, adoDependabotCred.GetString("username"), adoDependabotCred.GetString("password"), "valid api request")
 
 	// Valid VS hostname API request
-	req = newTestRequest(t, "GET", "https://dpdbot.visualstudio.com/", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://dpdbot.visualstudio.com/", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, adoVsDependabotCred.GetString("username"), adoVsDependabotCred.GetString("password"), "valid api request")
 
 	// Valid API request with port
-	req = newTestRequest(t, "GET", "https://dpdbot.dev.azure.com:443/", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://dpdbot.dev.azure.com:443/", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, adoDependabotCred.GetString("username"), adoDependabotCred.GetString("password"), "valid api request with port")
 
 	// Different subdomain - not the AzureDevOps Dependabot API
-	req = newTestRequest(t, "GET", "https://dev.azure.com/", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://dev.azure.com/", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 
 	// HTTP, not HTTPS
-	req = newTestRequest(t, "GET", "http://dpdbot.dev.azure.com/", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "http://dpdbot.dev.azure.com/", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "http, not https")
 }
@@ -52,12 +53,12 @@ func TestAzureDevOpsAPIHandler_WorksAgainstDevFabric(t *testing.T) {
 	handler := NewAzureDevOpsAPIHandler(credentials)
 
 	// Valid DevFabric hostname API request
-	req := newTestRequest(t, "GET", "https://dpdbot.codedev.ms/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://dpdbot.codedev.ms/", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, adoDevFabricDependabotCred.GetString("username"), adoDevFabricDependabotCred.GetString("password"), "valid codedev.ms api request")
 
 	// Valid VS DevFabric hostname API request
-	req = newTestRequest(t, "GET", "https://dpdbot.vsts.me/", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://dpdbot.vsts.me/", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, adoVsDevFabricDependabotCred.GetString("username"), adoVsDevFabricDependabotCred.GetString("password"), "valid vsts.me api request")
 }
@@ -68,7 +69,7 @@ func TestAzureDevOpsAPIHandler_DoesNotHandleUnknownHostname(t *testing.T) {
 	credentials := config.Credentials{notAdoCreds}
 	handler := NewAzureDevOpsAPIHandler(credentials)
 
-	req := newTestRequest(t, "GET", "https://not.azuredevops.ms/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://not.azuredevops.ms/", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "does not put credentials in unknown host")
 }
@@ -81,17 +82,17 @@ func TestAzureDevOpsAPIHandler_AddsApiVersionIfMissing(t *testing.T) {
 	handler := NewAzureDevOpsAPIHandler(credentials)
 
 	// Valid API request, adds a default api-version
-	req := newTestRequest(t, "GET", "https://dpdbot.dev.azure.com/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://dpdbot.dev.azure.com/", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasQueryParam(t, req, "api-version", "7.2-preview", "adds a default api-version query param")
 
 	// Valid API request, does not override existing query param
-	req = newTestRequest(t, "GET", "https://dpdbot.dev.azure.com/?api-version=7.0", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://dpdbot.dev.azure.com/?api-version=7.0", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasQueryParam(t, req, "api-version", "7.0", "adds a default api-version query param")
 
 	// Valid API request, maintains existing query params when adding api-version
-	req = newTestRequest(t, "GET", "https://dpdbot.dev.azure.com/?param1=test", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://dpdbot.dev.azure.com/?param1=test", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasQueryParam(t, req, "api-version", "7.2-preview", "adds a default api-version query param")
 	assertHasQueryParam(t, req, "param1", "test", "maintains existing query params")

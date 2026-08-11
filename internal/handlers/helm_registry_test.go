@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net/http/httptest"
 	"testing"
 
 	"github.com/dependabot/proxy/internal/config"
@@ -32,30 +33,30 @@ func TestHelmRegistryHandler(t *testing.T) {
 	}
 	handler := NewHelmRegistryHandler(credentials)
 
-	req := newTestRequest(t, "GET", "https://helmreg.bigco.com/some_chart", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://helmreg.bigco.com/some_chart", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, bigCoUser, bigCoPassword, "valid registry request")
 
-	req = newTestRequest(t, "GET", "https://example.com/some_chart", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://example.com/some_chart", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, bigCoUser, bigCoPassword, "valid registry request")
 
-	req = newTestRequest(t, "GET", "https://helmreg.smallco.com/some_chart", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://helmreg.smallco.com/some_chart", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, smallCoToken, "", "valid registry request")
 
 	// Missing repo subdomain
-	req = newTestRequest(t, "GET", "https://bigco.com/some_chart", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://bigco.com/some_chart", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 
 	// HTTP, not HTTPS
-	req = newTestRequest(t, "GET", "http://helmreg.bigco.com/some_chart", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "http://helmreg.bigco.com/some_chart", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "http, not https")
 
 	// Not a GET request
-	req = newTestRequest(t, "POST", "https://helmreg.bigco.com/some_chart", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "POST", "https://helmreg.bigco.com/some_chart", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "post request")
 }

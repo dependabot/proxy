@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/dependabot/proxy/internal/config"
@@ -42,48 +43,48 @@ func TestNPMRegistryHandler(t *testing.T) {
 	}
 	handler := NewNPMRegistryHandler(credentials)
 
-	req := newTestRequest(t, "GET", "https://registry.npmjs.org/private-package", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.npmjs.org/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", npmjsOrgToken, "valid registry request")
 
-	req = newTestRequest(t, "GET", "https://registry.yarnpkg.com/private-package", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.yarnpkg.com/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", npmjsOrgToken, "yarn registry request, given npmjs.org creds")
 
-	req = newTestRequest(t, "GET", "https://example.com/reg-path/private-package", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://example.com/reg-path/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", privateRegToken, "valid registry request with port and path")
 
-	req = newTestRequest(t, "GET", "https://example.org/reg-path/private-package", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://example.org/reg-path/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", privateRegToken, "valid registry request with port and path")
 
 	// Sibling path on the same host should NOT receive credentials from /reg-path
-	req = newTestRequest(t, "GET", "https://example.com/other-path/private-package", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://example.com/other-path/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "sibling path should not match")
 
-	req = newTestRequest(t, "GET", "https://nexus.some-company.com/private-package", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://nexus.some-company.com/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, nexusUser, nexusPassword, "http basic auth")
 
 	// Different subdomain
-	req = newTestRequest(t, "GET", "https://foo.example.com/reg-path/private-package", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://foo.example.com/reg-path/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "different subdomain")
 
 	// HTTP, not HTTPS
-	req = newTestRequest(t, "GET", "http://example.com/reg-path/private-package", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "http://example.com/reg-path/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "http, not https")
 
 	// Azure DevOps
-	req = newTestRequest(t, "GET", "https://pkgs.dev.azure.com/private-package", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://pkgs.dev.azure.com/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, nexusUser, nexusPassword, "azure devops registry request")
 
 	// Azure DevOps case insensitive
-	req = newTestRequest(t, "GET", "https://PKGS.dev.azure.com/private-package", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://PKGS.dev.azure.com/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, nexusUser, nexusPassword, "azure devops case insensitive registry request")
 }
@@ -106,17 +107,17 @@ func TestNPMRegistryHandler_SameHostDifferentPaths(t *testing.T) {
 	handler := NewNPMRegistryHandler(credentials)
 
 	// Request to team-a path should use team-a token
-	req := newTestRequest(t, "GET", "https://artifactory.example.com/api/npm/team-a-npm/@scope/pkg", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://artifactory.example.com/api/npm/team-a-npm/@scope/pkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", teamAToken, "team-a path should use team-a token")
 
 	// Request to team-b path should use team-b token, not team-a
-	req = newTestRequest(t, "GET", "https://artifactory.example.com/api/npm/team-b-npm/@scope/pkg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://artifactory.example.com/api/npm/team-b-npm/@scope/pkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasTokenAuth(t, req, "Bearer", teamBToken, "team-b path should use team-b token")
 
 	// Request to unrelated path should not be authenticated
-	req = newTestRequest(t, "GET", "https://artifactory.example.com/api/npm/team-c-npm/@scope/pkg", nil)
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://artifactory.example.com/api/npm/team-c-npm/@scope/pkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "unrelated path should not match any credential")
 }

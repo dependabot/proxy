@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -59,7 +60,7 @@ func TestTerraformRegistryHandler(t *testing.T) {
 		t.Run(strings.Join([]string{tt.registryType, tt.host, tt.token}, " "), func(t *testing.T) {
 			handler := NewTerraformRegistryHandler(tt.credentials)
 
-			request := handleRequestAndClose(handler, newTestRequest(t, "GET", tt.url, nil), nil)
+			request := handleRequestAndClose(handler, httptest.NewRequestWithContext(t.Context(), "GET", tt.url, nil), nil)
 
 			assert.Equal(t, tt.authorization, request.Header.Get("Authorization"))
 		})
@@ -69,7 +70,7 @@ func TestTerraformRegistryHandler(t *testing.T) {
 		handler := NewTerraformRegistryHandler(config.Credentials{})
 
 		url := "https://registry.terraform.io/v1/providers/org/name/versions"
-		request := handleRequestAndClose(handler, newTestRequest(t, "GET", url, nil), nil)
+		request := handleRequestAndClose(handler, httptest.NewRequestWithContext(t.Context(), "GET", url, nil), nil)
 
 		assert.Equal(t, "", request.Header.Get("Authorization"), "should be empty")
 	})
@@ -82,15 +83,15 @@ func TestTerraformRegistryHandler(t *testing.T) {
 		handler := NewTerraformRegistryHandler(credentials)
 
 		// Request to org1 path should use org1 token
-		req1 := handleRequestAndClose(handler, newTestRequest(t, "GET", "https://terraform.example.com/org1/v1/providers/foo", nil), nil)
+		req1 := handleRequestAndClose(handler, httptest.NewRequestWithContext(t.Context(), "GET", "https://terraform.example.com/org1/v1/providers/foo", nil), nil)
 		assert.Equal(t, "Bearer token-org1", req1.Header.Get("Authorization"), "should use org1 token")
 
 		// Request to org2 path should use org2 token
-		req2 := handleRequestAndClose(handler, newTestRequest(t, "GET", "https://terraform.example.com/org2/v1/providers/bar", nil), nil)
+		req2 := handleRequestAndClose(handler, httptest.NewRequestWithContext(t.Context(), "GET", "https://terraform.example.com/org2/v1/providers/bar", nil), nil)
 		assert.Equal(t, "Bearer token-org2", req2.Header.Get("Authorization"), "should use org2 token")
 
 		// Request to unmatched path should not be authenticated
-		req3 := handleRequestAndClose(handler, newTestRequest(t, "GET", "https://terraform.example.com/org3/v1/providers/baz", nil), nil)
+		req3 := handleRequestAndClose(handler, httptest.NewRequestWithContext(t.Context(), "GET", "https://terraform.example.com/org3/v1/providers/baz", nil), nil)
 		assert.Equal(t, "", req3.Header.Get("Authorization"), "should not be authenticated")
 	})
 
@@ -121,14 +122,14 @@ func TestTerraformRegistryHandler(t *testing.T) {
 		assert.Equal(t, "https://terraform.example.com/org1", handler.credentials[0].url, "longer path should be first")
 		assert.Equal(t, "https://terraform.example.com/org", handler.credentials[1].url, "shorter path should be second")
 
-		req1 := handleRequestAndClose(handler, newTestRequest(t, "GET", "https://terraform.example.com/org1/v1/providers/foo", nil), nil)
+		req1 := handleRequestAndClose(handler, httptest.NewRequestWithContext(t.Context(), "GET", "https://terraform.example.com/org1/v1/providers/foo", nil), nil)
 		assert.Equal(t, "Bearer token-org1", req1.Header.Get("Authorization"), "/org1 path should use org1 token")
 
-		req2 := handleRequestAndClose(handler, newTestRequest(t, "GET", "https://terraform.example.com/org/v1/providers/bar", nil), nil)
+		req2 := handleRequestAndClose(handler, httptest.NewRequestWithContext(t.Context(), "GET", "https://terraform.example.com/org/v1/providers/bar", nil), nil)
 		assert.Equal(t, "Bearer token-org", req2.Header.Get("Authorization"), "/org path should use org token")
 
 		// Request to /org123 should NOT match /org1 or /org (path boundary check)
-		req3 := handleRequestAndClose(handler, newTestRequest(t, "GET", "https://terraform.example.com/org123/v1/providers/baz", nil), nil)
+		req3 := handleRequestAndClose(handler, httptest.NewRequestWithContext(t.Context(), "GET", "https://terraform.example.com/org123/v1/providers/baz", nil), nil)
 		assert.Equal(t, "", req3.Header.Get("Authorization"), "/org123 should not match /org or /org1")
 	})
 }
