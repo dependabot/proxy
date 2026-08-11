@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/elazarl/goproxy"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
 )
@@ -217,9 +219,7 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromJSON(t *test
 
 func TestPythonDownloadPrefixFromSimpleLinkRejectsUnscopedLinks(t *testing.T) {
 	baseURL, err := url.Parse("https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/my-package/")
-	if err != nil {
-		t.Fatalf("failed to parse base URL: %v", err)
-	}
+	require.NoError(t, err)
 
 	tests := []struct {
 		name string
@@ -245,9 +245,9 @@ func TestPythonDownloadPrefixFromSimpleLinkRejectsUnscopedLinks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if prefix, ok := pythonDownloadPrefixFromSimpleLink(tt.link, baseURL); ok {
-				t.Fatalf("expected download prefix discovery to be rejected, got %s", prefix)
-			}
+			prefix, ok := pythonDownloadPrefixFromSimpleLink(tt.link, baseURL)
+			assert.False(t, ok)
+			assert.Nil(t, prefix)
 		})
 	}
 }
@@ -388,27 +388,23 @@ func TestPythonIndexDownloadAuthStoreEvictsOldestEntryAtLimit(t *testing.T) {
 			"https://pkgs.example.com/org/project/_packaging/feed-%d/pypi/download/",
 			i,
 		))
-		if err != nil {
-			t.Fatalf("failed to parse prefix URL: %v", err)
-		}
+		require.NoError(t, err)
 		store.add(prefix, auth)
 	}
 
 	store.mutex.RLock()
 	entryCount := len(store.entries)
 	store.mutex.RUnlock()
-	if entryCount != maxPythonIndexDownloadAuthEntries {
-		t.Fatalf("expected %d stored prefixes, got %d", maxPythonIndexDownloadAuthEntries, entryCount)
-	}
+	assert.Equal(t, maxPythonIndexDownloadAuthEntries, entryCount)
 
 	evictedReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
 		"https://pkgs.example.com/org/project/_packaging/feed-0/pypi/download/pkg/1.0/pkg.whl",
 		nil)
 
-	if _, ok := store.authFor(evictedReq); ok {
-		t.Fatal("oldest discovered download prefix should be evicted")
-	}
+	evictedAuth, ok := store.authFor(evictedReq)
+	assert.False(t, ok)
+	assert.Zero(t, evictedAuth)
 
 	retainedReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
@@ -418,9 +414,8 @@ func TestPythonIndexDownloadAuthStoreEvictsOldestEntryAtLimit(t *testing.T) {
 		),
 		nil)
 
-	if _, ok := store.authFor(retainedReq); !ok {
-		t.Fatal("newest discovered download prefix should be retained")
-	}
+	_, ok = store.authFor(retainedReq)
+	assert.True(t, ok)
 }
 
 func TestPythonIndexHandlerSkipsDiscoveryForLargeSimpleResponse(t *testing.T) {
@@ -453,12 +448,8 @@ func TestPythonIndexHandlerSkipsDiscoveryForLargeSimpleResponse(t *testing.T) {
 	handler.HandleResponse(indexResp, proxyCtx)
 
 	replayedBody, err := io.ReadAll(indexResp.Body)
-	if err != nil {
-		t.Fatalf("failed to read replayed response body: %v", err)
-	}
-	if string(replayedBody) != responseBody {
-		t.Fatal("large Simple API response body was not replayed unchanged")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, responseBody, string(replayedBody))
 
 	downloadReq := httptest.NewRequestWithContext(t.Context(), "GET", downloadURL, nil)
 	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})

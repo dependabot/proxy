@@ -11,6 +11,7 @@ import (
 
 	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
 )
@@ -82,9 +83,7 @@ func TestNugetFeedHandler(t *testing.T) {
 	}
 
 	jsonResponder, err := httpmock.NewJsonResponder(200, rsp)
-	if err != nil {
-		t.Errorf("constructing httpmock responser: %v", err)
-	}
+	require.NoError(t, err)
 	httpmock.RegisterResponder("GET", "https://corp.dependabot.com/nuget/", jsonResponder)
 
 	xmlResponse := `
@@ -110,9 +109,7 @@ func TestNugetFeedHandler(t *testing.T) {
 	}
 
 	azureDevOpsJsonResponder, err := httpmock.NewJsonResponder(200, azureDevOpsRsp)
-	if err != nil {
-		t.Errorf("constructing httpmock responser: %v", err)
-	}
+	require.NoError(t, err)
 	httpmock.RegisterResponder("GET", "https://pkgs.dev.azure.com/example/public/_packaging/some-feed/nuget/v3/index.json", azureDevOpsJsonResponder)
 
 	azureDevOpsRsp2 := nugetV3IndexResponse{
@@ -125,9 +122,7 @@ func TestNugetFeedHandler(t *testing.T) {
 	}
 
 	azureDevOpsJsonResponder2, err := httpmock.NewJsonResponder(200, azureDevOpsRsp2)
-	if err != nil {
-		t.Errorf("constructing httpmock responser: %v", err)
-	}
+	require.NoError(t, err)
 	httpmock.RegisterResponder("GET", "https://pkgs.dev.azure.com/example/public/_packaging/some-feed2/nuget/v3/index.json", azureDevOpsJsonResponder2)
 
 	// Log for initial authentication contains appropriate information

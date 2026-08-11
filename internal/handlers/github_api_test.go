@@ -440,9 +440,7 @@ func TestGitHubAPIHandler_TokenFallback_In_Proxima(t *testing.T) {
 	}
 	handler := NewGitHubAPIHandler(credentials)
 	url, err := url.Parse("https://api.foo.ghe.com/repos/github/dependabot-action")
-	if err != nil {
-		t.Errorf("parsing url: %v", err)
-	}
+	require.NoError(t, err)
 
 	tests := []struct {
 		name                   string
