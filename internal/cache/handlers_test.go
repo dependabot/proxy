@@ -45,12 +45,12 @@ func TestCache_Disabled(t *testing.T) {
 	assert.Nil(t, resp)
 
 	// Verify that we didn't read the body of the response to cache it.
-	originalBody := io.NopCloser(bytes.NewBufferString(""))
+	originalBody := &BufferWithClose{}
 	resp2 := &http.Response{Body: originalBody}
 	proxyCtx.Resp = resp2
 	resp3 := cacher.OnResponse(resp2, proxyCtx)
 	defer resp3.Body.Close()
-	assert.Equal(t, originalBody, resp3.Body)
+	assert.Same(t, originalBody, resp3.Body)
 }
 
 func TestCache(t *testing.T) {
