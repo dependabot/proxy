@@ -18,6 +18,8 @@ import (
 	"github.com/elazarl/goproxy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dependabot/proxy/internal/proxyctx"
 )
 
 // None of these tests should make network calls
@@ -109,6 +111,74 @@ func TestCache(t *testing.T) {
 		resp.Body.Close()
 		assert.Len(t, cacher.cacheDB, 1)
 	})
+}
+
+func TestCache_BodyForbiddenResponses(t *testing.T) {
+	tests := []struct {
+		name       string
+		method     string
+		statusCode int
+	}{
+		{name: "informational", method: http.MethodGet, statusCode: http.StatusEarlyHints},
+		{name: "HEAD", method: http.MethodHead, statusCode: http.StatusOK},
+		{name: "no content", method: http.MethodGet, statusCode: http.StatusNoContent},
+		{name: "not modified", method: http.MethodGet, statusCode: http.StatusNotModified},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cacher, err := New(true, t.TempDir())
+			require.NoError(t, err)
+
+			req := httptest.NewRequestWithContext(t.Context(), test.method, URL, nil)
+			proxyCtx := &goproxy.ProxyCtx{Req: req}
+			proxyctx.SetValue(proxyCtx, keyValue, Key{Method: req.Method, URL: req.URL.String()})
+
+			originalBody := &BufferWithClose{}
+			resp := &http.Response{
+				Request:          req,
+				StatusCode:       test.statusCode,
+				Header:           http.Header{"Transfer-Encoding": []string{"chunked"}},
+				Body:             originalBody,
+				TransferEncoding: []string{"chunked"},
+			}
+
+			result := cacher.OnResponse(resp, proxyCtx)
+
+			assert.Same(t, resp, result)
+			assert.Equal(t, http.NoBody, result.Body)
+			assert.True(t, originalBody.WasCloseCalled)
+			assert.Empty(t, result.TransferEncoding)
+			assert.Empty(t, result.Header.Values("Transfer-Encoding"))
+			assert.Empty(t, cacher.cacheDB)
+			assert.Zero(t, cacher.callCursor)
+		})
+	}
+}
+
+func TestCache_SwitchingProtocolsPreservesUpgradedStream(t *testing.T) {
+	cacher, err := New(true, t.TempDir())
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	proxyCtx := &goproxy.ProxyCtx{Req: req}
+	proxyctx.SetValue(proxyCtx, keyValue, Key{Method: req.Method, URL: req.URL.String()})
+
+	upgradedStream := &BufferWithClose{}
+	resp := &http.Response{
+		Request:    req,
+		StatusCode: http.StatusSwitchingProtocols,
+		Header:     http.Header{"Upgrade": []string{"websocket"}},
+		Body:       upgradedStream,
+	}
+
+	result := cacher.OnResponse(resp, proxyCtx)
+
+	assert.Same(t, resp, result)
+	assert.Same(t, upgradedStream, result.Body)
+	assert.False(t, upgradedStream.WasCloseCalled)
+	assert.Empty(t, cacher.cacheDB)
+	assert.Zero(t, cacher.callCursor)
 }
 
 func Test_sanitize(t *testing.T) {

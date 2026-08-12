@@ -9,9 +9,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
@@ -44,6 +46,64 @@ func TestProxyHTTPRequest(t *testing.T) {
 	require.NoError(t, err)
 	defer rsp.Body.Close()
 	assert.Equal(t, 200, rsp.StatusCode)
+}
+
+func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/fixed":
+			_, err := io.WriteString(w, "hello")
+			assert.NoError(t, err)
+		case "/no-content":
+			w.WriteHeader(http.StatusNoContent)
+		case "/not-modified":
+			w.WriteHeader(http.StatusNotModified)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+	defer proxy.Close()
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		statusCode int
+		body       string
+	}{
+		{name: "fixed length", method: http.MethodGet, path: "/fixed", statusCode: http.StatusOK, body: "hello"},
+		{name: "HEAD", method: http.MethodHead, path: "/fixed", statusCode: http.StatusOK},
+		{name: "no content", method: http.MethodGet, path: "/no-content", statusCode: http.StatusNoContent},
+		{name: "not modified", method: http.MethodGet, path: "/not-modified", statusCode: http.StatusNotModified},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(t.Context(), test.method, upstream.URL+test.path, nil)
+			require.NoError(t, err)
+
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+
+			assert.Equal(t, test.statusCode, resp.StatusCode)
+			assert.Equal(t, test.body, string(body))
+		})
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL+"/fixed", nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(body))
 }
 
 func TestIPRestrictions(t *testing.T) {
@@ -149,7 +209,7 @@ func TestMetadataAPIRestriction(t *testing.T) {
 	}
 }
 
-func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*http.Client, *http.Server) {
+func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP, upstreamRoots ...*x509.Certificate) (*http.Client, *http.Server) {
 	envSettings := config.ProxyEnvSettings{
 		APIEndpoint:    "",
 		PackageManager: "",
@@ -162,7 +222,18 @@ func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*ht
 	srv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	srv.Handler = newProxy(envSettings, testProxyConfig, blockedIPs)
+	proxyHandler := newProxy(envSettings, cfg, blockedIPs)
+	if len(upstreamRoots) > 0 {
+		rootCAs, err := x509.SystemCertPool()
+		if err != nil {
+			rootCAs = x509.NewCertPool()
+		}
+		for _, certificate := range upstreamRoots {
+			rootCAs.AddCert(certificate)
+		}
+		proxyHandler.Tr.TLSClientConfig.RootCAs = rootCAs
+	}
+	srv.Handler = proxyHandler
 
 	lc := net.ListenConfig{}
 	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
