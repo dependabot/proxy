@@ -59,6 +59,17 @@ func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
 			}
 			_, err := io.WriteString(w, "hello")
 			assert.NoError(t, err)
+		case "/chunked":
+			_, err := io.WriteString(w, "hello ")
+			assert.NoError(t, err)
+			w.(http.Flusher).Flush()
+			_, err = io.WriteString(w, "world")
+			assert.NoError(t, err)
+		case "/trailers":
+			w.Header().Set("Trailer", "X-Checksum")
+			_, err := io.WriteString(w, "trailed")
+			assert.NoError(t, err)
+			w.Header().Set("X-Checksum", "abc123")
 		case "/no-content":
 			w.WriteHeader(http.StatusNoContent)
 		case "/not-modified":
@@ -86,8 +97,12 @@ func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
 		path       string
 		statusCode int
 		body       string
+		chunked    bool
+		trailer    string
 	}{
 		{name: "fixed length", method: http.MethodGet, path: "/fixed", statusCode: http.StatusOK, body: "hello"},
+		{name: "unknown length", method: http.MethodGet, path: "/chunked", statusCode: http.StatusOK, body: "hello world", chunked: true},
+		{name: "trailers", method: http.MethodGet, path: "/trailers", statusCode: http.StatusOK, body: "trailed", chunked: true, trailer: "abc123"},
 		{name: "HEAD", method: http.MethodHead, path: "/fixed", statusCode: http.StatusOK},
 		{name: "no content", method: http.MethodGet, path: "/no-content", statusCode: http.StatusNoContent},
 		{name: "not modified", method: http.MethodGet, path: "/not-modified", statusCode: http.StatusNotModified},
@@ -106,17 +121,23 @@ func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
 
 			assert.Equal(t, test.statusCode, resp.StatusCode)
 			assert.Equal(t, test.body, string(body))
+			if test.chunked {
+				assert.Equal(t, []string{"chunked"}, resp.TransferEncoding)
+			}
+			if test.trailer != "" {
+				assert.Equal(t, test.trailer, resp.Trailer.Get("X-Checksum"))
+			}
+
+			req, err = http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL+"/fixed", nil)
+			require.NoError(t, err)
+			resp, err = client.Do(req)
+			require.NoError(t, err)
+			body, err = io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			assert.Equal(t, "hello", string(body))
 		})
 	}
-
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL+"/fixed", nil)
-	require.NoError(t, err)
-	resp, err := client.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	assert.Equal(t, "hello", string(body))
 	require.Equal(t, int32(1), fixedGETRequests.Load())
 	require.Equal(t, int32(1), proxyDials.Load())
 }
