@@ -27,6 +27,10 @@ type Proxy struct {
 }
 
 func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIps []net.IP) *Proxy {
+	return newProxyWithCacheDir(envSettings, cfg, blockedIps, "/cache")
+}
+
+func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIps []net.IP, cacheDir string) *Proxy {
 	var err error
 
 	if err := setCA([]byte(cfg.CA.Cert), []byte(cfg.CA.Key)); err != nil {
@@ -62,7 +66,7 @@ func newProxy(envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIp
 	proxy.OnResponse().DoFunc(logger.logResponse)
 
 	enableCache := os.Getenv("PROXY_CACHE") == "true"
-	cacher, err := cache.New(enableCache, "/cache")
+	cacher, err := cache.New(enableCache, cacheDir)
 	if err != nil {
 		log.Fatal(err)
 	}

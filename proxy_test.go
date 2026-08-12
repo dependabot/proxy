@@ -50,9 +50,13 @@ func TestProxyHTTPRequest(t *testing.T) {
 }
 
 func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
+	var fixedGETRequests atomic.Int32
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/fixed":
+			if r.Method == http.MethodGet {
+				fixedGETRequests.Add(1)
+			}
 			_, err := io.WriteString(w, "hello")
 			assert.NoError(t, err)
 		case "/no-content":
@@ -65,6 +69,7 @@ func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
 	}))
 	defer upstream.Close()
 
+	t.Setenv("PROXY_CACHE", "true")
 	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
 	defer proxy.Close()
 	transport := client.Transport.(*http.Transport)
@@ -112,6 +117,7 @@ func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	assert.Equal(t, "hello", string(body))
+	require.Equal(t, int32(1), fixedGETRequests.Load())
 	require.Equal(t, int32(1), proxyDials.Load())
 }
 
@@ -231,7 +237,7 @@ func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP, upst
 	srv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	proxyHandler := newProxy(envSettings, cfg, blockedIPs)
+	proxyHandler := newProxyWithCacheDir(envSettings, cfg, blockedIPs, t.TempDir())
 	if len(upstreamRoots) > 0 {
 		rootCAs, err := x509.SystemCertPool()
 		if err != nil {
