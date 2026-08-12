@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -66,6 +67,13 @@ func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
 
 	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
 	defer proxy.Close()
+	transport := client.Transport.(*http.Transport)
+	var proxyDials atomic.Int32
+	dialer := &net.Dialer{}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		proxyDials.Add(1)
+		return dialer.DialContext(ctx, network, address)
+	}
 
 	tests := []struct {
 		name       string
@@ -104,6 +112,7 @@ func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	assert.Equal(t, "hello", string(body))
+	require.Equal(t, int32(1), proxyDials.Load())
 }
 
 func TestIPRestrictions(t *testing.T) {
