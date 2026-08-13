@@ -229,6 +229,10 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		resp.Body = http.NoBody
 		resp.TransferEncoding = nil
 		resp.Header.Del("Transfer-Encoding")
+		if resp.StatusCode == http.StatusResetContent {
+			resp.ContentLength = 0
+			resp.Header.Del("Content-Length")
+		}
 		return resp
 	}
 	if resp.Body == nil {

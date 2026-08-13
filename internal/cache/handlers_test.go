@@ -116,14 +116,15 @@ func TestCache(t *testing.T) {
 
 func TestCache_BodyForbiddenResponses(t *testing.T) {
 	tests := []struct {
-		name       string
-		method     string
-		statusCode int
+		name               string
+		method             string
+		statusCode         int
+		clearContentLength bool
 	}{
 		{name: "informational", method: http.MethodGet, statusCode: http.StatusEarlyHints},
 		{name: "HEAD", method: http.MethodHead, statusCode: http.StatusOK},
 		{name: "no content", method: http.MethodGet, statusCode: http.StatusNoContent},
-		{name: "reset content", method: http.MethodGet, statusCode: http.StatusResetContent},
+		{name: "reset content", method: http.MethodGet, statusCode: http.StatusResetContent, clearContentLength: true},
 		{name: "not modified", method: http.MethodGet, statusCode: http.StatusNotModified},
 	}
 
@@ -145,8 +146,9 @@ func TestCache_BodyForbiddenResponses(t *testing.T) {
 			resp := &http.Response{
 				Request:          req,
 				StatusCode:       test.statusCode,
-				Header:           http.Header{"Transfer-Encoding": []string{"chunked"}},
+				Header:           http.Header{"Content-Length": []string{"10"}, "Transfer-Encoding": []string{"chunked"}},
 				Body:             originalBody,
+				ContentLength:    10,
 				TransferEncoding: []string{"chunked"},
 			}
 
@@ -157,6 +159,13 @@ func TestCache_BodyForbiddenResponses(t *testing.T) {
 			assert.True(t, originalBody.WasCloseCalled)
 			assert.Empty(t, result.TransferEncoding)
 			assert.Empty(t, result.Header.Values("Transfer-Encoding"))
+			if test.clearContentLength {
+				assert.Zero(t, result.ContentLength)
+				assert.Empty(t, result.Header.Values("Content-Length"))
+			} else {
+				assert.Equal(t, int64(10), result.ContentLength)
+				assert.Equal(t, "10", result.Header.Get("Content-Length"))
+			}
 			assert.Empty(t, cacher.cacheDB)
 			assert.Zero(t, cacher.callCursor)
 			assert.Contains(t, logOutput.String(), "Response has no body (method: "+test.method+", status: "+strconv.Itoa(test.statusCode)+")")
