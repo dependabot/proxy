@@ -326,6 +326,47 @@ func TestCache_ZeroByteBodyIsCached(t *testing.T) {
 	assert.Empty(t, hitBody)
 }
 
+// TestCache_MissingCacheFileIsNotCountedAsHit verifies that when a cache entry
+// exists but its backing file is missing, OnRequest falls through to the
+// upstream request without tagging it as cached or incrementing the hit
+// counter, so logs and statistics stay accurate.
+func TestCache_MissingCacheFileIsNotCountedAsHit(t *testing.T) {
+	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+	defer os.RemoveAll(cacheDir)
+
+	cacher, err := New(true, cacheDir)
+	require.NoError(t, err)
+
+	// Prime the cache with a normal bodied 200 so an entry with a file exists.
+	missReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	missCtx := &goproxy.ProxyCtx{Req: missReq}
+	_, resp := cacher.OnRequest(missReq, missCtx)
+	require.Nil(t, resp)
+	resp = &http.Response{
+		Request:    missReq,
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewBufferString("hello")),
+	}
+	resp = cacher.OnResponse(resp, missCtx)
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	require.Len(t, cacher.cacheDB, 1)
+
+	// Delete the backing file to simulate a missing/unreadable cache file.
+	for _, entry := range cacher.cacheDB {
+		require.NoError(t, os.Remove(entry.FilePath))
+	}
+
+	cachedBefore := cacher.cached
+	hitReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	hitCtx := &goproxy.ProxyCtx{Req: hitReq}
+	_, hit := cacher.OnRequest(hitReq, hitCtx)
+
+	assert.Nil(t, hit, "a missing cache file must fall through to upstream")
+	assert.Equal(t, cachedBefore, cacher.cached, "a missing cache file must not be counted as a hit")
+	assert.False(t, WasResponseCached(hitCtx), "request must not be tagged as cached when the file is missing")
+}
+
 func Test_sanitize(t *testing.T) {
 	var tests = []struct {
 		Input, Expected string

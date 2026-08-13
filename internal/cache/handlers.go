@@ -214,8 +214,6 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 	key := key(r)
 	proxyctx.SetValue(proxyCtx, keyValue, key)
 	if entry, ok := d.cacheDB[key]; ok {
-		proxyctx.SetValue(proxyCtx, wasCached, true)
-		d.cached++
 		resp := &http.Response{}
 		resp.Request = r
 		resp.Header = entry.ResponseHeaders
@@ -239,11 +237,16 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 					resp.ContentLength = n
 				}
 			}
+			proxyctx.SetValue(proxyCtx, wasCached, true)
+			d.cached++
 			return r, resp
 		}
 
 		f, err := os.Open(entry.FilePath)
 		if err != nil {
+			// The cache entry exists but its file is gone/unreadable. Fall
+			// through to the upstream request without marking it as cached so
+			// logs and cache statistics stay accurate.
 			logrus.Errorln("failed to open cache file:", err)
 			return r, nil
 		}
@@ -254,6 +257,8 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 		if fi, statErr := f.Stat(); statErr == nil {
 			resp.ContentLength = fi.Size()
 		}
+		proxyctx.SetValue(proxyCtx, wasCached, true)
+		d.cached++
 		return r, resp
 	}
 	return r, nil
