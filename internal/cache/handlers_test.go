@@ -23,6 +23,20 @@ import (
 // None of these tests should make network calls
 const URL = "https://127.0.0.1:65535"
 
+// closeTrackingReadCloser wraps a reader and reports when it is closed, so tests
+// can assert that a replaced response body is properly closed.
+type closeTrackingReadCloser struct {
+	io.Reader
+	onClose func()
+}
+
+func (c *closeTrackingReadCloser) Close() error {
+	if c.onClose != nil {
+		c.onClose()
+	}
+	return nil
+}
+
 func TestCache_Disabled(t *testing.T) {
 	const enabled = false
 	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
@@ -109,6 +123,248 @@ func TestCache(t *testing.T) {
 		resp.Body.Close()
 		assert.Len(t, cacher.cacheDB, 1)
 	})
+}
+
+func Test_bodyless(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		method string
+		want   bool
+	}{
+		{"200 GET has body", 200, http.MethodGet, false},
+		{"200 HEAD is bodyless", 200, http.MethodHead, true},
+		{"100 Continue is bodyless", 100, http.MethodGet, true},
+		{"101 Switching Protocols has body (upgraded stream)", 101, http.MethodGet, false},
+		{"204 No Content is bodyless", 204, http.MethodGet, true},
+		{"205 Reset Content is bodyless", 205, http.MethodGet, true},
+		{"304 Not Modified is bodyless", 304, http.MethodGet, true},
+		{"404 GET has body", 404, http.MethodGet, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, bodyless(tc.status, tc.method))
+		})
+	}
+}
+
+// TestCache_BodylessResponses is a regression test for the keep-alive desync
+// introduced by goproxy v1.9.0. Bodyless responses (1xx/204/304/HEAD) must keep
+// Body == http.NoBody through both cache paths; otherwise goproxy stamps a
+// chunked terminator the client never reads, desyncing the reused MITM tunnel.
+func TestCache_BodylessResponses(t *testing.T) {
+	cases := []struct {
+		name              string
+		method            string
+		status            int
+		contentLength     string
+		wantHitContentLen int64
+	}{
+		{"304 Not Modified", http.MethodGet, http.StatusNotModified, "", 0},
+		{"204 No Content", http.MethodGet, http.StatusNoContent, "", 0},
+		{"205 Reset Content", http.MethodGet, http.StatusResetContent, "", 0},
+		{"HEAD 200", http.MethodHead, http.StatusOK, "", 0},
+		// A HEAD advertises the length the equivalent GET would return; a cache
+		// hit must report that same length, not force it to zero.
+		{"HEAD 200 with Content-Length", http.MethodHead, http.StatusOK, "5", 5},
+		// A non-HEAD bodyless status must stay zero: a non-zero ContentLength
+		// with an empty body would fail resp.Write for GET responses.
+		{"304 with Content-Length", http.MethodGet, http.StatusNotModified, "5", 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+			defer os.RemoveAll(cacheDir)
+
+			cacher, err := New(true, cacheDir)
+			require.NoError(t, err)
+
+			// --- Cache miss: OnResponse must not wrap a bodyless body. ---
+			missReq := httptest.NewRequestWithContext(t.Context(), tc.method, URL, nil)
+			missCtx := &goproxy.ProxyCtx{Req: missReq}
+			_, resp := cacher.OnRequest(missReq, missCtx)
+			require.Nil(t, resp)
+
+			resp = &http.Response{
+				Request:    missReq,
+				StatusCode: tc.status,
+				Header:     http.Header{},
+				Body:       http.NoBody,
+			}
+			if tc.contentLength != "" {
+				resp.Header.Set("Content-Length", tc.contentLength)
+			}
+			resp = cacher.OnResponse(resp, missCtx)
+			assert.True(t, resp.Body == http.NoBody,
+				"OnResponse must leave bodyless Body as http.NoBody (not tee-wrapped)")
+			assert.Len(t, cacher.cacheDB, 1, "bodyless response should still be cached")
+
+			// --- Cache hit: OnRequest must serve a bodyless response. ---
+			hitReq := httptest.NewRequestWithContext(t.Context(), tc.method, URL, nil)
+			hitCtx := &goproxy.ProxyCtx{Req: hitReq}
+			_, hit := cacher.OnRequest(hitReq, hitCtx)
+			require.NotNil(t, hit)
+			assert.True(t, hit.Body == http.NoBody,
+				"cache hit must serve bodyless responses with http.NoBody")
+			assert.Equal(t, tc.wantHitContentLen, hit.ContentLength)
+			assert.Empty(t, hit.TransferEncoding)
+		})
+	}
+}
+
+// TestCache_BodylessResponseWithWrappedBodyIsRestored verifies that when an
+// earlier response handler has replaced a bodyless response's http.NoBody with
+// another (empty) ReadCloser — as PythonIndexHandler does — OnResponse restores
+// http.NoBody before caching. Otherwise goproxy sees resp.Body != http.NoBody,
+// stamps a chunked terminator, and desyncs the keep-alive MITM tunnel.
+func TestCache_BodylessResponseWithWrappedBodyIsRestored(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		status int
+	}{
+		{"HEAD 200", http.MethodHead, http.StatusOK},
+		{"204 No Content", http.MethodGet, http.StatusNoContent},
+		{"205 Reset Content", http.MethodGet, http.StatusResetContent},
+		{"304 Not Modified", http.MethodGet, http.StatusNotModified},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+			defer os.RemoveAll(cacheDir)
+
+			cacher, err := New(true, cacheDir)
+			require.NoError(t, err)
+
+			req := httptest.NewRequestWithContext(t.Context(), tc.method, URL, nil)
+			proxyCtx := &goproxy.ProxyCtx{Req: req}
+			_, resp := cacher.OnRequest(req, proxyCtx)
+			require.Nil(t, resp)
+
+			// Simulate an upstream handler that swapped in a non-NoBody wrapper.
+			closed := false
+			wrapped := &closeTrackingReadCloser{Reader: bytes.NewReader(nil), onClose: func() { closed = true }}
+			resp = &http.Response{
+				Request:    req,
+				StatusCode: tc.status,
+				Header:     http.Header{},
+				Body:       wrapped,
+			}
+			resp = cacher.OnResponse(resp, proxyCtx)
+
+			assert.True(t, resp.Body == http.NoBody,
+				"OnResponse must restore http.NoBody when a bodyless response was wrapped")
+			assert.True(t, closed, "the replaced wrapper must be closed to avoid leaks")
+			assert.Len(t, cacher.cacheDB, 1, "bodyless response should still be cached")
+		})
+	}
+}
+
+// TestCache_SwitchingProtocolsNotCached verifies a 101 upgrade response is
+// passed through untouched and never cached, so its upgraded connection stream
+// (e.g. WebSocket) is not replaced with an empty body on a later request.
+func TestCache_SwitchingProtocolsNotCached(t *testing.T) {
+	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+	defer os.RemoveAll(cacheDir)
+
+	cacher, err := New(true, cacheDir)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	proxyCtx := &goproxy.ProxyCtx{Req: req}
+	_, resp := cacher.OnRequest(req, proxyCtx)
+	require.Nil(t, resp)
+
+	upgraded := io.NopCloser(bytes.NewBufferString("websocket-stream"))
+	resp = &http.Response{
+		Request:    req,
+		StatusCode: http.StatusSwitchingProtocols,
+		Body:       upgraded,
+	}
+	resp = cacher.OnResponse(resp, proxyCtx)
+	assert.True(t, resp.Body == upgraded, "101 body must be passed through untouched")
+	assert.Empty(t, cacher.cacheDB, "101 must not be cached")
+}
+
+// TestCache_ZeroByteBodyIsCached verifies a valid 200 response with an empty
+// (but present) body is cached and served with a body, distinct from a bodyless
+// response. It must be tee-wrapped and produce a cache entry.
+func TestCache_ZeroByteBodyIsCached(t *testing.T) {
+	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+	defer os.RemoveAll(cacheDir)
+
+	cacher, err := New(true, cacheDir)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	proxyCtx := &goproxy.ProxyCtx{Req: req}
+	_, resp := cacher.OnRequest(req, proxyCtx)
+	require.Nil(t, resp)
+
+	resp = &http.Response{
+		Request:    req,
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewBufferString("")),
+	}
+	resp = cacher.OnResponse(resp, proxyCtx)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Empty(t, body)
+	assert.Len(t, cacher.cacheDB, 1, "empty-bodied 200 should be cached")
+
+	// Cache hit serves the stored (empty) body from file, not http.NoBody.
+	hitReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	hitCtx := &goproxy.ProxyCtx{Req: hitReq}
+	_, hit := cacher.OnRequest(hitReq, hitCtx)
+	require.NotNil(t, hit)
+	hitBody, err := io.ReadAll(hit.Body)
+	require.NoError(t, err)
+	require.NoError(t, hit.Body.Close())
+	assert.Empty(t, hitBody)
+}
+
+// TestCache_MissingCacheFileIsNotCountedAsHit verifies that when a cache entry
+// exists but its backing file is missing, OnRequest falls through to the
+// upstream request without tagging it as cached or incrementing the hit
+// counter, so logs and statistics stay accurate.
+func TestCache_MissingCacheFileIsNotCountedAsHit(t *testing.T) {
+	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+	defer os.RemoveAll(cacheDir)
+
+	cacher, err := New(true, cacheDir)
+	require.NoError(t, err)
+
+	// Prime the cache with a normal bodied 200 so an entry with a file exists.
+	missReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	missCtx := &goproxy.ProxyCtx{Req: missReq}
+	_, resp := cacher.OnRequest(missReq, missCtx)
+	require.Nil(t, resp)
+	resp = &http.Response{
+		Request:    missReq,
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewBufferString("hello")),
+	}
+	resp = cacher.OnResponse(resp, missCtx)
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	require.Len(t, cacher.cacheDB, 1)
+
+	// Delete the backing file to simulate a missing/unreadable cache file.
+	for _, entry := range cacher.cacheDB {
+		require.NoError(t, os.Remove(entry.FilePath))
+	}
+
+	cachedBefore := cacher.cached
+	hitReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	hitCtx := &goproxy.ProxyCtx{Req: hitReq}
+	_, hit := cacher.OnRequest(hitReq, hitCtx)
+
+	assert.Nil(t, hit, "a missing cache file must fall through to upstream")
+	assert.Equal(t, cachedBefore, cacher.cached, "a missing cache file must not be counted as a hit")
+	assert.False(t, WasResponseCached(hitCtx), "request must not be tagged as cached when the file is missing")
 }
 
 func Test_sanitize(t *testing.T) {
