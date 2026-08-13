@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"io"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -140,6 +142,127 @@ func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
 	}
 	require.Equal(t, int32(1), fixedGETRequests.Load())
 	require.Equal(t, int32(1), proxyDials.Load())
+}
+
+func TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse(t *testing.T) {
+	const (
+		etag = `"v1"`
+		body = "cached response"
+	)
+	var upstreamRequests atomic.Int32
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamRequests.Add(1)
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		_, err := io.WriteString(w, body)
+		assert.NoError(t, err)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("PROXY_CACHE", "true")
+	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+	defer proxy.Close()
+	transport := client.Transport.(*http.Transport)
+	var proxyDials atomic.Int32
+	dialer := &net.Dialer{}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		proxyDials.Add(1)
+		return dialer.DialContext(ctx, network, address)
+	}
+
+	request := func(ifNoneMatch string) *http.Response {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+		require.NoError(t, err)
+		if ifNoneMatch != "" {
+			req.Header.Set("If-None-Match", ifNoneMatch)
+		}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		return resp
+	}
+
+	resp := request("")
+	responseBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, body, string(responseBody))
+
+	resp = request(etag)
+	responseBody, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusNotModified, resp.StatusCode)
+	assert.Empty(t, responseBody)
+
+	resp = request("")
+	responseBody, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, body, string(responseBody))
+	assert.Equal(t, etag, resp.Header.Get("ETag"))
+
+	assert.Equal(t, int32(2), upstreamRequests.Load())
+	assert.Equal(t, int32(1), proxyDials.Load())
+}
+
+func TestProxyUpstreamCloseIsNotCachedAsBodylessResponse(t *testing.T) {
+	var logOutput bytes.Buffer
+	originalLogOutput := log.Writer()
+	originalLogrusOutput := logrus.StandardLogger().Out
+	log.SetOutput(&logOutput)
+	logrus.SetOutput(&logOutput)
+	defer log.SetOutput(originalLogOutput)
+	defer logrus.SetOutput(originalLogrusOutput)
+
+	var upstreamRequests atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if upstreamRequests.Add(1) == 1 {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			require.NoError(t, err)
+			require.NoError(t, conn.Close())
+			return
+		}
+		_, err := io.WriteString(w, "recovered")
+		assert.NoError(t, err)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("PROXY_CACHE", "true")
+	client, proxy := testProxyServer(t, testProxyConfig, nil)
+	defer proxy.Close()
+
+	request := func() *http.Response {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+		require.NoError(t, err)
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		return resp
+	}
+
+	resp := request()
+	_, err := io.Copy(io.Discard, resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+
+	for range 2 {
+		resp = request()
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, "recovered", string(body))
+	}
+
+	assert.Equal(t, int32(2), upstreamRequests.Load())
+	assert.Contains(t, logOutput.String(), "No response from server")
+	assert.Contains(t, logOutput.String(), "Received nil response")
+	assert.NotContains(t, logOutput.String(), "Response has no body")
 }
 
 func TestIPRestrictions(t *testing.T) {

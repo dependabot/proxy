@@ -188,6 +188,58 @@ func TestCache_SwitchingProtocolsPreservesUpgradedStream(t *testing.T) {
 	assert.Zero(t, cacher.callCursor)
 }
 
+func TestCache_UnexpectedNilBodyIsNotCached(t *testing.T) {
+	var logOutput bytes.Buffer
+	originalOutput := logrus.StandardLogger().Out
+	logrus.SetOutput(&logOutput)
+	defer logrus.SetOutput(originalOutput)
+
+	cacheDir := t.TempDir()
+	cacher, err := New(true, cacheDir)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	proxyCtx := &goproxy.ProxyCtx{Req: req}
+	proxyctx.SetValue(proxyCtx, keyValue, Key{Method: req.Method, URL: req.URL.String()})
+	resp := &http.Response{
+		Request:    req,
+		StatusCode: http.StatusOK,
+	}
+
+	result := cacher.OnResponse(resp, proxyCtx)
+
+	assert.Same(t, resp, result)
+	assert.Nil(t, result.Body)
+	assert.Empty(t, cacher.cacheDB)
+	assert.Zero(t, cacher.callCursor)
+	entries, err := os.ReadDir(cacheDir)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+	assert.Contains(t, logOutput.String(), "Response unexpectedly has nil body (method: GET, status: 200)")
+}
+
+func TestCache_ZeroByteBodyIsCached(t *testing.T) {
+	cacher, err := New(true, t.TempDir())
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	proxyCtx := &goproxy.ProxyCtx{Req: req}
+	proxyctx.SetValue(proxyCtx, keyValue, Key{Method: req.Method, URL: req.URL.String()})
+	resp := &http.Response{
+		Request:    req,
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("")),
+	}
+
+	result := cacher.OnResponse(resp, proxyCtx)
+	_, err = io.ReadAll(result.Body)
+	require.NoError(t, err)
+	require.NoError(t, result.Body.Close())
+
+	assert.Len(t, cacher.cacheDB, 1)
+	assert.Equal(t, 1, cacher.callCursor)
+}
+
 func Test_sanitize(t *testing.T) {
 	var tests = []struct {
 		Input, Expected string

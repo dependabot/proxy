@@ -231,6 +231,14 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		resp.Header.Del("Transfer-Encoding")
 		return resp
 	}
+	if resp.Body == nil {
+		method := ""
+		if resp.Request != nil {
+			method = resp.Request.Method
+		}
+		logrus.Errorf("Response unexpectedly has nil body (method: %s, status: %d)", method, resp.StatusCode)
+		return resp
+	}
 	k, ok := proxyctx.GetValue(proxyCtx, keyValue)
 	if !ok {
 		// can't calculate key as response body is empty
