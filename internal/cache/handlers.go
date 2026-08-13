@@ -237,6 +237,11 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 			method = resp.Request.Method
 		}
 		logrus.Errorf("Response unexpectedly has nil body (method: %s, status: %d)", method, resp.StatusCode)
+		resp.Body = http.NoBody
+		resp.ContentLength = 0
+		resp.TransferEncoding = nil
+		resp.Header.Del("Content-Length")
+		resp.Header.Del("Transfer-Encoding")
 		return resp
 	}
 	k, ok := proxyctx.GetValue(proxyCtx, keyValue)
@@ -287,6 +292,7 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 func responseMustNotHaveBody(resp *http.Response) bool {
 	return resp.StatusCode >= 100 && resp.StatusCode < 200 ||
 		resp.StatusCode == http.StatusNoContent ||
+		resp.StatusCode == http.StatusResetContent ||
 		resp.StatusCode == http.StatusNotModified ||
 		resp.Request != nil && resp.Request.Method == http.MethodHead
 }

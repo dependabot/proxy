@@ -123,6 +123,7 @@ func TestCache_BodyForbiddenResponses(t *testing.T) {
 		{name: "informational", method: http.MethodGet, statusCode: http.StatusEarlyHints},
 		{name: "HEAD", method: http.MethodHead, statusCode: http.StatusOK},
 		{name: "no content", method: http.MethodGet, statusCode: http.StatusNoContent},
+		{name: "reset content", method: http.MethodGet, statusCode: http.StatusResetContent},
 		{name: "not modified", method: http.MethodGet, statusCode: http.StatusNotModified},
 	}
 
@@ -202,14 +203,21 @@ func TestCache_UnexpectedNilBodyIsNotCached(t *testing.T) {
 	proxyCtx := &goproxy.ProxyCtx{Req: req}
 	proxyctx.SetValue(proxyCtx, keyValue, Key{Method: req.Method, URL: req.URL.String()})
 	resp := &http.Response{
-		Request:    req,
-		StatusCode: http.StatusOK,
+		Request:          req,
+		StatusCode:       http.StatusOK,
+		Header:           http.Header{"Content-Length": []string{"10"}, "Transfer-Encoding": []string{"chunked"}},
+		ContentLength:    10,
+		TransferEncoding: []string{"chunked"},
 	}
 
 	result := cacher.OnResponse(resp, proxyCtx)
 
 	assert.Same(t, resp, result)
-	assert.Nil(t, result.Body)
+	assert.Equal(t, http.NoBody, result.Body)
+	assert.Zero(t, result.ContentLength)
+	assert.Empty(t, result.TransferEncoding)
+	assert.Empty(t, result.Header.Values("Content-Length"))
+	assert.Empty(t, result.Header.Values("Transfer-Encoding"))
 	assert.Empty(t, cacher.cacheDB)
 	assert.Zero(t, cacher.callCursor)
 	entries, err := os.ReadDir(cacheDir)
