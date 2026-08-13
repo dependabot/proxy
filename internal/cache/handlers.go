@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"sync"
 
 	"github.com/elazarl/goproxy"
@@ -227,6 +228,17 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 			// client never reads, desyncing the keep-alive MITM tunnel.
 			resp.Body = http.NoBody
 			resp.ContentLength = 0
+			// A HEAD response legitimately advertises the Content-Length the
+			// equivalent GET would return. Restore it from the cached headers so
+			// a hit reports the same length as the original miss. This is safe
+			// only for HEAD: Go skips the ContentLength/body mismatch check for
+			// responses to HEAD, whereas a non-HEAD status (e.g. GET 304) with a
+			// non-zero ContentLength and an empty body would fail resp.Write.
+			if r.Method == http.MethodHead {
+				if n, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64); err == nil {
+					resp.ContentLength = n
+				}
+			}
 			return r, resp
 		}
 
@@ -279,12 +291,19 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 	}
 
 	if bodyless(resp.StatusCode, resp.Request.Method) {
-		// Bodyless responses (1xx/204/205/304/HEAD) have no body to stream to
-		// disk. Leave resp.Body untouched (it is http.NoBody) so goproxy frames
-		// the response correctly, and record the metadata only. Wrapping the
-		// body here would make resp.Body != http.NoBody, causing goproxy to
-		// stamp a chunked terminator the client never reads and desync the
-		// keep-alive MITM tunnel.
+		// Bodyless responses (1xx/204/205/304/HEAD) carry no body. An earlier
+		// response handler may have replaced resp.Body with a wrapper (e.g.
+		// PythonIndexHandler swaps in a replay reader even for http.NoBody), so
+		// we cannot assume it is still http.NoBody here. Close any wrapper and
+		// restore http.NoBody so goproxy sees an unmodified empty body and frames
+		// the response without a chunked terminator. Leaving a non-NoBody body in
+		// place would make goproxy stamp a "0\r\n\r\n" the client never reads,
+		// desyncing the keep-alive MITM tunnel. ContentLength is left untouched so
+		// a HEAD still advertises the length its GET would return.
+		if resp.Body != nil && resp.Body != http.NoBody {
+			_ = resp.Body.Close()
+			resp.Body = http.NoBody
+		}
 		d.cacheDB[key] = &Entry{
 			Status:          resp.StatusCode,
 			ResponseHeaders: resp.Header,

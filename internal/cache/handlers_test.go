@@ -23,6 +23,20 @@ import (
 // None of these tests should make network calls
 const URL = "https://127.0.0.1:65535"
 
+// closeTrackingReadCloser wraps a reader and reports when it is closed, so tests
+// can assert that a replaced response body is properly closed.
+type closeTrackingReadCloser struct {
+	io.Reader
+	onClose func()
+}
+
+func (c *closeTrackingReadCloser) Close() error {
+	if c.onClose != nil {
+		c.onClose()
+	}
+	return nil
+}
+
 func TestCache_Disabled(t *testing.T) {
 	const enabled = false
 	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
@@ -140,14 +154,22 @@ func Test_bodyless(t *testing.T) {
 // chunked terminator the client never reads, desyncing the reused MITM tunnel.
 func TestCache_BodylessResponses(t *testing.T) {
 	cases := []struct {
-		name   string
-		method string
-		status int
+		name              string
+		method            string
+		status            int
+		contentLength     string
+		wantHitContentLen int64
 	}{
-		{"304 Not Modified", http.MethodGet, http.StatusNotModified},
-		{"204 No Content", http.MethodGet, http.StatusNoContent},
-		{"205 Reset Content", http.MethodGet, http.StatusResetContent},
-		{"HEAD 200", http.MethodHead, http.StatusOK},
+		{"304 Not Modified", http.MethodGet, http.StatusNotModified, "", 0},
+		{"204 No Content", http.MethodGet, http.StatusNoContent, "", 0},
+		{"205 Reset Content", http.MethodGet, http.StatusResetContent, "", 0},
+		{"HEAD 200", http.MethodHead, http.StatusOK, "", 0},
+		// A HEAD advertises the length the equivalent GET would return; a cache
+		// hit must report that same length, not force it to zero.
+		{"HEAD 200 with Content-Length", http.MethodHead, http.StatusOK, "5", 5},
+		// A non-HEAD bodyless status must stay zero: a non-zero ContentLength
+		// with an empty body would fail resp.Write for GET responses.
+		{"304 with Content-Length", http.MethodGet, http.StatusNotModified, "5", 0},
 	}
 
 	for _, tc := range cases {
@@ -167,7 +189,11 @@ func TestCache_BodylessResponses(t *testing.T) {
 			resp = &http.Response{
 				Request:    missReq,
 				StatusCode: tc.status,
+				Header:     http.Header{},
 				Body:       http.NoBody,
+			}
+			if tc.contentLength != "" {
+				resp.Header.Set("Content-Length", tc.contentLength)
 			}
 			resp = cacher.OnResponse(resp, missCtx)
 			assert.True(t, resp.Body == http.NoBody,
@@ -181,8 +207,57 @@ func TestCache_BodylessResponses(t *testing.T) {
 			require.NotNil(t, hit)
 			assert.True(t, hit.Body == http.NoBody,
 				"cache hit must serve bodyless responses with http.NoBody")
-			assert.Zero(t, hit.ContentLength)
+			assert.Equal(t, tc.wantHitContentLen, hit.ContentLength)
 			assert.Empty(t, hit.TransferEncoding)
+		})
+	}
+}
+
+// TestCache_BodylessResponseWithWrappedBodyIsRestored verifies that when an
+// earlier response handler has replaced a bodyless response's http.NoBody with
+// another (empty) ReadCloser — as PythonIndexHandler does — OnResponse restores
+// http.NoBody before caching. Otherwise goproxy sees resp.Body != http.NoBody,
+// stamps a chunked terminator, and desyncs the keep-alive MITM tunnel.
+func TestCache_BodylessResponseWithWrappedBodyIsRestored(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		status int
+	}{
+		{"HEAD 200", http.MethodHead, http.StatusOK},
+		{"204 No Content", http.MethodGet, http.StatusNoContent},
+		{"205 Reset Content", http.MethodGet, http.StatusResetContent},
+		{"304 Not Modified", http.MethodGet, http.StatusNotModified},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+			defer os.RemoveAll(cacheDir)
+
+			cacher, err := New(true, cacheDir)
+			require.NoError(t, err)
+
+			req := httptest.NewRequestWithContext(t.Context(), tc.method, URL, nil)
+			proxyCtx := &goproxy.ProxyCtx{Req: req}
+			_, resp := cacher.OnRequest(req, proxyCtx)
+			require.Nil(t, resp)
+
+			// Simulate an upstream handler that swapped in a non-NoBody wrapper.
+			closed := false
+			wrapped := &closeTrackingReadCloser{Reader: bytes.NewReader(nil), onClose: func() { closed = true }}
+			resp = &http.Response{
+				Request:    req,
+				StatusCode: tc.status,
+				Header:     http.Header{},
+				Body:       wrapped,
+			}
+			resp = cacher.OnResponse(resp, proxyCtx)
+
+			assert.True(t, resp.Body == http.NoBody,
+				"OnResponse must restore http.NoBody when a bodyless response was wrapped")
+			assert.True(t, closed, "the replaced wrapper must be closed to avoid leaks")
+			assert.Len(t, cacher.cacheDB, 1, "bodyless response should still be cached")
 		})
 	}
 }
@@ -211,6 +286,44 @@ func TestCache_SwitchingProtocolsNotCached(t *testing.T) {
 	resp = cacher.OnResponse(resp, proxyCtx)
 	assert.True(t, resp.Body == upgraded, "101 body must be passed through untouched")
 	assert.Empty(t, cacher.cacheDB, "101 must not be cached")
+}
+
+// TestCache_ZeroByteBodyIsCached verifies a valid 200 response with an empty
+// (but present) body is cached and served with a body, distinct from a bodyless
+// response. It must be tee-wrapped and produce a cache entry.
+func TestCache_ZeroByteBodyIsCached(t *testing.T) {
+	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+	defer os.RemoveAll(cacheDir)
+
+	cacher, err := New(true, cacheDir)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	proxyCtx := &goproxy.ProxyCtx{Req: req}
+	_, resp := cacher.OnRequest(req, proxyCtx)
+	require.Nil(t, resp)
+
+	resp = &http.Response{
+		Request:    req,
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewBufferString("")),
+	}
+	resp = cacher.OnResponse(resp, proxyCtx)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Empty(t, body)
+	assert.Len(t, cacher.cacheDB, 1, "empty-bodied 200 should be cached")
+
+	// Cache hit serves the stored (empty) body from file, not http.NoBody.
+	hitReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	hitCtx := &goproxy.ProxyCtx{Req: hitReq}
+	_, hit := cacher.OnRequest(hitReq, hitCtx)
+	require.NotNil(t, hit)
+	hitBody, err := io.ReadAll(hit.Body)
+	require.NoError(t, err)
+	require.NoError(t, hit.Body.Close())
+	assert.Empty(t, hitBody)
 }
 
 func Test_sanitize(t *testing.T) {

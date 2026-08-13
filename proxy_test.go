@@ -9,13 +9,18 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"io"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -44,6 +49,303 @@ func TestProxyHTTPRequest(t *testing.T) {
 	require.NoError(t, err)
 	defer rsp.Body.Close()
 	assert.Equal(t, 200, rsp.StatusCode)
+}
+
+func TestProxyHTTPSMITMFixedLengthResponseFraming(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "5")
+		_, err := io.WriteString(w, "hello")
+		assert.NoError(t, err)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("PROXY_CACHE", "false")
+	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+	defer proxy.Close()
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	assert.Equal(t, "hello", string(body))
+	assert.Empty(t, resp.TransferEncoding)
+	assert.Equal(t, int64(len(body)), resp.ContentLength)
+}
+
+// TestProxyHTTPSMITMResponseFraming drives many response shapes over a single
+// reused MITM tunnel with caching enabled and then issues a follow-up request
+// on the same connection. If any response mis-frames (e.g. a bodyless 204/304
+// or a cache-wrapped body writing a stray chunk terminator), the follow-up
+// request desyncs and fails, reproducing the keep-alive framing bug.
+func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
+	var fixedGETRequests atomic.Int32
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/fixed":
+			if r.Method == http.MethodGet {
+				fixedGETRequests.Add(1)
+			}
+			_, err := io.WriteString(w, "hello")
+			assert.NoError(t, err)
+		case "/chunked":
+			_, err := io.WriteString(w, "hello ")
+			assert.NoError(t, err)
+			w.(http.Flusher).Flush()
+			_, err = io.WriteString(w, "world")
+			assert.NoError(t, err)
+		case "/trailers":
+			w.Header().Set("Trailer", "X-Checksum")
+			_, err := io.WriteString(w, "trailed")
+			assert.NoError(t, err)
+			w.Header().Set("X-Checksum", "abc123")
+		case "/no-content":
+			w.WriteHeader(http.StatusNoContent)
+		case "/not-modified":
+			w.WriteHeader(http.StatusNotModified)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	t.Setenv("PROXY_CACHE", "true")
+	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+	defer proxy.Close()
+	transport := client.Transport.(*http.Transport)
+	var proxyDials atomic.Int32
+	dialer := &net.Dialer{}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		proxyDials.Add(1)
+		return dialer.DialContext(ctx, network, address)
+	}
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		statusCode int
+		body       string
+		chunked    bool
+		trailer    string
+	}{
+		{name: "cache-wrapped fixed body", method: http.MethodGet, path: "/fixed", statusCode: http.StatusOK, body: "hello", chunked: true},
+		{name: "unknown length", method: http.MethodGet, path: "/chunked", statusCode: http.StatusOK, body: "hello world", chunked: true},
+		{name: "trailers", method: http.MethodGet, path: "/trailers", statusCode: http.StatusOK, body: "trailed", chunked: true, trailer: "abc123"},
+		{name: "HEAD", method: http.MethodHead, path: "/fixed", statusCode: http.StatusOK},
+		{name: "no content", method: http.MethodGet, path: "/no-content", statusCode: http.StatusNoContent},
+		{name: "not modified", method: http.MethodGet, path: "/not-modified", statusCode: http.StatusNotModified},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(t.Context(), test.method, upstream.URL+test.path, nil)
+			require.NoError(t, err)
+
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+
+			assert.Equal(t, test.statusCode, resp.StatusCode)
+			assert.Equal(t, test.body, string(body))
+			if test.chunked {
+				assert.Equal(t, []string{"chunked"}, resp.TransferEncoding)
+			}
+			if test.trailer != "" {
+				assert.Equal(t, test.trailer, resp.Trailer.Get("X-Checksum"))
+			}
+
+			// Follow-up request on the SAME reused tunnel. If the previous
+			// response desynced the connection this read fails.
+			req, err = http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL+"/fixed", nil)
+			require.NoError(t, err)
+			resp, err = client.Do(req)
+			require.NoError(t, err)
+			body, err = io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			assert.Equal(t, "hello", string(body))
+		})
+	}
+	// The first /fixed GET is served from upstream; every later /fixed GET is a
+	// cache hit, and the whole suite reuses one proxy tunnel.
+	require.Equal(t, int32(1), fixedGETRequests.Load())
+	require.Equal(t, int32(1), proxyDials.Load())
+}
+
+// TestProxyHTTPSMITMHeadCacheHitPreservesContentLength verifies that a HEAD
+// response served from the cache advertises the same Content-Length as the
+// original upstream response instead of reporting zero, while still sending no
+// body and not desyncing the reused tunnel.
+func TestProxyHTTPSMITMHeadCacheHitPreservesContentLength(t *testing.T) {
+	var upstreamHits atomic.Int32
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits.Add(1)
+		_, err := io.WriteString(w, "hello")
+		assert.NoError(t, err)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("PROXY_CACHE", "true")
+	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+	defer proxy.Close()
+	transport := client.Transport.(*http.Transport)
+	var proxyDials atomic.Int32
+	dialer := &net.Dialer{}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		proxyDials.Add(1)
+		return dialer.DialContext(ctx, network, address)
+	}
+
+	// First HEAD is a cache miss served from upstream; the second is a cache
+	// hit served by the proxy. Both must report Content-Length: 5.
+	for i := 0; i < 2; i++ {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodHead, upstream.URL+"/fixed", nil)
+		require.NoError(t, err)
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Empty(t, body, "HEAD response must have no body")
+		assert.Equal(t, int64(5), resp.ContentLength, "HEAD must advertise the resource length on both miss and hit")
+	}
+
+	require.Equal(t, int32(1), upstreamHits.Load(), "second HEAD must be served from cache")
+	require.Equal(t, int32(1), proxyDials.Load(), "both requests must reuse one tunnel")
+}
+
+// TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse verifies that a
+// 304 response served through the cache does not corrupt the tunnel, and that a
+// later unconditional request still returns the original cached 200 body.
+func TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse(t *testing.T) {
+	const (
+		etag = `"v1"`
+		body = "cached response"
+	)
+	var upstreamRequests atomic.Int32
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamRequests.Add(1)
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		_, err := io.WriteString(w, body)
+		assert.NoError(t, err)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("PROXY_CACHE", "true")
+	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+	defer proxy.Close()
+	transport := client.Transport.(*http.Transport)
+	var proxyDials atomic.Int32
+	dialer := &net.Dialer{}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		proxyDials.Add(1)
+		return dialer.DialContext(ctx, network, address)
+	}
+
+	request := func(ifNoneMatch string) *http.Response {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+		require.NoError(t, err)
+		if ifNoneMatch != "" {
+			req.Header.Set("If-None-Match", ifNoneMatch)
+		}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		return resp
+	}
+
+	resp := request("")
+	responseBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, body, string(responseBody))
+
+	resp = request(etag)
+	responseBody, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusNotModified, resp.StatusCode)
+	assert.Empty(t, responseBody)
+
+	resp = request("")
+	responseBody, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, body, string(responseBody))
+	assert.Equal(t, etag, resp.Header.Get("ETag"))
+
+	assert.Equal(t, int32(2), upstreamRequests.Load())
+	assert.Equal(t, int32(1), proxyDials.Load())
+}
+
+// TestProxyUpstreamCloseIsNotCachedAsBodylessResponse verifies that an upstream
+// connection failure (goproxy returns no response, synthesizes a 500) is logged
+// distinctly and NOT cached as if it were a valid bodyless response, so a later
+// identical request can still succeed.
+func TestProxyUpstreamCloseIsNotCachedAsBodylessResponse(t *testing.T) {
+	var logOutput bytes.Buffer
+	originalLogOutput := log.Writer()
+	originalLogrusOutput := logrus.StandardLogger().Out
+	log.SetOutput(&logOutput)
+	logrus.SetOutput(&logOutput)
+	defer log.SetOutput(originalLogOutput)
+	defer logrus.SetOutput(originalLogrusOutput)
+
+	var upstreamRequests atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if upstreamRequests.Add(1) == 1 {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			require.NoError(t, err)
+			require.NoError(t, conn.Close())
+			return
+		}
+		_, err := io.WriteString(w, "recovered")
+		assert.NoError(t, err)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("PROXY_CACHE", "true")
+	client, proxy := testProxyServer(t, testProxyConfig, nil)
+	defer proxy.Close()
+
+	request := func() *http.Response {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+		require.NoError(t, err)
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		return resp
+	}
+
+	resp := request()
+	_, err := io.Copy(io.Discard, resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+
+	for range 2 {
+		resp = request()
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, "recovered", string(body))
+	}
+
+	assert.Equal(t, int32(2), upstreamRequests.Load())
+	assert.Contains(t, logOutput.String(), "Received nil response")
 }
 
 func TestIPRestrictions(t *testing.T) {
@@ -149,7 +451,7 @@ func TestMetadataAPIRestriction(t *testing.T) {
 	}
 }
 
-func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*http.Client, *http.Server) {
+func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP, upstreamRoots ...*x509.Certificate) (*http.Client, *http.Server) {
 	envSettings := config.ProxyEnvSettings{
 		APIEndpoint:    "",
 		PackageManager: "",
@@ -162,7 +464,18 @@ func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP) (*ht
 	srv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	srv.Handler = newProxy(envSettings, testProxyConfig, blockedIPs)
+	proxyHandler := newProxyWithCacheDir(envSettings, cfg, blockedIPs, t.TempDir())
+	if len(upstreamRoots) > 0 {
+		rootCAs, err := x509.SystemCertPool()
+		if err != nil {
+			rootCAs = x509.NewCertPool()
+		}
+		for _, certificate := range upstreamRoots {
+			rootCAs.AddCert(certificate)
+		}
+		proxyHandler.Tr.TLSClientConfig.RootCAs = rootCAs
+	}
+	srv.Handler = proxyHandler
 
 	lc := net.ListenConfig{}
 	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
