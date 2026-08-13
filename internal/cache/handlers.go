@@ -218,6 +218,11 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 	if responseMustNotHaveBody(resp) {
+		method := ""
+		if resp.Request != nil {
+			method = resp.Request.Method
+		}
+		logrus.Warnf("Response has no body (method: %s, status: %d)", method, resp.StatusCode)
 		if resp.Body != nil && resp.Body != http.NoBody {
 			_ = resp.Body.Close()
 		}

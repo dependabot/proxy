@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/elazarl/goproxy"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -127,6 +128,11 @@ func TestCache_BodyForbiddenResponses(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			var logOutput bytes.Buffer
+			originalOutput := logrus.StandardLogger().Out
+			logrus.SetOutput(&logOutput)
+			defer logrus.SetOutput(originalOutput)
+
 			cacher, err := New(true, t.TempDir())
 			require.NoError(t, err)
 
@@ -152,6 +158,7 @@ func TestCache_BodyForbiddenResponses(t *testing.T) {
 			assert.Empty(t, result.Header.Values("Transfer-Encoding"))
 			assert.Empty(t, cacher.cacheDB)
 			assert.Zero(t, cacher.callCursor)
+			assert.Contains(t, logOutput.String(), "Response has no body (method: "+test.method+", status: "+strconv.Itoa(test.statusCode)+")")
 		})
 	}
 }
