@@ -22,9 +22,9 @@ RUN go build -o $GOPATH/bin/dependabot-proxy -ldflags="-w ${INJECTED_VARS} -s"
 # ============================================================================
 FROM builder-base AS builder-prod
 
-RUN apk add --update --no-cache gcc musl-dev upx && \
-    go build -o $GOPATH/bin/dependabot-proxy -ldflags="-w ${INJECTED_VARS} -s" && \
-    upx --best $GOPATH/bin/dependabot-proxy
+ENV CGO_ENABLED=0
+
+RUN go build -o $GOPATH/bin/dependabot-proxy -ldflags="-w ${INJECTED_VARS} -s"
 
 # ============================================================================
 
