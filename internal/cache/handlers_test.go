@@ -173,6 +173,30 @@ func TestCache_BodyForbiddenResponses(t *testing.T) {
 	}
 }
 
+func TestCache_RoutineBodyForbiddenResponseDoesNotWarn(t *testing.T) {
+	var logOutput bytes.Buffer
+	originalOutput := logrus.StandardLogger().Out
+	logrus.SetOutput(&logOutput)
+	defer logrus.SetOutput(originalOutput)
+
+	cacher, err := New(true, t.TempDir())
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	resp := &http.Response{
+		Request:    req,
+		StatusCode: http.StatusNotModified,
+		Header:     make(http.Header),
+		Body:       http.NoBody,
+	}
+
+	result := cacher.OnResponse(resp, &goproxy.ProxyCtx{Req: req})
+
+	assert.Same(t, resp, result)
+	assert.Equal(t, http.NoBody, result.Body)
+	assert.NotContains(t, logOutput.String(), "Response has no body")
+}
+
 func TestCache_SwitchingProtocolsPreservesUpgradedStream(t *testing.T) {
 	cacher, err := New(true, t.TempDir())
 	require.NoError(t, err)

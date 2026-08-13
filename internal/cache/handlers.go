@@ -218,11 +218,17 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 	if responseMustNotHaveBody(resp) {
-		method := ""
-		if resp.Request != nil {
-			method = resp.Request.Method
+		invalidContentLength := resp.StatusCode == http.StatusResetContent &&
+			(resp.ContentLength != 0 || resp.Header.Get("Content-Length") != "")
+		if resp.Body != nil && resp.Body != http.NoBody ||
+			len(resp.TransferEncoding) > 0 || resp.Header.Get("Transfer-Encoding") != "" ||
+			invalidContentLength {
+			method := ""
+			if resp.Request != nil {
+				method = resp.Request.Method
+			}
+			logrus.Warnf("Response has no body (method: %s, status: %d)", method, resp.StatusCode)
 		}
-		logrus.Warnf("Response has no body (method: %s, status: %d)", method, resp.StatusCode)
 		if resp.Body != nil && resp.Body != http.NoBody {
 			_ = resp.Body.Close()
 		}

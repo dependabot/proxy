@@ -51,6 +51,31 @@ func TestProxyHTTPRequest(t *testing.T) {
 	assert.Equal(t, 200, rsp.StatusCode)
 }
 
+func TestProxyHTTPSMITMFixedLengthResponseFraming(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "5")
+		_, err := io.WriteString(w, "hello")
+		assert.NoError(t, err)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("PROXY_CACHE", "false")
+	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+	defer proxy.Close()
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	assert.Equal(t, "hello", string(body))
+	assert.Empty(t, resp.TransferEncoding)
+	assert.Equal(t, int64(len(body)), resp.ContentLength)
+}
+
 func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
 	var fixedGETRequests atomic.Int32
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +127,7 @@ func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
 		chunked    bool
 		trailer    string
 	}{
-		{name: "fixed length", method: http.MethodGet, path: "/fixed", statusCode: http.StatusOK, body: "hello"},
+		{name: "cache-wrapped fixed body", method: http.MethodGet, path: "/fixed", statusCode: http.StatusOK, body: "hello", chunked: true},
 		{name: "unknown length", method: http.MethodGet, path: "/chunked", statusCode: http.StatusOK, body: "hello world", chunked: true},
 		{name: "trailers", method: http.MethodGet, path: "/trailers", statusCode: http.StatusOK, body: "trailed", chunked: true, trailer: "abc123"},
 		{name: "HEAD", method: http.MethodHead, path: "/fixed", statusCode: http.StatusOK},
