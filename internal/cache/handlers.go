@@ -161,6 +161,34 @@ const (
 	keyValue  = "key"
 )
 
+// bodyless reports whether an HTTP response must not carry a message body, per
+// RFC 7230 3.3.3: any response to a HEAD request, all 1xx (informational)
+// responses, 204 No Content, 205 Reset Content, and 304 Not Modified. The
+// client will not read a body for these regardless of framing headers, so if we
+// attach a body (or a bogus chunked terminator) the extra bytes are left in the
+// connection and desync the next request on the now keep-alive MITM tunnel.
+//
+// 101 Switching Protocols is deliberately excluded: its "body" is the upgraded
+// connection stream (e.g. WebSocket), so it must be passed through untouched.
+func bodyless(status int, method string) bool {
+	if status == http.StatusSwitchingProtocols {
+		return false
+	}
+	if method == http.MethodHead {
+		return true
+	}
+	switch {
+	case status >= 100 && status < 200:
+		return true
+	case status == http.StatusNoContent,
+		status == http.StatusResetContent,
+		status == http.StatusNotModified:
+		return true
+	default:
+		return false
+	}
+}
+
 // OnRequest checks to see if the response is cached, if so responds with the cached data.
 func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if d == nil {
@@ -185,19 +213,35 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 	key := key(r)
 	proxyctx.SetValue(proxyCtx, keyValue, key)
 	if entry, ok := d.cacheDB[key]; ok {
+		proxyctx.SetValue(proxyCtx, wasCached, true)
+		d.cached++
+		resp := &http.Response{}
+		resp.Request = r
+		resp.Header = entry.ResponseHeaders
+		resp.StatusCode = entry.Status
+
+		if bodyless(entry.Status, r.Method) {
+			// Serve bodyless responses (1xx/204/205/304/HEAD) with no body and
+			// no transfer-encoding so goproxy frames them correctly. Attaching a
+			// body here would make goproxy stamp a chunked terminator the
+			// client never reads, desyncing the keep-alive MITM tunnel.
+			resp.Body = http.NoBody
+			resp.ContentLength = 0
+			return r, resp
+		}
+
 		f, err := os.Open(entry.FilePath)
 		if err != nil {
 			logrus.Errorln("failed to open cache file:", err)
 			return r, nil
 		}
-		proxyctx.SetValue(proxyCtx, wasCached, true)
-		d.cached++
-		resp := &http.Response{}
-		resp.Request = r
 		resp.TransferEncoding = r.TransferEncoding
-		resp.Header = entry.ResponseHeaders
-		resp.StatusCode = entry.Status
 		resp.Body = f
+		// Set ContentLength from the cache file so goproxy can length-delimit
+		// the response instead of guessing, avoiding framing ambiguity.
+		if fi, statErr := f.Stat(); statErr == nil {
+			resp.ContentLength = fi.Size()
+		}
 		return r, resp
 	}
 	return r, nil
@@ -212,6 +256,11 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 	if resp == nil {
 		// no response to cache
 		logrus.Warnln("Received nil response")
+		return resp
+	}
+	if resp.StatusCode == http.StatusSwitchingProtocols {
+		// 101: the body is the upgraded connection stream (e.g. WebSocket).
+		// Never cache or reframe it.
 		return resp
 	}
 	k, ok := proxyctx.GetValue(proxyCtx, keyValue)
@@ -229,12 +278,27 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 
+	if bodyless(resp.StatusCode, resp.Request.Method) {
+		// Bodyless responses (1xx/204/205/304/HEAD) have no body to stream to
+		// disk. Leave resp.Body untouched (it is http.NoBody) so goproxy frames
+		// the response correctly, and record the metadata only. Wrapping the
+		// body here would make resp.Body != http.NoBody, causing goproxy to
+		// stamp a chunked terminator the client never reads and desync the
+		// keep-alive MITM tunnel.
+		d.cacheDB[key] = &Entry{
+			Status:          resp.StatusCode,
+			ResponseHeaders: resp.Header,
+		}
+		return resp
+	}
+
 	fileName := fmt.Sprintf("%06d-%v", d.nextNumber(), sanitize(resp.Request.Host))
 	f, err := os.Create(filepath.Clean(filepath.Join(d.cacheDir, fileName)))
 	if err != nil {
 		logrus.Warnln("Failed to write to cache:", err.Error())
 		return resp
 	}
+
 	resp.Body = TeeReadCloser(resp.Body, f, func() {
 		d.Lock()
 		defer d.Unlock()

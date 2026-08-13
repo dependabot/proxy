@@ -111,6 +111,108 @@ func TestCache(t *testing.T) {
 	})
 }
 
+func Test_bodyless(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		method string
+		want   bool
+	}{
+		{"200 GET has body", 200, http.MethodGet, false},
+		{"200 HEAD is bodyless", 200, http.MethodHead, true},
+		{"100 Continue is bodyless", 100, http.MethodGet, true},
+		{"101 Switching Protocols has body (upgraded stream)", 101, http.MethodGet, false},
+		{"204 No Content is bodyless", 204, http.MethodGet, true},
+		{"205 Reset Content is bodyless", 205, http.MethodGet, true},
+		{"304 Not Modified is bodyless", 304, http.MethodGet, true},
+		{"404 GET has body", 404, http.MethodGet, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, bodyless(tc.status, tc.method))
+		})
+	}
+}
+
+// TestCache_BodylessResponses is a regression test for the keep-alive desync
+// introduced by goproxy v1.9.0. Bodyless responses (1xx/204/304/HEAD) must keep
+// Body == http.NoBody through both cache paths; otherwise goproxy stamps a
+// chunked terminator the client never reads, desyncing the reused MITM tunnel.
+func TestCache_BodylessResponses(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		status int
+	}{
+		{"304 Not Modified", http.MethodGet, http.StatusNotModified},
+		{"204 No Content", http.MethodGet, http.StatusNoContent},
+		{"205 Reset Content", http.MethodGet, http.StatusResetContent},
+		{"HEAD 200", http.MethodHead, http.StatusOK},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+			defer os.RemoveAll(cacheDir)
+
+			cacher, err := New(true, cacheDir)
+			require.NoError(t, err)
+
+			// --- Cache miss: OnResponse must not wrap a bodyless body. ---
+			missReq := httptest.NewRequestWithContext(t.Context(), tc.method, URL, nil)
+			missCtx := &goproxy.ProxyCtx{Req: missReq}
+			_, resp := cacher.OnRequest(missReq, missCtx)
+			require.Nil(t, resp)
+
+			resp = &http.Response{
+				Request:    missReq,
+				StatusCode: tc.status,
+				Body:       http.NoBody,
+			}
+			resp = cacher.OnResponse(resp, missCtx)
+			assert.True(t, resp.Body == http.NoBody,
+				"OnResponse must leave bodyless Body as http.NoBody (not tee-wrapped)")
+			assert.Len(t, cacher.cacheDB, 1, "bodyless response should still be cached")
+
+			// --- Cache hit: OnRequest must serve a bodyless response. ---
+			hitReq := httptest.NewRequestWithContext(t.Context(), tc.method, URL, nil)
+			hitCtx := &goproxy.ProxyCtx{Req: hitReq}
+			_, hit := cacher.OnRequest(hitReq, hitCtx)
+			require.NotNil(t, hit)
+			assert.True(t, hit.Body == http.NoBody,
+				"cache hit must serve bodyless responses with http.NoBody")
+			assert.Zero(t, hit.ContentLength)
+			assert.Empty(t, hit.TransferEncoding)
+		})
+	}
+}
+
+// TestCache_SwitchingProtocolsNotCached verifies a 101 upgrade response is
+// passed through untouched and never cached, so its upgraded connection stream
+// (e.g. WebSocket) is not replaced with an empty body on a later request.
+func TestCache_SwitchingProtocolsNotCached(t *testing.T) {
+	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+	defer os.RemoveAll(cacheDir)
+
+	cacher, err := New(true, cacheDir)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	proxyCtx := &goproxy.ProxyCtx{Req: req}
+	_, resp := cacher.OnRequest(req, proxyCtx)
+	require.Nil(t, resp)
+
+	upgraded := io.NopCloser(bytes.NewBufferString("websocket-stream"))
+	resp = &http.Response{
+		Request:    req,
+		StatusCode: http.StatusSwitchingProtocols,
+		Body:       upgraded,
+	}
+	resp = cacher.OnResponse(resp, proxyCtx)
+	assert.True(t, resp.Body == upgraded, "101 body must be passed through untouched")
+	assert.Empty(t, cacher.cacheDB, "101 must not be cached")
+}
+
 func Test_sanitize(t *testing.T) {
 	var tests = []struct {
 		Input, Expected string
