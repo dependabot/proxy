@@ -18,6 +18,7 @@ import (
 	"github.com/elazarl/goproxy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // None of these tests should make network calls
@@ -411,6 +412,42 @@ func TestCache_MissingCacheFileIsNotCountedAsHit(t *testing.T) {
 	assert.Nil(t, hit, "a missing cache file must fall through to upstream")
 	assert.Equal(t, cachedBefore, cacher.cached, "a missing cache file must not be counted as a hit")
 	assert.False(t, WasResponseCached(hitCtx), "request must not be tagged as cached when the file is missing")
+}
+
+// TestCache_PersistedNonCacheableEntriesAreNotLoaded verifies that conditional /
+// no-content entries (1xx/204/205/304) persisted in a db.yaml by an older proxy
+// are dropped on load, so they are never served by OnRequest after upgrade.
+func TestCache_PersistedNonCacheableEntriesAreNotLoaded(t *testing.T) {
+	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+	require.NoError(t, os.MkdirAll(cacheDir, 0o750))
+	defer os.RemoveAll(cacheDir)
+
+	// A backing file for the cacheable (200) entry.
+	bodyFile := filepath.Join(cacheDir, "000001-body")
+	require.NoError(t, os.WriteFile(bodyFile, []byte("hello"), 0o600))
+
+	persisted := []Out{
+		{Key: Key{Method: http.MethodGet, URL: "https://example.test/ok"},
+			Entry: &Entry{Status: http.StatusOK, FilePath: bodyFile}},
+		{Key: Key{Method: http.MethodGet, URL: "https://example.test/not-modified"},
+			Entry: &Entry{Status: http.StatusNotModified}},
+		{Key: Key{Method: http.MethodGet, URL: "https://example.test/no-content"},
+			Entry: &Entry{Status: http.StatusNoContent}},
+	}
+	data, err := yaml.Marshal(persisted)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, "db.yaml"), data, 0o600))
+
+	cacher, err := New(true, cacheDir)
+	require.NoError(t, err)
+
+	assert.Len(t, cacher.cacheDB, 1, "only the cacheable 200 entry should be loaded")
+	_, ok := cacher.cacheDB[Key{Method: http.MethodGet, URL: "https://example.test/ok"}]
+	assert.True(t, ok, "the 200 entry must be loaded")
+	_, ok = cacher.cacheDB[Key{Method: http.MethodGet, URL: "https://example.test/not-modified"}]
+	assert.False(t, ok, "a persisted 304 entry must not be loaded")
+	_, ok = cacher.cacheDB[Key{Method: http.MethodGet, URL: "https://example.test/no-content"}]
+	assert.False(t, ok, "a persisted 204 entry must not be loaded")
 }
 
 func Test_sanitize(t *testing.T) {

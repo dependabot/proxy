@@ -62,15 +62,6 @@ var ignoreHeaders = map[string]struct{}{
 	"X-Pub-Os":          {},
 	"X-Pub-Reason":      {},
 	"X-Pub-Session-Id":  {},
-	// Conditional-request validators: collapse a conditional request onto the
-	// same key as its unconditional twin so it can be served from an already
-	// cached full 200 body instead of going upstream. We never cache a 304
-	// (see cacheableStatus), so this key only ever holds a full response; a
-	// conditional request therefore either hits that body or passes through
-	// unchanged. Excluding them from the hash never forces a re-download of a
-	// body the client already has.
-	"If-None-Match":     {},
-	"If-Modified-Since": {},
 }
 
 // generates the key used in the DB, includes a hash of the body
@@ -159,6 +150,14 @@ func New(enabled bool, cacheDir string) (*DB, error) {
 		return db, nil
 	}
 	for i := range in {
+		if in[i].Entry != nil && !cacheableStatus(in[i].Entry.Status) {
+			// Skip conditional / no-content entries (1xx/204/205/304) persisted
+			// by an older proxy. cacheableStatus only gates new writes, so
+			// without this filter such entries would still be loaded here and
+			// replayed by OnRequest after upgrade, reintroducing the stale-304
+			// problem this change is meant to fix.
+			continue
+		}
 		db.cacheDB[in[i].Key] = in[i].Entry
 	}
 	// prevent successive runs from overwriting previous cache entries
