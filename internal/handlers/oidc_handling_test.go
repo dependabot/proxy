@@ -21,6 +21,10 @@ type oidcHandler interface {
 	HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response)
 }
 
+type oidcResponseHandler interface {
+	HandleResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response
+}
+
 type mockHttpRequest struct {
 	verb     string
 	url      string
@@ -1659,6 +1663,26 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			var buf bytes.Buffer
 			log.SetOutput(&buf)
 			handler := tc.handlerFactory(tc.credentials)
+			if len(tc.urlMocks) > 0 {
+				responseHandler, ok := handler.(oidcResponseHandler)
+				if !assert.True(t, ok, "handler with response fixtures should implement HandleResponse") {
+					return
+				}
+				for _, mockReq := range tc.urlMocks {
+					proxyCtx := &goproxy.ProxyCtx{}
+					req := httptest.NewRequestWithContext(t.Context(), mockReq.verb, mockReq.url, nil)
+					if preparer, ok := handler.(*NugetFeedHandler); ok {
+						preparer.PrepareRequest(req, proxyCtx)
+					}
+					handleRequestAndClose(handler, req, proxyCtx)
+					resp := &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(mockReq.response)),
+					}
+					responseHandler.HandleResponse(resp, proxyCtx)
+					resp.Body.Close()
+				}
+			}
 			logContents := buf.String()
 
 			// check expected log lines

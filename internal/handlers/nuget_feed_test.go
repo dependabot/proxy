@@ -2,13 +2,18 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/elazarl/goproxy"
 	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,9 +67,6 @@ func TestNugetFeedHandler(t *testing.T) {
 		},
 	}
 
-	httpmock.Activate()
-	defer httpmock.DeactivateAndReset()
-
 	rsp := nugetV3IndexResponse{
 		Resource: []nugetV3IndexResource{
 			{
@@ -82,10 +84,6 @@ func TestNugetFeedHandler(t *testing.T) {
 		},
 	}
 
-	jsonResponder, err := httpmock.NewJsonResponder(200, rsp)
-	require.NoError(t, err)
-	httpmock.RegisterResponder("GET", "https://corp.dependabot.com/nuget/", jsonResponder)
-
 	xmlResponse := `
 <service xmlns="http://www.w3.org/2007/app" xmlns:atom="http://www.w3.org/2005/Atom" xml:base="https://redirected.example.com/v2">
   <workspace>
@@ -95,9 +93,6 @@ func TestNugetFeedHandler(t *testing.T) {
   </workspace>
 </service>
 `
-	xmlResponder := httpmock.NewStringResponder(200, xmlResponse)
-	httpmock.RegisterResponder("GET", "https://nuget.example.com/v2", xmlResponder)
-	httpmock.RegisterResponder("GET", "https://nuget.example.com/auth-required/v3", httpmock.NewStringResponder(401, "missing authentication"))
 
 	azureDevOpsRsp := nugetV3IndexResponse{
 		Resource: []nugetV3IndexResource{
@@ -108,10 +103,6 @@ func TestNugetFeedHandler(t *testing.T) {
 		},
 	}
 
-	azureDevOpsJsonResponder, err := httpmock.NewJsonResponder(200, azureDevOpsRsp)
-	require.NoError(t, err)
-	httpmock.RegisterResponder("GET", "https://pkgs.dev.azure.com/example/public/_packaging/some-feed/nuget/v3/index.json", azureDevOpsJsonResponder)
-
 	azureDevOpsRsp2 := nugetV3IndexResponse{
 		Resource: []nugetV3IndexResource{
 			{
@@ -121,17 +112,14 @@ func TestNugetFeedHandler(t *testing.T) {
 		},
 	}
 
-	azureDevOpsJsonResponder2, err := httpmock.NewJsonResponder(200, azureDevOpsRsp2)
-	require.NoError(t, err)
-	httpmock.RegisterResponder("GET", "https://pkgs.dev.azure.com/example/public/_packaging/some-feed2/nuget/v3/index.json", azureDevOpsJsonResponder2)
-
-	// Log for initial authentication contains appropriate information
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
 	handler := NewNugetFeedHandler(credentials)
-	logContents := buf.String()
-	assert.False(t, strings.Contains(logContents, "* authenticating nuget feed request (host: api.nuget.org, bearer auth)"), "don't authenticate a feed without a token or password")
-	assert.True(t, strings.Contains(logContents, "unauthorized for nuget feed https://nuget.example.com/auth-required/v3"), "authentication failure is reported")
+
+	discoverNugetFeed(t, handler, "https://corp.dependabot.com/nuget/", http.StatusOK, mustMarshalJSON(t, rsp))
+	discoverNugetFeed(t, handler, "https://nuget.example.com/v2", http.StatusOK, xmlResponse)
+	discoverNugetFeed(t, handler, "https://pkgs.dev.azure.com/example/public/_packaging/some-feed/nuget/v3/index.json", http.StatusOK, mustMarshalJSON(t, azureDevOpsRsp))
+	discoverNugetFeed(t, handler, "https://pkgs.dev.azure.com/example/public/_packaging/some-feed2/nuget/v3/index.json", http.StatusOK, mustMarshalJSON(t, azureDevOpsRsp2))
 
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://corp.dependabot.com/nuget", nil)
 	req = handleRequestAndClose(handler, req, nil)
@@ -206,7 +194,7 @@ func TestNugetFeedHandler(t *testing.T) {
 	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://pkgs.dev.azure.com/example/public/_packaging/some-feed/nuget/v3/some.package/index.json", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, "", dependabotToken, "Azure DevOps token handling")
-	logContents = buf.String()
+	logContents := buf.String()
 	assert.True(t, strings.Contains(logContents, ", basic auth for Azure DevOps)"), "expected Azure DevOps token handling")
 
 	// Check Azure token edge case in which it has a prepended ":" and is treated as a password successfully
@@ -306,9 +294,6 @@ func TestExtraAuthenticatedURLsAreReportedInTheLog(t *testing.T) {
 		},
 	}
 
-	httpmock.Activate()
-	defer httpmock.DeactivateAndReset()
-
 	jsonResponse := `{
 		"version": "3.0.0",
 		"resources": [
@@ -326,15 +311,263 @@ func TestExtraAuthenticatedURLsAreReportedInTheLog(t *testing.T) {
 			}
 		]
 	}`
-	jsonResponder := httpmock.NewStringResponder(200, jsonResponse)
-	httpmock.RegisterResponder("GET", "https://nuget.example.com/index.json", jsonResponder)
 
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
-	NewNugetFeedHandler(credentials)
+	handler := NewNugetFeedHandler(credentials)
+	discoverNugetFeed(t, handler, "https://nuget.example.com/index.json", http.StatusOK, jsonResponse)
 	logContents := buf.String()
 
 	assert.True(t, strings.Contains(logContents, "  added url to authentication list: https://nuget.example.com/v3/packages"), "include PackageBaseAddress")
 	assert.True(t, strings.Contains(logContents, "  added url to authentication list: https://nuget.example.com/v3/query"), "include SearchQueryService")
 	assert.True(t, strings.Contains(logContents, "  added url to authentication list: https://nuget.example.com/v3/unknown"), "include SomeUnknownServiceTypeButShouldStillBeIncluded")
+}
+
+func TestNewNugetFeedHandlerDoesNotMakeHTTPRequests(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	NewNugetFeedHandler(config.Credentials{
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://unreachable.example.com/index.json",
+			"token": "some-token",
+		},
+	})
+
+	assert.Zero(t, httpmock.GetTotalCallCount())
+}
+
+func TestNugetFeedHandlerDiscoversFromPreparedResponse(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.example.com/index.json",
+			"token": "some-token",
+		},
+	})
+	proxyCtx := &goproxy.ProxyCtx{}
+	indexReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/index.json", nil)
+	handler.PrepareRequest(indexReq, proxyCtx)
+
+	indexResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(
+			`{"version":"3.0.0","resources":[{"@id":"https://cdn.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+		)),
+	}
+	handler.HandleResponse(indexResp, proxyCtx)
+
+	packageReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://cdn.example.com/packages/example/1.0.0/example.nupkg", nil)
+	packageReq = handleRequestAndClose(handler, packageReq, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, packageReq, "Bearer", "some-token", "resource learned from prepared response")
+}
+
+func TestNugetFeedHandlerSkipsDiscoveryFromUnsuccessfulResponse(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.example.com/index.json",
+			"token": "some-token",
+		},
+	})
+	discoverNugetFeed(t, handler, "https://nuget.example.com/index.json", http.StatusUnauthorized,
+		`{"version":"3.0.0","resources":[{"@id":"https://cdn.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`)
+
+	packageReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
+	packageReq = handleRequestAndClose(handler, packageReq, &goproxy.ProxyCtx{})
+	assertUnauthenticated(t, packageReq, "resource from unsuccessful response")
+}
+
+func TestNugetFeedHandlerOnlyDiscoversFromConfiguredServiceIndex(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.example.com/v3/",
+			"token": "some-token",
+		},
+	})
+	proxyCtx := &goproxy.ProxyCtx{}
+	packageReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/v3/some-package/index.json", nil)
+	packageReq = handleRequestAndClose(handler, packageReq, proxyCtx)
+	assertHasTokenAuth(t, packageReq, "Bearer", "some-token", "package under configured feed")
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(
+			`{"version":"3.0.0","resources":[{"@id":"https://untrusted.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+		)),
+	}
+	handler.HandleResponse(resp, proxyCtx)
+
+	untrustedReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://untrusted.example.com/packages/example/index.json", nil)
+	untrustedReq = handleRequestAndClose(handler, untrustedReq, &goproxy.ProxyCtx{})
+	assertUnauthenticated(t, untrustedReq, "resource from non-index response")
+}
+
+func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.example.com/index.json",
+			"token": "some-token",
+		},
+	})
+	const workers = 50
+	responseBody := `{"version":"3.0.0","resources":[{"@id":"https://cdn.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`
+	start := make(chan struct{})
+	var waitGroup sync.WaitGroup
+	for range workers {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			<-start
+			proxyCtx := &goproxy.ProxyCtx{}
+			indexReq := httptest.NewRequest(http.MethodGet, "https://nuget.example.com/index.json", nil)
+			handler.PrepareRequest(indexReq, proxyCtx)
+			handler.HandleRequest(indexReq, proxyCtx)
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(responseBody)),
+			}
+			handler.HandleResponse(resp, proxyCtx)
+			resp.Body.Close()
+
+			packageReq := httptest.NewRequest(http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
+			handler.HandleRequest(packageReq, &goproxy.ProxyCtx{})
+		}()
+	}
+	close(start)
+	waitGroup.Wait()
+
+	handler.credentialsMutex.RLock()
+	defer handler.credentialsMutex.RUnlock()
+	assert.Len(t, handler.credentials, 2)
+}
+
+func TestNugetFeedHandlerPrefersMostSpecificURLCredential(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.example.com/feed",
+			"token": "broad-token",
+		},
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.example.com/feed/specific",
+			"token": "specific-token",
+		},
+		config.Credential{
+			"type":     "nuget_feed",
+			"host":     "nuget.example.com",
+			"username": "host-user",
+			"password": "host-password",
+		},
+	})
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/feed/specific/package/index.json", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "specific-token", "most specific URL credential")
+}
+
+func TestNugetFeedHandlerDiscoversThroughCrossOriginRedirectWithoutLeakingCredentials(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.example.com/index.json",
+			"token": "some-token",
+		},
+	})
+
+	initialCtx := &goproxy.ProxyCtx{}
+	initialReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/index.json", nil)
+	handler.PrepareRequest(initialReq, initialCtx)
+	initialReq = handleRequestAndClose(handler, initialReq, initialCtx)
+	assertHasTokenAuth(t, initialReq, "Bearer", "some-token", "configured service index")
+	handler.HandleResponse(&http.Response{
+		StatusCode: http.StatusFound,
+		Header:     http.Header{"Location": []string{"https://redirect.example.com/index.json"}},
+	}, initialCtx)
+
+	redirectCtx := &goproxy.ProxyCtx{}
+	redirectReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://redirect.example.com/index.json", nil)
+	handler.PrepareRequest(redirectReq, redirectCtx)
+	redirectReq = handleRequestAndClose(handler, redirectReq, redirectCtx)
+	assertUnauthenticated(t, redirectReq, "cross-origin service-index redirect")
+	handler.HandleResponse(&http.Response{
+		StatusCode: http.StatusTemporaryRedirect,
+		Header:     http.Header{"Location": []string{"/v3/index.json"}},
+	}, redirectCtx)
+
+	finalCtx := &goproxy.ProxyCtx{}
+	finalReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://redirect.example.com/v3/index.json", nil)
+	handler.PrepareRequest(finalReq, finalCtx)
+	finalReq = handleRequestAndClose(handler, finalReq, finalCtx)
+	assertUnauthenticated(t, finalReq, "redirect after cross-origin service-index redirect")
+	finalResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(
+			`{"version":"3.0.0","resources":[{"@id":"https://cdn.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+		)),
+	}
+	handler.HandleResponse(finalResp, finalCtx)
+
+	packageReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
+	packageReq = handleRequestAndClose(handler, packageReq, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, packageReq, "Bearer", "some-token", "resource learned through cross-origin redirect")
+}
+
+func TestNugetFeedHandlerAuthenticatesSameOriginServiceIndexRedirect(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.example.com/index.json",
+			"token": "some-token",
+		},
+	})
+
+	initialCtx := &goproxy.ProxyCtx{}
+	initialReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/index.json", nil)
+	handler.PrepareRequest(initialReq, initialCtx)
+	handleRequestAndClose(handler, initialReq, initialCtx)
+	handler.HandleResponse(&http.Response{
+		StatusCode: http.StatusTemporaryRedirect,
+		Header:     http.Header{"Location": []string{"/v3/index.json"}},
+	}, initialCtx)
+
+	redirectReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/v3/index.json", nil)
+	redirectReq = handleRequestAndClose(handler, redirectReq, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, redirectReq, "Bearer", "some-token", "same-origin service-index redirect")
+}
+
+func TestExtraUrlsFromSourceResponseHandlesShortUnknownBody(t *testing.T) {
+	assert.NotPanics(t, func() {
+		assert.Empty(t, extraUrlsFromSourceResponse([]byte("x"), "https://nuget.example.com/index.json"))
+	})
+}
+
+func discoverNugetFeed(t *testing.T, handler *NugetFeedHandler, sourceURL string, statusCode int, responseBody string) {
+	t.Helper()
+	proxyCtx := &goproxy.ProxyCtx{}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, sourceURL, nil)
+	handler.PrepareRequest(req, proxyCtx)
+	req = handleRequestAndClose(handler, req, proxyCtx)
+
+	resp := &http.Response{
+		StatusCode: statusCode,
+		Body:       io.NopCloser(strings.NewReader(responseBody)),
+	}
+	handler.HandleResponse(resp, proxyCtx)
+
+	replayedBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, responseBody, string(replayedBody))
+	require.NoError(t, resp.Body.Close())
+}
+
+func mustMarshalJSON(t *testing.T, value any) string {
+	t.Helper()
+	body, err := json.Marshal(value)
+	require.NoError(t, err)
+	return string(body)
 }

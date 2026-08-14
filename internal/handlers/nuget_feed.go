@@ -2,14 +2,13 @@ package handlers
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"encoding/xml"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
+	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -17,7 +16,10 @@ import (
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
 	"github.com/dependabot/proxy/internal/oidc"
+	"github.com/dependabot/proxy/internal/proxyctx"
 )
+
+const nugetDiscoveryCtxKey = "nuget.discovery-auth"
 
 type nugetV2IndexResponse struct {
 	Base string `xml:"base,attr"`
@@ -35,8 +37,13 @@ type nugetV3IndexResponse struct {
 
 // NugetFeedHandler handles requests to nuget feeds, adding auth.
 type NugetFeedHandler struct {
-	credentials  []nugetFeedCredentials
-	oidcRegistry *oidc.OIDCRegistry
+	credentials         []nugetFeedCredentials
+	credentialURLs      map[string]struct{}
+	credentialsMutex    sync.RWMutex
+	discoverySources    []nugetDiscoveryAuth
+	discoverySourceURLs map[string]struct{}
+	discoveryMutex      sync.RWMutex
+	oidcRegistry        *oidc.OIDCRegistry
 }
 
 type nugetFeedCredentials struct {
@@ -47,15 +54,21 @@ type nugetFeedCredentials struct {
 	password string
 }
 
+type nugetDiscoveryAuth struct {
+	serviceIndexURL string
+	static          nugetFeedCredentials
+	hasStatic       bool
+	oidc            *oidc.OIDCCredential
+	authenticateURL bool
+}
+
 // NewNugetFeedHandler returns a new NugetFeedHandler.
 func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
 	handler := NugetFeedHandler{
-		credentials:  []nugetFeedCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
-	}
-
-	httpClient := &http.Client{
-		Timeout: time.Second * 10,
+		credentials:         []nugetFeedCredentials{},
+		credentialURLs:      make(map[string]struct{}),
+		discoverySourceURLs: make(map[string]struct{}),
+		oidcRegistry:        oidc.NewOIDCRegistry(),
 	}
 
 	for _, cred := range creds {
@@ -72,59 +85,12 @@ func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
 
 		oidcCredential, _, ok := handler.oidcRegistry.Register(cred, []string{"url"}, "nuget feed")
 		if ok {
-			// Discover additional resource URLs from the nuget feed index.
-			// Host-only credentials (from the CLI) are still registered above
-			// for request-time matching, but discovery requires an absolute URL.
-			// Wrapped in a closure so defer runs promptly for each credential,
-			// ensuring the HTTP response body is always closed (pre-existing
-			// leak fixed here: the body was previously leaked on ReadAll error
-			// and on early-return status code paths).
 			if url != "" {
-				func() {
-					req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
-					if err != nil {
-						logging.RequestLogf(nil, "error creating http request (%s): %v", url, err)
-						return
-					}
-
-					if req.URL.Scheme != "https" {
-						logging.RequestLogf(nil, "refusing to discover nuget feed over non-https URL %s", url)
-						return
-					}
-
-					if !handler.oidcRegistry.TryAuth(req, nil) {
-						return
-					}
-
-					rawRsp, err := httpClient.Do(req)
-					if err != nil {
-						logging.RequestLogf(nil, "error retrieving http response (%s): %v", url, err)
-						return
-					}
-					defer rawRsp.Body.Close()
-
-					body, err := io.ReadAll(rawRsp.Body)
-					if err != nil {
-						logging.RequestLogf(nil, "error reading http response body (%s): %v", url, err)
-						return
-					}
-
-					switch rawRsp.StatusCode {
-					case 401, 403:
-						logging.RequestLogf(nil, "unauthorized for nuget feed %s", url)
-						return
-					}
-
-					if rawRsp.StatusCode >= 400 {
-						logging.RequestLogf(nil, "unexpected http response %d for nuget feed %s", rawRsp.StatusCode, url)
-						return
-					}
-
-					urlsToAuthenticate := extraUrlsFromSourceResponse(body, url)
-					for _, discoveredURL := range urlsToAuthenticate {
-						handler.oidcRegistry.RegisterURL(discoveredURL, oidcCredential, "nuget resource")
-					}
-				}()
+				handler.addDiscoverySource(nugetDiscoveryAuth{
+					serviceIndexURL: url,
+					oidc:            oidcCredential,
+					authenticateURL: true,
+				})
 			}
 			continue
 		}
@@ -140,58 +106,14 @@ func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
 			username: username,
 			password: password,
 		}
-		handler.credentials = append(handler.credentials, feedCred)
-
-		// If the credentials are for a specific feed, we query the base url to find all the resources
-		// and authenticate them all
-		if url != "" {
-			logging.RequestLogf(nil, "fetching service index for nuget feed %s", url)
-			// Same closure pattern as the OIDC block above — ensures the
-			// HTTP response body is always closed via defer.
-			func() {
-				req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
-				if err != nil {
-					logging.RequestLogf(nil, "error creating http request (%s): %v", url, err)
-					return
-				}
-				authenticateNugetRequest(req, feedCred, nil)
-
-				rawRsp, err := httpClient.Do(req)
-				if err != nil {
-					logging.RequestLogf(nil, "error retrieving http response (%s): %v", url, err)
-					return
-				}
-				defer rawRsp.Body.Close()
-
-				body, err := io.ReadAll(rawRsp.Body)
-				if err != nil {
-					logging.RequestLogf(nil, "error reading http response body (%s): %v", url, err)
-					return
-				}
-
-				switch rawRsp.StatusCode {
-				case 401, 403:
-					logging.RequestLogf(nil, "unauthorized for nuget feed %s", url)
-					return
-				}
-
-				if rawRsp.StatusCode >= 400 {
-					logging.RequestLogf(nil, "unexpected http response %d for nuget feed %s", rawRsp.StatusCode, url)
-					return
-				}
-
-				urlsToAuthenticate := extraUrlsFromSourceResponse(body, url)
-				for _, discoveredURL := range urlsToAuthenticate {
-					feedCred := nugetFeedCredentials{
-						url:      discoveredURL,
-						token:    token,
-						username: username,
-						password: password,
-					}
-					handler.credentials = append(handler.credentials, feedCred)
-					logging.RequestLogf(nil, "  added url to authentication list: %s", discoveredURL)
-				}
-			}()
+		handler.addStaticCredential(feedCred)
+		if url != "" && (token != "" || password != "") {
+			handler.addDiscoverySource(nugetDiscoveryAuth{
+				serviceIndexURL: url,
+				static:          feedCred,
+				hasStatic:       true,
+				authenticateURL: true,
+			})
 		}
 	}
 
@@ -201,6 +123,9 @@ func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
 func extraUrlsFromSourceResponse(body []byte, url string) []string {
 	var urls []string
 	bodyString := strings.TrimSpace(string(body))
+	if bodyString == "" {
+		return nil
+	}
 	bodyReader := bytes.NewReader(body)
 	switch {
 	case strings.HasPrefix(bodyString, "<"):
@@ -210,7 +135,7 @@ func extraUrlsFromSourceResponse(body []byte, url string) []string {
 		// JSON v3 API
 		urls = handleV3Response(bodyReader, url)
 	default:
-		logging.RequestLogf(nil, "unknown API response: %s...", bodyString[:10])
+		logging.RequestLogf(nil, "unknown API response: %.10s...", bodyString)
 	}
 
 	var result []string
@@ -267,29 +192,232 @@ func handleV3Response(body io.Reader, url string) (v3Urls []string) {
 	return
 }
 
-// HandleRequest adds auth to an nuget feed request
+// PrepareRequest marks configured service-index requests for response-time
+// discovery. It is registered before the cache handler so cached indexes can
+// teach the same resource routes as live responses.
+func (h *NugetFeedHandler) PrepareRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	if proxyCtx == nil || req.Method != http.MethodGet || (req.URL.Scheme != "http" && req.URL.Scheme != "https") {
+		return req, nil
+	}
+
+	h.discoveryMutex.RLock()
+	defer h.discoveryMutex.RUnlock()
+	for _, source := range h.discoverySources {
+		if source.oidc != nil && req.URL.Scheme != "https" {
+			continue
+		}
+		if isNugetServiceIndexRequest(req, source.serviceIndexURL) {
+			markNugetDiscovery(proxyCtx, source)
+			return req, nil
+		}
+	}
+
+	return req, nil
+}
+
+// HandleRequest adds auth to a NuGet feed request.
 func (h *NugetFeedHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if (req.URL.Scheme != "http" && req.URL.Scheme != "https") || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
 
 	// Try OIDC credentials first (HTTPS only to avoid leaking tokens over plaintext)
-	if req.URL.Scheme == "https" && h.oidcRegistry.TryAuth(req, proxyCtx) {
-		return req, nil
+	if req.URL.Scheme == "https" {
+		oidcCredential := h.oidcRegistry.CredentialForRequest(req)
+		if h.oidcRegistry.TryAuthCredential(req, proxyCtx, oidcCredential) {
+			return req, nil
+		}
 	}
 
 	// Fall back to static credentials
-	for _, cred := range h.credentials {
-		if (cred.token == "" && cred.password == "") || (!helpers.UrlMatchesRequest(req, cred.url, true) && !helpers.CheckHost(req, cred.host)) {
+	h.credentialsMutex.RLock()
+	defer h.credentialsMutex.RUnlock()
+	var urlCredential *nugetFeedCredentials
+	var hostCredential *nugetFeedCredentials
+	bestPathLength := -1
+	for i := range h.credentials {
+		cred := &h.credentials[i]
+		if cred.token == "" && cred.password == "" {
 			continue
 		}
-
-		authenticateNugetRequest(req, cred, proxyCtx)
-
+		if helpers.UrlMatchesRequest(req, cred.url, true) {
+			parsedURL, err := helpers.ParseURLLax(cred.url)
+			if err == nil && len(parsedURL.Path) > bestPathLength {
+				urlCredential = cred
+				bestPathLength = len(parsedURL.Path)
+			}
+		}
+		if hostCredential == nil && helpers.CheckHost(req, cred.host) {
+			hostCredential = cred
+		}
+	}
+	if urlCredential != nil {
+		authenticateNugetRequest(req, *urlCredential, proxyCtx)
 		return req, nil
+	}
+	if hostCredential != nil {
+		authenticateNugetRequest(req, *hostCredential, proxyCtx)
 	}
 
 	return req, nil
+}
+
+func (h *NugetFeedHandler) HandleResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
+	if resp == nil {
+		return resp
+	}
+
+	discoveryAuth, ok := nugetDiscoveryAuthFromContext(proxyCtx)
+	if !ok {
+		return resp
+	}
+	if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+		h.registerServiceIndexRedirect(resp, discoveryAuth, proxyCtx)
+		return resp
+	}
+	if resp.Body == nil || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return resp
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	resp.Body = &replayReadCloser{
+		Reader: bytes.NewReader(body),
+		Closer: resp.Body,
+	}
+	if err != nil {
+		return resp
+	}
+
+	for _, discoveredURL := range extraUrlsFromSourceResponse(body, discoveryAuth.serviceIndexURL) {
+		if discoveryAuth.oidc != nil {
+			h.oidcRegistry.RegisterURL(discoveredURL, discoveryAuth.oidc, "nuget resource")
+			continue
+		}
+		if !discoveryAuth.hasStatic {
+			continue
+		}
+
+		credential := discoveryAuth.static
+		credential.url = discoveredURL
+		credential.host = ""
+		if h.addStaticCredential(credential) {
+			logging.RequestLogf(proxyCtx, "  added url to authentication list: %s", discoveredURL)
+		}
+	}
+
+	return resp
+}
+
+func (h *NugetFeedHandler) registerServiceIndexRedirect(resp *http.Response, source nugetDiscoveryAuth, proxyCtx *goproxy.ProxyCtx) {
+	location := resp.Header.Get("Location")
+	if location == "" {
+		return
+	}
+	baseURL, err := url.Parse(source.serviceIndexURL)
+	if err != nil {
+		return
+	}
+	locationURL, err := url.Parse(location)
+	if err != nil {
+		return
+	}
+	redirectURL := baseURL.ResolveReference(locationURL)
+	if redirectURL.User != nil || (redirectURL.Scheme != "http" && redirectURL.Scheme != "https") {
+		return
+	}
+	if source.oidc != nil && redirectURL.Scheme != "https" {
+		return
+	}
+
+	redirectedSource := source
+	redirectedSource.serviceIndexURL = redirectURL.String()
+	redirectedSource.authenticateURL = source.authenticateURL && sameOrigin(baseURL, redirectURL)
+	if !h.addDiscoverySource(redirectedSource) {
+		return
+	}
+
+	if redirectedSource.authenticateURL {
+		if source.oidc != nil {
+			h.oidcRegistry.RegisterURL(redirectURL.String(), source.oidc, "nuget service-index redirect")
+		}
+		if source.hasStatic {
+			credential := source.static
+			credential.url = redirectURL.String()
+			credential.host = ""
+			h.addStaticCredential(credential)
+		}
+	}
+	logging.RequestLogf(proxyCtx, "  registered nuget service-index redirect: %s", redirectURL.String())
+}
+
+func (h *NugetFeedHandler) addStaticCredential(credential nugetFeedCredentials) bool {
+	h.credentialsMutex.Lock()
+	defer h.credentialsMutex.Unlock()
+
+	if credential.url != "" {
+		key := nugetCredentialURLKey(credential.url)
+		if _, ok := h.credentialURLs[key]; ok {
+			return false
+		}
+		h.credentialURLs[key] = struct{}{}
+	}
+	h.credentials = append(h.credentials, credential)
+	return true
+}
+
+func (h *NugetFeedHandler) addDiscoverySource(source nugetDiscoveryAuth) bool {
+	h.discoveryMutex.Lock()
+	defer h.discoveryMutex.Unlock()
+
+	key := nugetCredentialURLKey(source.serviceIndexURL)
+	if _, ok := h.discoverySourceURLs[key]; ok {
+		return false
+	}
+	h.discoverySourceURLs[key] = struct{}{}
+	h.discoverySources = append(h.discoverySources, source)
+	return true
+}
+
+func markNugetDiscovery(proxyCtx *goproxy.ProxyCtx, auth nugetDiscoveryAuth) {
+	if proxyCtx != nil {
+		proxyctx.SetValue(proxyCtx, nugetDiscoveryCtxKey, auth)
+	}
+}
+
+func nugetDiscoveryAuthFromContext(proxyCtx *goproxy.ProxyCtx) (nugetDiscoveryAuth, bool) {
+	if proxyCtx == nil {
+		return nugetDiscoveryAuth{}, false
+	}
+	value, ok := proxyctx.GetValue(proxyCtx, nugetDiscoveryCtxKey)
+	if !ok {
+		return nugetDiscoveryAuth{}, false
+	}
+	auth, ok := value.(nugetDiscoveryAuth)
+	return auth, ok
+}
+
+func isNugetServiceIndexRequest(req *http.Request, sourceURL string) bool {
+	if req.Method != http.MethodGet {
+		return false
+	}
+	parsedURL, err := helpers.ParseURLLax(sourceURL)
+	if err != nil || !helpers.UrlMatchesRequest(req, sourceURL, true) {
+		return false
+	}
+	return strings.TrimRight(parsedURL.Path, "/") == strings.TrimRight(req.URL.Path, "/") &&
+		parsedURL.RawQuery == req.URL.RawQuery
+}
+
+func nugetCredentialURLKey(rawURL string) string {
+	parsedURL, err := helpers.ParseURLLax(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	port := parsedURL.Port()
+	if port == "" {
+		port = "443"
+	}
+	return strings.ToLower(parsedURL.Hostname()) + ":" + port + strings.TrimRight(parsedURL.Path, "/") + "?" + parsedURL.RawQuery
 }
 
 func authenticateNugetRequest(req *http.Request, cred nugetFeedCredentials, proxyCtx *goproxy.ProxyCtx) {
