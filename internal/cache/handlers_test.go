@@ -148,28 +148,53 @@ func Test_bodyless(t *testing.T) {
 	}
 }
 
+func Test_cacheableStatus(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		want   bool
+	}{
+		{"200 OK is cacheable", 200, true},
+		{"203 Non-Authoritative is cacheable", 203, true},
+		{"301 Moved Permanently is cacheable", 301, true},
+		{"404 Not Found is cacheable", 404, true},
+		{"100 Continue is not cacheable", 100, false},
+		{"204 No Content is not cacheable", 204, false},
+		{"205 Reset Content is not cacheable", 205, false},
+		{"304 Not Modified is not cacheable", 304, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, cacheableStatus(tc.status))
+		})
+	}
+}
+
 // TestCache_BodylessResponses is a regression test for the keep-alive desync
 // introduced by goproxy v1.9.0. Bodyless responses (1xx/204/304/HEAD) must keep
 // Body == http.NoBody through both cache paths; otherwise goproxy stamps a
 // chunked terminator the client never reads, desyncing the reused MITM tunnel.
+// Conditional / no-content statuses (1xx/204/205/304) are additionally never
+// cached, so replaying them can't hide upstream updates; only a HEAD for a
+// cacheable status is stored (headers-only).
 func TestCache_BodylessResponses(t *testing.T) {
 	cases := []struct {
 		name              string
 		method            string
 		status            int
 		contentLength     string
+		wantCached        bool
 		wantHitContentLen int64
 	}{
-		{"304 Not Modified", http.MethodGet, http.StatusNotModified, "", 0},
-		{"204 No Content", http.MethodGet, http.StatusNoContent, "", 0},
-		{"205 Reset Content", http.MethodGet, http.StatusResetContent, "", 0},
-		{"HEAD 200", http.MethodHead, http.StatusOK, "", 0},
+		{"304 Not Modified", http.MethodGet, http.StatusNotModified, "", false, 0},
+		{"204 No Content", http.MethodGet, http.StatusNoContent, "", false, 0},
+		{"205 Reset Content", http.MethodGet, http.StatusResetContent, "", false, 0},
+		{"HEAD 200", http.MethodHead, http.StatusOK, "", true, 0},
 		// A HEAD advertises the length the equivalent GET would return; a cache
 		// hit must report that same length, not force it to zero.
-		{"HEAD 200 with Content-Length", http.MethodHead, http.StatusOK, "5", 5},
-		// A non-HEAD bodyless status must stay zero: a non-zero ContentLength
-		// with an empty body would fail resp.Write for GET responses.
-		{"304 with Content-Length", http.MethodGet, http.StatusNotModified, "5", 0},
+		{"HEAD 200 with Content-Length", http.MethodHead, http.StatusOK, "5", true, 5},
+		// A 304 is never cached even when it carries a Content-Length.
+		{"304 with Content-Length", http.MethodGet, http.StatusNotModified, "5", false, 0},
 	}
 
 	for _, tc := range cases {
@@ -198,7 +223,20 @@ func TestCache_BodylessResponses(t *testing.T) {
 			resp = cacher.OnResponse(resp, missCtx)
 			assert.True(t, resp.Body == http.NoBody,
 				"OnResponse must leave bodyless Body as http.NoBody (not tee-wrapped)")
-			assert.Len(t, cacher.cacheDB, 1, "bodyless response should still be cached")
+
+			if !tc.wantCached {
+				assert.Empty(t, cacher.cacheDB,
+					"conditional/no-content responses must not be cached")
+
+				// --- A later identical request must be a miss (passed through). ---
+				hitReq := httptest.NewRequestWithContext(t.Context(), tc.method, URL, nil)
+				hitCtx := &goproxy.ProxyCtx{Req: hitReq}
+				_, hit := cacher.OnRequest(hitReq, hitCtx)
+				assert.Nil(t, hit, "uncached conditional response must not produce a cache hit")
+				return
+			}
+
+			assert.Len(t, cacher.cacheDB, 1, "cacheable HEAD response should be cached")
 
 			// --- Cache hit: OnRequest must serve a bodyless response. ---
 			hitReq := httptest.NewRequestWithContext(t.Context(), tc.method, URL, nil)
@@ -216,18 +254,21 @@ func TestCache_BodylessResponses(t *testing.T) {
 // TestCache_BodylessResponseWithWrappedBodyIsRestored verifies that when an
 // earlier response handler has replaced a bodyless response's http.NoBody with
 // another (empty) ReadCloser — as PythonIndexHandler does — OnResponse restores
-// http.NoBody before caching. Otherwise goproxy sees resp.Body != http.NoBody,
-// stamps a chunked terminator, and desyncs the keep-alive MITM tunnel.
+// http.NoBody. Otherwise goproxy sees resp.Body != http.NoBody, stamps a chunked
+// terminator, and desyncs the keep-alive MITM tunnel. This restoration happens
+// whether or not the response is cached: conditional/no-content statuses are not
+// cached, but their bodies must still be normalized before pass-through.
 func TestCache_BodylessResponseWithWrappedBodyIsRestored(t *testing.T) {
 	cases := []struct {
-		name   string
-		method string
-		status int
+		name       string
+		method     string
+		status     int
+		wantCached bool
 	}{
-		{"HEAD 200", http.MethodHead, http.StatusOK},
-		{"204 No Content", http.MethodGet, http.StatusNoContent},
-		{"205 Reset Content", http.MethodGet, http.StatusResetContent},
-		{"304 Not Modified", http.MethodGet, http.StatusNotModified},
+		{"HEAD 200", http.MethodHead, http.StatusOK, true},
+		{"204 No Content", http.MethodGet, http.StatusNoContent, false},
+		{"205 Reset Content", http.MethodGet, http.StatusResetContent, false},
+		{"304 Not Modified", http.MethodGet, http.StatusNotModified, false},
 	}
 
 	for _, tc := range cases {
@@ -257,7 +298,12 @@ func TestCache_BodylessResponseWithWrappedBodyIsRestored(t *testing.T) {
 			assert.True(t, resp.Body == http.NoBody,
 				"OnResponse must restore http.NoBody when a bodyless response was wrapped")
 			assert.True(t, closed, "the replaced wrapper must be closed to avoid leaks")
-			assert.Len(t, cacher.cacheDB, 1, "bodyless response should still be cached")
+			if tc.wantCached {
+				assert.Len(t, cacher.cacheDB, 1, "cacheable HEAD response should be cached")
+			} else {
+				assert.Empty(t, cacher.cacheDB,
+					"conditional/no-content responses must not be cached")
+			}
 		})
 	}
 }

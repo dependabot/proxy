@@ -62,6 +62,15 @@ var ignoreHeaders = map[string]struct{}{
 	"X-Pub-Os":          {},
 	"X-Pub-Reason":      {},
 	"X-Pub-Session-Id":  {},
+	// Conditional-request validators: collapse a conditional request onto the
+	// same key as its unconditional twin so it can be served from an already
+	// cached full 200 body instead of going upstream. We never cache a 304
+	// (see cacheableStatus), so this key only ever holds a full response; a
+	// conditional request therefore either hits that body or passes through
+	// unchanged. Excluding them from the hash never forces a re-download of a
+	// body the client already has.
+	"If-None-Match":     {},
+	"If-Modified-Since": {},
 }
 
 // generates the key used in the DB, includes a hash of the body
@@ -190,6 +199,27 @@ func bodyless(status int, method string) bool {
 	}
 }
 
+// cacheableStatus reports whether a response with the given status code is worth
+// persisting in the cache. Informational (1xx), no-content (204/205) and
+// conditional (304 Not Modified) responses carry no reusable body, so caching
+// them saves nothing. Worse, caching a 304 is actively harmful for a dependency
+// updater: replaying a stale "Not Modified" hides upstream package updates that
+// the client would otherwise fetch, and a client whose local copy no longer
+// matches (e.g. pnpm) fails with ERR_PNPM_CACHE_MISSING_AFTER_304. These
+// responses are always passed straight through instead.
+func cacheableStatus(status int) bool {
+	switch {
+	case status >= 100 && status < 200:
+		return false
+	case status == http.StatusNoContent,
+		status == http.StatusResetContent,
+		status == http.StatusNotModified:
+		return false
+	default:
+		return true
+	}
+}
+
 // OnRequest checks to see if the response is cached, if so responds with the cached data.
 func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if d == nil {
@@ -303,12 +333,24 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		// restore http.NoBody so goproxy sees an unmodified empty body and frames
 		// the response without a chunked terminator. Leaving a non-NoBody body in
 		// place would make goproxy stamp a "0\r\n\r\n" the client never reads,
-		// desyncing the keep-alive MITM tunnel. ContentLength is left untouched so
-		// a HEAD still advertises the length its GET would return.
+		// desyncing the keep-alive MITM tunnel. This normalization runs whether
+		// or not we go on to cache the response.
 		if resp.Body != nil && resp.Body != http.NoBody {
 			_ = resp.Body.Close()
 			resp.Body = http.NoBody
 		}
+
+		if !cacheableStatus(resp.StatusCode) {
+			// Never cache conditional / no-content responses (1xx/204/205/304).
+			// A cached 304 would replay a stale "Not Modified" and hide upstream
+			// package updates from the updater; there is no body to reuse anyway.
+			// Pass it straight through, correctly framed.
+			return resp
+		}
+
+		// A HEAD response for an otherwise cacheable status (e.g. 200) has no
+		// body but carries useful headers (notably Content-Length). Cache it
+		// headers-only so a later HEAD hit reproduces the same metadata.
 		d.cacheDB[key] = &Entry{
 			Status:          resp.StatusCode,
 			ResponseHeaders: resp.Header,

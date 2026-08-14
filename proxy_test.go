@@ -222,9 +222,11 @@ func TestProxyHTTPSMITMHeadCacheHitPreservesContentLength(t *testing.T) {
 	require.Equal(t, int32(1), proxyDials.Load(), "both requests must reuse one tunnel")
 }
 
-// TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse verifies that a
-// 304 response served through the cache does not corrupt the tunnel, and that a
-// later unconditional request still returns the original cached 200 body.
+// TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse verifies that once
+// a full 200 is cached, both conditional and unconditional requests for the same
+// resource are served that cached body over a healthy reused tunnel, without
+// extra upstream round-trips. The conditional request collapses onto the same
+// cache key (see ignoreHeaders) rather than producing a replayed 304.
 func TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse(t *testing.T) {
 	const (
 		etag = `"v1"`
@@ -265,6 +267,7 @@ func TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse(t *testing.T) {
 		return resp
 	}
 
+	// Unconditional request populates the cache with the full 200 body.
 	resp := request("")
 	responseBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
@@ -272,13 +275,16 @@ func TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, body, string(responseBody))
 
+	// Conditional request collapses onto the same key and is served the cached
+	// full body instead of a 304, with no upstream round-trip.
 	resp = request(etag)
 	responseBody, err = io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
-	assert.Equal(t, http.StatusNotModified, resp.StatusCode)
-	assert.Empty(t, responseBody)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, body, string(responseBody))
 
+	// A later unconditional request is likewise served from cache.
 	resp = request("")
 	responseBody, err = io.ReadAll(resp.Body)
 	require.NoError(t, err)
@@ -287,8 +293,115 @@ func TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse(t *testing.T) {
 	assert.Equal(t, body, string(responseBody))
 	assert.Equal(t, etag, resp.Header.Get("ETag"))
 
-	assert.Equal(t, int32(2), upstreamRequests.Load())
+	// Only the first request reached upstream; the reused tunnel stayed healthy.
+	assert.Equal(t, int32(1), upstreamRequests.Load())
 	assert.Equal(t, int32(1), proxyDials.Load())
+}
+
+// TestProxyHTTPSConditionalNotModifiedIsNotCached verifies that a 304 Not
+// Modified is never stored in the cache. Replaying a cached 304 would let a
+// stale "Not Modified" mask upstream package updates from the dependency
+// updater, so every conditional request must reach upstream. It also confirms
+// the passthrough 304 keeps the reused MITM tunnel healthy across requests.
+func TestProxyHTTPSConditionalNotModifiedIsNotCached(t *testing.T) {
+	const etag = `"v1"`
+	var conditionalRequests atomic.Int32
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			conditionalRequests.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		_, err := io.WriteString(w, "body")
+		assert.NoError(t, err)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("PROXY_CACHE", "true")
+	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+	defer proxy.Close()
+	transport := client.Transport.(*http.Transport)
+	var proxyDials atomic.Int32
+	dialer := &net.Dialer{}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		proxyDials.Add(1)
+		return dialer.DialContext(ctx, network, address)
+	}
+
+	for i := 0; i < 3; i++ {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+		require.NoError(t, err)
+		req.Header.Set("If-None-Match", etag)
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		responseBody, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		assert.Equal(t, http.StatusNotModified, resp.StatusCode)
+		assert.Empty(t, responseBody)
+	}
+
+	// Every conditional request must reach upstream: a cached 304 is never
+	// replayed. A single dial proves the reused tunnel stayed in sync.
+	assert.Equal(t, int32(3), conditionalRequests.Load())
+	assert.Equal(t, int32(1), proxyDials.Load())
+}
+
+// TestProxyHTTPSConditionalRequestServedFromCachedBody verifies the performance
+// path: once an unconditional GET has cached a full 200, a later *conditional*
+// request (If-None-Match) for the same resource is served that cached body
+// instead of going upstream. This is safe because we only ever serve a full
+// response we already fetched — the client never receives a stale 304, and we
+// never force a re-download of a body it already has.
+func TestProxyHTTPSConditionalRequestServedFromCachedBody(t *testing.T) {
+	const (
+		etag = `"v1"`
+		body = "cached response"
+	)
+	var upstreamRequests atomic.Int32
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamRequests.Add(1)
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		_, err := io.WriteString(w, body)
+		assert.NoError(t, err)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("PROXY_CACHE", "true")
+	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+	defer proxy.Close()
+
+	// First request is unconditional and populates the cache with the full 200.
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	responseBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, body, string(responseBody))
+
+	// A later conditional request collapses onto the same cache key and is
+	// served the cached full 200 body without another upstream round-trip.
+	condReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+	require.NoError(t, err)
+	condReq.Header.Set("If-None-Match", etag)
+	condResp, err := client.Do(condReq)
+	require.NoError(t, err)
+	condBody, err := io.ReadAll(condResp.Body)
+	require.NoError(t, err)
+	require.NoError(t, condResp.Body.Close())
+	assert.Equal(t, http.StatusOK, condResp.StatusCode)
+	assert.Equal(t, body, string(condBody))
+
+	// Only the first (cache-populating) request reached upstream.
+	assert.Equal(t, int32(1), upstreamRequests.Load())
 }
 
 // TestProxyUpstreamCloseIsNotCachedAsBodylessResponse verifies that an upstream
