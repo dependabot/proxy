@@ -6,4 +6,5 @@ source script/_common
 
 docker build \
   --build-arg "GIT_COMMIT=${GITHUB_SHA}" \
-  -t "${PROXY_IMAGE}" .
+  -t "${PROXY_IMAGE}" \
+  -t "${REMOTE_IMAGE}:latest" .
