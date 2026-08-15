@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"reflect"
 	"sync"
 	"time"
 
@@ -78,6 +79,12 @@ type OIDCCredential struct {
 
 func (c *OIDCCredential) Provider() string {
 	return c.parameters.Name()
+}
+
+// Equivalent reports whether two credentials request tokens with the same
+// provider parameters. Cached token state does not affect equivalence.
+func (c *OIDCCredential) Equivalent(other *OIDCCredential) bool {
+	return c != nil && other != nil && reflect.DeepEqual(c.parameters, other.parameters)
 }
 
 func CreateOIDCCredential(cred config.Credential) (*OIDCCredential, error) {

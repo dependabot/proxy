@@ -492,6 +492,123 @@ func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
 	assert.Len(t, handler.credentials, 2)
 }
 
+func TestNugetFeedHandlerAllowsSharedRouteWithSameCredential(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{"type": "nuget_feed", "url": "https://first.example/index.json", "token": "user:password"},
+		config.Credential{"type": "nuget_feed", "url": "https://second.example/index.json", "username": "user", "password": "password"},
+	})
+	response := `{"version":"3.0.0","resources":[{"@id":"https://cdn.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`
+	discoverNugetFeed(t, handler, "https://first.example/index.json", http.StatusOK, response)
+	discoverNugetFeed(t, handler, "https://second.example/index.json", http.StatusOK, response)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasBasicAuth(t, req, "user", "password", "shared route with same credential")
+}
+
+func TestNugetFeedHandlerRejectsSharedRouteWithDifferentCredentials(t *testing.T) {
+	for _, order := range [][]string{
+		{"https://first.example/index.json", "https://second.example/index.json"},
+		{"https://second.example/index.json", "https://first.example/index.json"},
+	} {
+		handler := NewNugetFeedHandler(config.Credentials{
+			config.Credential{"type": "nuget_feed", "url": "https://first.example/index.json", "token": "first-token"},
+			config.Credential{"type": "nuget_feed", "url": "https://second.example/index.json", "token": "second-token"},
+		})
+		response := `{"version":"3.0.0","resources":[{"@id":"https://cdn.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`
+		var buf bytes.Buffer
+		log.SetOutput(&buf)
+		for _, sourceURL := range order {
+			discoverNugetFeed(t, handler, sourceURL, http.StatusOK, response)
+		}
+
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
+		req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+		assertUnauthenticated(t, req, "shared route with different credentials")
+		assert.Contains(t, buf.String(), "conflicting NuGet credentials for route https://cdn.example.com/packages")
+		assert.Contains(t, buf.String(), "https://first.example/index.json")
+		assert.Contains(t, buf.String(), "https://second.example/index.json")
+	}
+}
+
+func TestNugetFeedHandlerRejectsOIDCAndMixedCredentialConflicts(t *testing.T) {
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "https://token.actions.example.com")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "test-token")
+	oidcCredential := config.Credential{
+		"type": "nuget_feed", "url": "https://first.example/index.json",
+		"tenant-id": "first-tenant", "client-id": "first-client",
+	}
+	testCases := []struct {
+		name        string
+		credential  config.Credential
+		conflicting bool
+	}{
+		{
+			name: "equivalent OIDC credential",
+			credential: config.Credential{
+				"type": "nuget_feed", "url": "https://second.example/index.json",
+				"tenant-id": "first-tenant", "client-id": "first-client",
+			},
+			conflicting: false,
+		},
+		{
+			name: "different OIDC credential",
+			credential: config.Credential{
+				"type": "nuget_feed", "url": "https://second.example/index.json",
+				"tenant-id": "second-tenant", "client-id": "second-client",
+			},
+			conflicting: true,
+		},
+		{
+			name:        "static credential",
+			credential:  config.Credential{"type": "nuget_feed", "url": "https://second.example/index.json", "token": "static-token"},
+			conflicting: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			handler := NewNugetFeedHandler(config.Credentials{oidcCredential, testCase.credential})
+			responseBody := `{"version":"3.0.0","resources":[{"@id":"https://cdn.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`
+			for _, sourceURL := range []string{"https://first.example/index.json", "https://second.example/index.json"} {
+				proxyCtx := &goproxy.ProxyCtx{}
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, sourceURL, nil)
+				handler.PrepareRequest(req, proxyCtx)
+				handler.HandleResponse(&http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(responseBody)),
+				}, proxyCtx)
+			}
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
+			assert.Equal(t, testCase.conflicting, handler.requestMatchesConflictingRoute(req))
+			if testCase.conflicting {
+				req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+				assertUnauthenticated(t, req, "ambiguous OIDC route")
+			}
+		})
+	}
+}
+
+func TestNugetFeedHandlerKeepsDistinctMirrorRoutesIndependent(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{"type": "nuget_feed", "url": "https://first.example/index.json", "token": "first-token"},
+		config.Credential{"type": "nuget_feed", "url": "https://mirror.example/index.json", "token": "mirror-token"},
+	})
+	discoverNugetFeed(t, handler, "https://first.example/index.json", http.StatusOK,
+		`{"version":"3.0.0","resources":[{"@id":"https://first.example/packages","@type":"PackageBaseAddress/3.0.0"}]}`)
+	discoverNugetFeed(t, handler, "https://mirror.example/index.json", http.StatusOK,
+		`{"version":"3.0.0","resources":[{"@id":"https://mirror.example/packages","@type":"PackageBaseAddress/3.0.0"}]}`)
+
+	firstReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://first.example/packages/example/index.json", nil)
+	firstReq = handleRequestAndClose(handler, firstReq, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, firstReq, "Bearer", "first-token", "first mirror route")
+
+	mirrorReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://mirror.example/packages/example/index.json", nil)
+	mirrorReq = handleRequestAndClose(handler, mirrorReq, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, mirrorReq, "Bearer", "mirror-token", "second mirror route")
+}
+
 func TestNugetFeedHandlerPrefersMostSpecificURLCredential(t *testing.T) {
 	handler := NewNugetFeedHandler(config.Credentials{
 		config.Credential{

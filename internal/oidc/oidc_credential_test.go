@@ -18,6 +18,16 @@ import (
 	"github.com/dependabot/proxy/internal/config"
 )
 
+func TestOIDCCredentialEquivalent(t *testing.T) {
+	first := &OIDCCredential{parameters: &AzureOIDCParameters{TenantID: "tenant", ClientID: "client"}}
+	same := &OIDCCredential{parameters: &AzureOIDCParameters{TenantID: "tenant", ClientID: "client"}}
+	different := &OIDCCredential{parameters: &AzureOIDCParameters{TenantID: "tenant", ClientID: "other"}}
+
+	assert.True(t, first.Equivalent(same))
+	assert.False(t, first.Equivalent(different))
+	assert.False(t, first.Equivalent(nil))
+}
+
 func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {
 	// these variables are necessary
 	os.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")

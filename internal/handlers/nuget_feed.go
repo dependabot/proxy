@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 
@@ -37,13 +38,15 @@ type nugetV3IndexResponse struct {
 
 // NugetFeedHandler handles requests to nuget feeds, adding auth.
 type NugetFeedHandler struct {
-	credentials         []nugetFeedCredentials
-	credentialURLs      map[string]struct{}
-	credentialsMutex    sync.RWMutex
-	discoverySources    []nugetDiscoveryAuth
-	discoverySourceURLs map[string]struct{}
-	discoveryMutex      sync.RWMutex
-	oidcRegistry        *oidc.OIDCRegistry
+	credentials           []nugetFeedCredentials
+	credentialURLs        map[string]struct{}
+	credentialsMutex      sync.RWMutex
+	credentialClaims      map[string]*nugetCredentialClaim
+	credentialClaimsMutex sync.RWMutex
+	discoverySources      []nugetDiscoveryAuth
+	discoverySourceURLs   map[string]struct{}
+	discoveryMutex        sync.RWMutex
+	oidcRegistry          *oidc.OIDCRegistry
 }
 
 type nugetFeedCredentials struct {
@@ -62,11 +65,19 @@ type nugetDiscoveryAuth struct {
 	authenticateURL bool
 }
 
+type nugetCredentialClaim struct {
+	url         string
+	auth        nugetDiscoveryAuth
+	sourceURLs  []string
+	conflicting bool
+}
+
 // NewNugetFeedHandler returns a new NugetFeedHandler.
 func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
 	handler := NugetFeedHandler{
 		credentials:         []nugetFeedCredentials{},
 		credentialURLs:      make(map[string]struct{}),
+		credentialClaims:    make(map[string]*nugetCredentialClaim),
 		discoverySourceURLs: make(map[string]struct{}),
 		oidcRegistry:        oidc.NewOIDCRegistry(),
 	}
@@ -86,11 +97,13 @@ func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
 		oidcCredential, _, ok := handler.oidcRegistry.Register(cred, []string{"url"}, "nuget feed")
 		if ok {
 			if url != "" {
-				handler.addDiscoverySource(nugetDiscoveryAuth{
+				source := nugetDiscoveryAuth{
 					serviceIndexURL: url,
 					oidc:            oidcCredential,
 					authenticateURL: true,
-				})
+				}
+				handler.addDiscoverySource(source)
+				handler.claimCredentialRoute(url, source, nil)
 			}
 			continue
 		}
@@ -108,12 +121,14 @@ func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
 		}
 		handler.addStaticCredential(feedCred)
 		if url != "" && (token != "" || password != "") {
-			handler.addDiscoverySource(nugetDiscoveryAuth{
+			source := nugetDiscoveryAuth{
 				serviceIndexURL: url,
 				static:          feedCred,
 				hasStatic:       true,
 				authenticateURL: true,
-			})
+			}
+			handler.addDiscoverySource(source)
+			handler.claimCredentialRoute(url, source, nil)
 		}
 	}
 
@@ -221,6 +236,13 @@ func (h *NugetFeedHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 	if (req.URL.Scheme != "http" && req.URL.Scheme != "https") || !helpers.MethodPermitted(req, "GET", "HEAD") {
 		return req, nil
 	}
+	// A first claim may remain in the static or OIDC registry after a later
+	// claim makes the route ambiguous. Check conflicts before every credential
+	// lookup so no registered NuGet credential can be used for that route.
+	if h.requestMatchesConflictingRoute(req) {
+		logging.RequestLogf(proxyCtx, "* refusing to inject credentials for request matching an ambiguous NuGet route: %s", req.URL.String())
+		return req, nil
+	}
 
 	// Try OIDC credentials first (HTTPS only to avoid leaking tokens over plaintext)
 	if req.URL.Scheme == "https" {
@@ -294,6 +316,9 @@ func (h *NugetFeedHandler) HandleResponse(resp *http.Response, proxyCtx *goproxy
 	}
 
 	for _, discoveredURL := range extraUrlsFromSourceResponse(body, discoveryAuth.serviceIndexURL) {
+		if !h.claimCredentialRoute(discoveredURL, discoveryAuth, proxyCtx) {
+			continue
+		}
 		if discoveryAuth.oidc != nil {
 			h.oidcRegistry.RegisterURL(discoveredURL, discoveryAuth.oidc, "nuget resource")
 			continue
@@ -342,6 +367,10 @@ func (h *NugetFeedHandler) registerServiceIndexRedirect(resp *http.Response, sou
 	}
 
 	if redirectedSource.authenticateURL {
+		if !h.claimCredentialRoute(redirectURL.String(), redirectedSource, proxyCtx) {
+			logging.RequestLogf(proxyCtx, "  registered nuget service-index redirect: %s", redirectURL.String())
+			return
+		}
 		if source.oidc != nil {
 			h.oidcRegistry.RegisterURL(redirectURL.String(), source.oidc, "nuget service-index redirect")
 		}
@@ -382,6 +411,63 @@ func (h *NugetFeedHandler) addDiscoverySource(source nugetDiscoveryAuth) bool {
 	h.discoverySources = append(h.discoverySources, source)
 	logging.RequestLogf(nil, "registered NuGet service index for deferred discovery: %s", source.serviceIndexURL)
 	return true
+}
+
+func (h *NugetFeedHandler) claimCredentialRoute(rawURL string, auth nugetDiscoveryAuth, proxyCtx *goproxy.ProxyCtx) bool {
+	key := nugetCredentialURLKey(rawURL)
+	h.credentialClaimsMutex.Lock()
+	defer h.credentialClaimsMutex.Unlock()
+
+	claim, ok := h.credentialClaims[key]
+	if !ok {
+		h.credentialClaims[key] = &nugetCredentialClaim{
+			url:        rawURL,
+			auth:       auth,
+			sourceURLs: []string{auth.serviceIndexURL},
+		}
+		return true
+	}
+
+	if !slices.Contains(claim.sourceURLs, auth.serviceIndexURL) {
+		claim.sourceURLs = append(claim.sourceURLs, auth.serviceIndexURL)
+	}
+	if equivalentNugetDiscoveryAuth(claim.auth, auth) {
+		return false
+	}
+
+	claim.conflicting = true
+	logging.RequestLogf(proxyCtx,
+		"conflicting NuGet credentials for route %s claimed by service indexes %s; NuGet credentials will not be injected for matching requests",
+		claim.url, strings.Join(claim.sourceURLs, ", "))
+	return false
+}
+
+func (h *NugetFeedHandler) requestMatchesConflictingRoute(req *http.Request) bool {
+	h.credentialClaimsMutex.RLock()
+	defer h.credentialClaimsMutex.RUnlock()
+	for _, claim := range h.credentialClaims {
+		if claim.conflicting && helpers.UrlMatchesRequest(req, claim.url, true) {
+			return true
+		}
+	}
+	return false
+}
+
+func equivalentNugetDiscoveryAuth(first, second nugetDiscoveryAuth) bool {
+	if first.hasStatic || second.hasStatic {
+		return first.hasStatic && second.hasStatic && staticNugetCredentialValue(first.static) == staticNugetCredentialValue(second.static)
+	}
+	return first.oidc.Equivalent(second.oidc)
+}
+
+func staticNugetCredentialValue(credential nugetFeedCredentials) string {
+	if credential.token != "" {
+		return credential.token
+	}
+	if credential.password != "" {
+		return credential.username + ":" + credential.password
+	}
+	return ""
 }
 
 func markNugetDiscovery(proxyCtx *goproxy.ProxyCtx, auth nugetDiscoveryAuth) {
