@@ -124,6 +124,7 @@ func extraUrlsFromSourceResponse(body []byte, url string) []string {
 	var urls []string
 	bodyString := strings.TrimSpace(string(body))
 	if bodyString == "" {
+		logging.RequestLogf(nil, "empty API response from NuGet feed %s", url)
 		return nil
 	}
 	bodyReader := bytes.NewReader(body)
@@ -229,7 +230,8 @@ func (h *NugetFeedHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 		}
 	}
 
-	// Fall back to static credentials
+	// Prefer the most specific URL credential, with host-only credentials as
+	// fallback. This avoids a broad credential shadowing a narrower feed.
 	h.credentialsMutex.RLock()
 	defer h.credentialsMutex.RUnlock()
 	var urlCredential *nugetFeedCredentials
@@ -275,14 +277,17 @@ func (h *NugetFeedHandler) HandleResponse(resp *http.Response, proxyCtx *goproxy
 		h.registerServiceIndexRedirect(resp, discoveryAuth, proxyCtx)
 		return resp
 	}
-	if resp.Body == nil || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+	if resp.Body == nil || resp.Body == http.NoBody || resp.StatusCode == http.StatusNoContent ||
+		resp.StatusCode == http.StatusResetContent || resp.StatusCode < http.StatusOK ||
+		resp.StatusCode >= http.StatusMultipleChoices {
 		return resp
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	originalBody := resp.Body
+	body, err := io.ReadAll(originalBody)
 	resp.Body = &replayReadCloser{
-		Reader: bytes.NewReader(body),
-		Closer: resp.Body,
+		Reader: io.MultiReader(bytes.NewReader(body), originalBody),
+		Closer: originalBody,
 	}
 	if err != nil {
 		return resp
@@ -375,6 +380,7 @@ func (h *NugetFeedHandler) addDiscoverySource(source nugetDiscoveryAuth) bool {
 	}
 	h.discoverySourceURLs[key] = struct{}{}
 	h.discoverySources = append(h.discoverySources, source)
+	logging.RequestLogf(nil, "registered NuGet service index for deferred discovery: %s", source.serviceIndexURL)
 	return true
 }
 

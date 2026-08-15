@@ -327,6 +327,8 @@ func TestNewNugetFeedHandlerDoesNotMakeHTTPRequests(t *testing.T) {
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
 	NewNugetFeedHandler(config.Credentials{
 		config.Credential{
 			"type":  "nuget_feed",
@@ -336,6 +338,7 @@ func TestNewNugetFeedHandlerDoesNotMakeHTTPRequests(t *testing.T) {
 	})
 
 	assert.Zero(t, httpmock.GetTotalCallCount())
+	assert.Contains(t, buf.String(), "registered NuGet service index for deferred discovery: https://unreachable.example.com/index.json")
 }
 
 func TestNugetFeedHandlerDiscoversFromPreparedResponse(t *testing.T) {
@@ -377,6 +380,50 @@ func TestNugetFeedHandlerSkipsDiscoveryFromUnsuccessfulResponse(t *testing.T) {
 	packageReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
 	packageReq = handleRequestAndClose(handler, packageReq, &goproxy.ProxyCtx{})
 	assertUnauthenticated(t, packageReq, "resource from unsuccessful response")
+}
+
+func TestNugetFeedHandlerLeavesBodylessResponseUnchanged(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.example.com/index.json",
+			"token": "some-token",
+		},
+	})
+
+	for _, statusCode := range []int{http.StatusNoContent, http.StatusResetContent} {
+		proxyCtx := &goproxy.ProxyCtx{}
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/index.json", nil)
+		handler.PrepareRequest(req, proxyCtx)
+		resp := &http.Response{StatusCode: statusCode, Body: http.NoBody}
+
+		handler.HandleResponse(resp, proxyCtx)
+
+		assert.True(t, resp.Body == http.NoBody)
+	}
+}
+
+func TestNugetFeedHandlerReplaysBodyAfterReadError(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.example.com/index.json",
+			"token": "some-token",
+		},
+	})
+	proxyCtx := &goproxy.ProxyCtx{}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/index.json", nil)
+	handler.PrepareRequest(req, proxyCtx)
+	originalBody := &readErrorThenData{
+		first: []byte("first"),
+		rest:  strings.NewReader("second"),
+	}
+	resp := &http.Response{StatusCode: http.StatusOK, Body: originalBody}
+
+	handler.HandleResponse(resp, proxyCtx)
+	replayed, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, "firstsecond", string(replayed))
 }
 
 func TestNugetFeedHandlerOnlyDiscoversFromConfiguredServiceIndex(t *testing.T) {
@@ -546,6 +593,14 @@ func TestExtraUrlsFromSourceResponseHandlesShortUnknownBody(t *testing.T) {
 	})
 }
 
+func TestExtraUrlsFromSourceResponseLogsBlankBody(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+
+	assert.Empty(t, extraUrlsFromSourceResponse(nil, "https://nuget.example.com/index.json"))
+	assert.Contains(t, buf.String(), "empty API response from NuGet feed https://nuget.example.com/index.json")
+}
+
 func discoverNugetFeed(t *testing.T, handler *NugetFeedHandler, sourceURL string, statusCode int, responseBody string) {
 	t.Helper()
 	proxyCtx := &goproxy.ProxyCtx{}
@@ -571,3 +626,19 @@ func mustMarshalJSON(t *testing.T, value any) string {
 	require.NoError(t, err)
 	return string(body)
 }
+
+type readErrorThenData struct {
+	first []byte
+	rest  io.Reader
+}
+
+func (r *readErrorThenData) Read(p []byte) (int, error) {
+	if r.first != nil {
+		n := copy(p, r.first)
+		r.first = nil
+		return n, assert.AnError
+	}
+	return r.rest.Read(p)
+}
+
+func (r *readErrorThenData) Close() error { return nil }
