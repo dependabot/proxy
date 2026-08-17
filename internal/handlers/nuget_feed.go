@@ -412,6 +412,9 @@ func isNugetServiceIndexRequest(req *http.Request, sourceURL string) bool {
 	if err != nil || !helpers.UrlMatchesRequest(req, sourceURL, true) {
 		return false
 	}
+	if parsedURL.Scheme != "" && !strings.EqualFold(parsedURL.Scheme, req.URL.Scheme) {
+		return false
+	}
 	return strings.TrimRight(parsedURL.Path, "/") == strings.TrimRight(req.URL.Path, "/") &&
 		parsedURL.RawQuery == req.URL.RawQuery
 }

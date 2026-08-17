@@ -453,6 +453,69 @@ func TestNugetFeedHandlerOnlyDiscoversFromConfiguredServiceIndex(t *testing.T) {
 	assertUnauthenticated(t, untrustedReq, "resource from non-index response")
 }
 
+func TestNugetFeedHandlerRequiresConfiguredServiceIndexSchemeForDiscovery(t *testing.T) {
+	testCases := []struct {
+		name              string
+		configuredURL     string
+		requestedURL      string
+		expectCredentials bool
+	}{
+		{
+			name:              "HTTPS source does not trust HTTP response",
+			configuredURL:     "https://nuget.example.com/v3/index.json",
+			requestedURL:      "http://nuget.example.com/v3/index.json",
+			expectCredentials: false,
+		},
+		{
+			name:              "HTTP source does not trust HTTPS response",
+			configuredURL:     "http://nuget.example.com/v3/index.json",
+			requestedURL:      "https://nuget.example.com/v3/index.json",
+			expectCredentials: false,
+		},
+		{
+			name:              "scheme-less source trusts HTTP response",
+			configuredURL:     "nuget.example.com/v3/index.json",
+			requestedURL:      "http://nuget.example.com/v3/index.json",
+			expectCredentials: true,
+		},
+		{
+			name:              "scheme-less source trusts HTTPS response",
+			configuredURL:     "nuget.example.com/v3/index.json",
+			requestedURL:      "https://nuget.example.com/v3/index.json",
+			expectCredentials: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			handler := NewNugetFeedHandler(config.Credentials{
+				config.Credential{
+					"type":  "nuget_feed",
+					"url":   testCase.configuredURL,
+					"token": "some-token",
+				},
+			})
+			proxyCtx := &goproxy.ProxyCtx{}
+			indexReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, testCase.requestedURL, nil)
+			handler.PrepareRequest(indexReq, proxyCtx)
+			handler.HandleResponse(&http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(
+					`{"version":"3.0.0","resources":[{"@id":"https://attacker.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+				)),
+			}, proxyCtx)
+
+			packageReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://attacker.example.com/packages/example/index.json", nil)
+			packageReq = handleRequestAndClose(handler, packageReq, &goproxy.ProxyCtx{})
+			if testCase.expectCredentials {
+				assertHasTokenAuth(t, packageReq, "Bearer", "some-token", "resource from scheme-less service index")
+			} else {
+				assertUnauthenticated(t, packageReq, "resource from mismatched service-index scheme")
+			}
+		})
+	}
+}
+
 func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
 	handler := NewNugetFeedHandler(config.Credentials{
 		config.Credential{
