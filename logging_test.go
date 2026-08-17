@@ -20,6 +20,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dependabot/proxy/internal/testhelpers"
 )
 
 var timestamp = regexp.MustCompile(`\d{4}/\d{2}/{2} \d{2}:\d{2}:\d{2} `)
@@ -155,7 +157,7 @@ func TestRequestLogger(t *testing.T) {
 			}
 
 			var buf bytes.Buffer
-			log.SetOutput(&buf)
+			testhelpers.CaptureStandardLog(t, &buf)
 			l := NewRequestLogger()
 			if tc.setup != nil {
 				tc.setup(t, l)
@@ -191,6 +193,7 @@ func TestRequestLogger(t *testing.T) {
 }
 
 func TestSetupLogging(t *testing.T) {
+	testhelpers.PreserveGlobalLoggerState(t)
 	temp := t.TempDir()
 	logFile := path.Join(temp, "test.log")
 	logfilePath = &logFile

@@ -10,7 +10,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"io"
-	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -20,11 +19,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/testhelpers"
 )
 
 var (
@@ -306,12 +305,7 @@ func TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse(t *testing.T) {
 // identical request can still succeed.
 func TestProxyUpstreamCloseIsNotCachedAsBodylessResponse(t *testing.T) {
 	var logOutput bytes.Buffer
-	originalLogOutput := log.Writer()
-	originalLogrusOutput := logrus.StandardLogger().Out
-	log.SetOutput(&logOutput)
-	logrus.SetOutput(&logOutput)
-	defer log.SetOutput(originalLogOutput)
-	defer logrus.SetOutput(originalLogrusOutput)
+	testhelpers.CaptureGlobalLogs(t, &logOutput)
 
 	var upstreamRequests atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
