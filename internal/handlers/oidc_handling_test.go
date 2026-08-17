@@ -21,15 +21,6 @@ type oidcHandler interface {
 	HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response)
 }
 
-type oidcResponseHandler interface {
-	HandleResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response
-}
-
-type oidcResponseFixture struct {
-	url      string
-	response string
-}
-
 func TestOIDCURLsAreAuthenticated(t *testing.T) {
 	testTenantId := "12345678-1234-1234-1234-123456789012"
 	testClientId := "87654321-4321-4321-4321-210987654321"
@@ -39,7 +30,8 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 		provider           string
 		handlerFactory     func(creds config.Credentials) oidcHandler
 		credentials        config.Credentials
-		responseFixtures   []oidcResponseFixture
+		serviceIndexURL    string
+		resourceURL        string
 		expectedLogLines   []string
 		urlsToAuthenticate []string
 	}{
@@ -945,12 +937,8 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
-			responseFixtures: []oidcResponseFixture{
-				{
-					url:      "https://nuget.example.com/index.json",
-					response: `{"version":"3.0.0","resources":[{"@id":"https://nuget.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
-				},
-			},
+			serviceIndexURL: "https://nuget.example.com/index.json",
+			resourceURL:     "https://nuget.example.com/v3/packages",
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for nuget feed: https://nuget.example.com/index.json",
 				"registered aws OIDC credentials for nuget resource: https://nuget.example.com/v3/packages",
@@ -974,12 +962,8 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
-			responseFixtures: []oidcResponseFixture{
-				{
-					url:      "https://nuget.example.com/index.json",
-					response: `{"version":"3.0.0","resources":[{"@id":"https://nuget.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
-				},
-			},
+			serviceIndexURL: "https://nuget.example.com/index.json",
+			resourceURL:     "https://nuget.example.com/v3/packages",
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for nuget feed: https://nuget.example.com/index.json",
 				"registered azure OIDC credentials for nuget resource: https://nuget.example.com/v3/packages",
@@ -1002,12 +986,8 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
-			responseFixtures: []oidcResponseFixture{
-				{
-					url:      "https://jfrog.example.com/index.json",
-					response: `{"version":"3.0.0","resources":[{"@id":"https://jfrog.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
-				},
-			},
+			serviceIndexURL: "https://jfrog.example.com/index.json",
+			resourceURL:     "https://jfrog.example.com/v3/packages",
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for nuget feed: https://jfrog.example.com/index.json",
 				"registered jfrog OIDC credentials for nuget resource: https://jfrog.example.com/v3/packages",
@@ -1032,12 +1012,8 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
-			responseFixtures: []oidcResponseFixture{
-				{
-					url:      "https://cloudsmith.example.com/v3/index.json",
-					response: `{"version":"3.0.0","resources":[{"@id":"https://cloudsmith.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
-				},
-			},
+			serviceIndexURL: "https://cloudsmith.example.com/v3/index.json",
+			resourceURL:     "https://cloudsmith.example.com/v3/packages",
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for nuget feed: https://cloudsmith.example.com/v3/index.json",
 				"registered cloudsmith OIDC credentials for nuget resource: https://cloudsmith.example.com/v3/packages",
@@ -1060,12 +1036,8 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
-			responseFixtures: []oidcResponseFixture{
-				{
-					url:      "https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
-					response: `{"version":"3.0.0","resources":[{"@id":"https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
-				},
-			},
+			serviceIndexURL: "https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
+			resourceURL:     "https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages",
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for nuget feed: https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
 				"registered gcp OIDC credentials for nuget resource: https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages",
@@ -1591,25 +1563,12 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			var buf bytes.Buffer
 			log.SetOutput(&buf)
 			handler := tc.handlerFactory(tc.credentials)
-			if len(tc.responseFixtures) > 0 {
-				responseHandler, ok := handler.(oidcResponseHandler)
-				if !assert.True(t, ok, "handler with response fixtures should implement HandleResponse") {
+			if tc.serviceIndexURL != "" {
+				nugetHandler, ok := handler.(*NugetFeedHandler)
+				if !assert.True(t, ok, "handler with a service index should be a NuGet handler") {
 					return
 				}
-				for _, fixture := range tc.responseFixtures {
-					proxyCtx := &goproxy.ProxyCtx{}
-					req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, fixture.url, nil)
-					if preparer, ok := handler.(*NugetFeedHandler); ok {
-						preparer.PrepareRequest(req, proxyCtx)
-					}
-					handleRequestAndClose(handler, req, proxyCtx)
-					resp := &http.Response{
-						StatusCode: http.StatusOK,
-						Body:       io.NopCloser(strings.NewReader(fixture.response)),
-					}
-					responseHandler.HandleResponse(resp, proxyCtx)
-					resp.Body.Close()
-				}
+				discoverNugetFeed(t, nugetHandler, tc.serviceIndexURL, http.StatusOK, nugetV3Response(tc.resourceURL))
 			}
 			logContents := buf.String()
 
