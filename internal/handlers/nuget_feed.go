@@ -358,6 +358,10 @@ func (h *NugetFeedHandler) registerServiceIndexRedirect(resp *http.Response, sou
 }
 
 func (h *NugetFeedHandler) addStaticCredential(credential nugetFeedCredentials) bool {
+	if credential.token == "" && credential.password == "" {
+		return false
+	}
+
 	h.credentialsMutex.Lock()
 	defer h.credentialsMutex.Unlock()
 

@@ -556,6 +556,48 @@ func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
 	assert.Len(t, handler.credentials, 2)
 }
 
+func TestNugetFeedHandlerIgnoresUnusableStaticCredentials(t *testing.T) {
+	usableCredential := config.Credential{
+		"type":  "nuget_feed",
+		"url":   "https://nuget.example.com/v3/index.json",
+		"token": "some-token",
+	}
+	unusableCredential := config.Credential{
+		"type": "nuget_feed",
+		"url":  "https://nuget.example.com/v3/index.json",
+	}
+
+	for _, credentials := range []config.Credentials{
+		{unusableCredential, usableCredential},
+		{usableCredential, unusableCredential},
+	} {
+		handler := NewNugetFeedHandler(credentials)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/v3/index.json", nil)
+		req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+		assertHasTokenAuth(t, req, "Bearer", "some-token", "usable duplicate credential")
+	}
+}
+
+func TestNugetFeedHandlerUnusableCredentialDoesNotBlockDiscoveredCredential(t *testing.T) {
+	handler := NewNugetFeedHandler(config.Credentials{
+		config.Credential{
+			"type": "nuget_feed",
+			"url":  "https://cdn.example.com/packages",
+		},
+		config.Credential{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.example.com/v3/index.json",
+			"token": "some-token",
+		},
+	})
+	discoverNugetFeed(t, handler, "https://nuget.example.com/v3/index.json", http.StatusOK,
+		`{"version":"3.0.0","resources":[{"@id":"https://cdn.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "some-token", "discovered credential replacing unusable entry")
+}
+
 func TestNugetFeedHandlerPrefersMostSpecificURLCredential(t *testing.T) {
 	handler := NewNugetFeedHandler(config.Credentials{
 		config.Credential{
