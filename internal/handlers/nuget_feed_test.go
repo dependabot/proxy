@@ -436,6 +436,7 @@ func TestNugetFeedHandlerOnlyDiscoversFromConfiguredServiceIndex(t *testing.T) {
 	})
 	proxyCtx := &goproxy.ProxyCtx{}
 	packageReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/v3/some-package/index.json", nil)
+	handler.PrepareRequest(packageReq, proxyCtx)
 	packageReq = handleRequestAndClose(handler, packageReq, proxyCtx)
 	assertHasTokenAuth(t, packageReq, "Bearer", "some-token", "package under configured feed")
 
