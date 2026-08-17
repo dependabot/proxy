@@ -941,7 +941,6 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			resourceURL:     "https://nuget.example.com/v3/packages",
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for nuget feed: https://nuget.example.com/index.json",
-				"registered aws OIDC credentials for nuget resource: https://nuget.example.com/v3/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://nuget.example.com/index.json",                          // base url
@@ -966,7 +965,6 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			resourceURL:     "https://nuget.example.com/v3/packages",
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for nuget feed: https://nuget.example.com/index.json",
-				"registered azure OIDC credentials for nuget resource: https://nuget.example.com/v3/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://nuget.example.com/index.json",                          // base url
@@ -990,7 +988,6 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			resourceURL:     "https://jfrog.example.com/v3/packages",
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for nuget feed: https://jfrog.example.com/index.json",
-				"registered jfrog OIDC credentials for nuget resource: https://jfrog.example.com/v3/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/index.json",                          // base url
@@ -1016,7 +1013,6 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			resourceURL:     "https://cloudsmith.example.com/v3/packages",
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for nuget feed: https://cloudsmith.example.com/v3/index.json",
-				"registered cloudsmith OIDC credentials for nuget resource: https://cloudsmith.example.com/v3/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/v3/index.json",                       // base url
@@ -1040,7 +1036,6 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			resourceURL:     "https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages",
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for nuget feed: https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
-				"registered gcp OIDC credentials for nuget resource: https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",                          // base url

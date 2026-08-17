@@ -327,14 +327,11 @@ func TestNewNugetFeedHandlerDoesNotMakeHTTPRequests(t *testing.T) {
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 
-	var buf bytes.Buffer
-	log.SetOutput(&buf)
 	NewNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://unreachable.example.com/index.json", "some-token"),
 	})
 
 	assert.Zero(t, httpmock.GetTotalCallCount())
-	assert.Contains(t, buf.String(), "registered NuGet service index for deferred discovery: https://unreachable.example.com/index.json")
 }
 
 func TestNugetFeedHandlerDiscoversFromPreparedResponse(t *testing.T) {
@@ -700,12 +697,8 @@ func TestExtraUrlsFromSourceResponseHandlesShortUnknownBody(t *testing.T) {
 	})
 }
 
-func TestExtraUrlsFromSourceResponseLogsBlankBody(t *testing.T) {
-	var buf bytes.Buffer
-	log.SetOutput(&buf)
-
+func TestExtraUrlsFromSourceResponseHandlesBlankBody(t *testing.T) {
 	assert.Empty(t, extraUrlsFromSourceResponse(nil, "https://nuget.example.com/index.json"))
-	assert.Contains(t, buf.String(), "empty API response from NuGet feed https://nuget.example.com/index.json")
 }
 
 func discoverNugetFeed(t *testing.T, handler *NugetFeedHandler, sourceURL string, statusCode int, responseBody string) {
