@@ -516,6 +516,38 @@ func TestNugetFeedHandlerRequiresConfiguredServiceIndexSchemeForDiscovery(t *tes
 	}
 }
 
+func TestNugetFeedHandlerKeepsHTTPAndHTTPSDiscoverySourcesDistinct(t *testing.T) {
+	httpCredential := config.Credential{
+		"type":  "nuget_feed",
+		"url":   "http://nuget.example.com/v3/index.json",
+		"token": "http-token",
+	}
+	httpsCredential := config.Credential{
+		"type":  "nuget_feed",
+		"url":   "https://nuget.example.com/v3/index.json",
+		"token": "https-token",
+	}
+
+	for _, credentials := range []config.Credentials{
+		{httpCredential, httpsCredential},
+		{httpsCredential, httpCredential},
+	} {
+		handler := NewNugetFeedHandler(credentials)
+		discoverNugetFeed(t, handler, "http://nuget.example.com/v3/index.json", http.StatusOK,
+			`{"version":"3.0.0","resources":[{"@id":"https://http-resource.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`)
+		discoverNugetFeed(t, handler, "https://nuget.example.com/v3/index.json", http.StatusOK,
+			`{"version":"3.0.0","resources":[{"@id":"https://https-resource.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`)
+
+		httpResourceReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://http-resource.example.com/packages/example/index.json", nil)
+		httpResourceReq = handleRequestAndClose(handler, httpResourceReq, &goproxy.ProxyCtx{})
+		assertHasTokenAuth(t, httpResourceReq, "Bearer", "http-token", "resource discovered from HTTP index")
+
+		httpsResourceReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://https-resource.example.com/packages/example/index.json", nil)
+		httpsResourceReq = handleRequestAndClose(handler, httpsResourceReq, &goproxy.ProxyCtx{})
+		assertHasTokenAuth(t, httpsResourceReq, "Bearer", "https-token", "resource discovered from HTTPS index")
+	}
+}
+
 func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
 	handler := NewNugetFeedHandler(config.Credentials{
 		config.Credential{

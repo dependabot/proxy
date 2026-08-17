@@ -380,7 +380,7 @@ func (h *NugetFeedHandler) addDiscoverySource(source nugetDiscoveryAuth) bool {
 	h.discoveryMutex.Lock()
 	defer h.discoveryMutex.Unlock()
 
-	key := nugetCredentialURLKey(source.serviceIndexURL)
+	key := nugetDiscoverySourceKey(source.serviceIndexURL)
 	if _, ok := h.discoverySourceURLs[key]; ok {
 		return false
 	}
@@ -433,6 +433,20 @@ func nugetCredentialURLKey(rawURL string) string {
 		port = "443"
 	}
 	return strings.ToLower(parsedURL.Hostname()) + ":" + port + strings.TrimRight(parsedURL.Path, "/") + "?" + parsedURL.RawQuery
+}
+
+// Discovery matching distinguishes explicit schemes, while static credential
+// matching intentionally remains scheme-agnostic for backwards compatibility.
+func nugetDiscoverySourceKey(rawURL string) string {
+	parsedURL, err := helpers.ParseURLLax(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	scheme := strings.ToLower(parsedURL.Scheme)
+	if scheme == "" {
+		scheme = "*"
+	}
+	return scheme + "|" + nugetCredentialURLKey(rawURL)
 }
 
 func authenticateNugetRequest(req *http.Request, cred nugetFeedCredentials, proxyCtx *goproxy.ProxyCtx) {
