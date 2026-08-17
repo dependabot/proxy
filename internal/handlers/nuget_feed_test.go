@@ -588,6 +588,62 @@ func TestNugetFeedHandlerAuthenticatesSameOriginServiceIndexRedirect(t *testing.
 	assertHasTokenAuth(t, redirectReq, "Bearer", "some-token", "same-origin service-index redirect")
 }
 
+func TestNugetFeedHandlerResolvesRelativeRedirectAgainstRequestedServiceIndexURL(t *testing.T) {
+	testCases := []struct {
+		name          string
+		configuredURL string
+		requestedURL  string
+		redirectURL   string
+	}{
+		{
+			name:          "configured URL has trailing slash",
+			configuredURL: "https://nuget.example.com/v3/",
+			requestedURL:  "https://nuget.example.com/v3",
+			redirectURL:   "https://nuget.example.com/next.json",
+		},
+		{
+			name:          "requested URL has trailing slash",
+			configuredURL: "https://nuget.example.com/v3",
+			requestedURL:  "https://nuget.example.com/v3/",
+			redirectURL:   "https://nuget.example.com/v3/next.json",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			handler := NewNugetFeedHandler(config.Credentials{
+				config.Credential{
+					"type":  "nuget_feed",
+					"url":   testCase.configuredURL,
+					"token": "some-token",
+				},
+			})
+
+			initialCtx := &goproxy.ProxyCtx{}
+			initialReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, testCase.requestedURL, nil)
+			handler.PrepareRequest(initialReq, initialCtx)
+			handler.HandleResponse(&http.Response{
+				StatusCode: http.StatusTemporaryRedirect,
+				Header:     http.Header{"Location": []string{"next.json"}},
+			}, initialCtx)
+
+			redirectCtx := &goproxy.ProxyCtx{}
+			redirectReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, testCase.redirectURL, nil)
+			handler.PrepareRequest(redirectReq, redirectCtx)
+			handler.HandleResponse(&http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(
+					`{"version":"3.0.0","resources":[{"@id":"https://cdn.example.com/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+				)),
+			}, redirectCtx)
+
+			packageReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
+			packageReq = handleRequestAndClose(handler, packageReq, &goproxy.ProxyCtx{})
+			assertHasTokenAuth(t, packageReq, "Bearer", "some-token", "resource learned through relative redirect")
+		})
+	}
+}
+
 func TestExtraUrlsFromSourceResponseHandlesShortUnknownBody(t *testing.T) {
 	assert.NotPanics(t, func() {
 		assert.Empty(t, extraUrlsFromSourceResponse([]byte("x"), "https://nuget.example.com/index.json"))

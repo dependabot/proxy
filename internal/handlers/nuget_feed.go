@@ -208,7 +208,9 @@ func (h *NugetFeedHandler) PrepareRequest(req *http.Request, proxyCtx *goproxy.P
 			continue
 		}
 		if isNugetServiceIndexRequest(req, source.serviceIndexURL) {
-			markNugetDiscovery(proxyCtx, source)
+			matchedSource := source
+			matchedSource.serviceIndexURL = req.URL.String()
+			markNugetDiscovery(proxyCtx, matchedSource)
 			return req, nil
 		}
 	}
