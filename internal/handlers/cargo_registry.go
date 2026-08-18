@@ -83,16 +83,17 @@ func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandl
 			password: password,
 		}
 
-		if url != "" {
+		switch {
+		case url != "":
 			if _, err := helpers.ParseURLLax(cargoCred.url); err != nil {
 				logrus.Warnf("ignoring invalid registry url (%s): %v", cargoCred.url, err)
 				continue
 			}
-		} else if host != "" {
+		case host != "":
 			// Only set host when url is empty so URL/path scoping always
 			// takes precedence and never falls back to host-only matching.
 			cargoCred.host = host
-		} else {
+		default:
 			logrus.Warn("ignoring cargo_registry credential with no url or host")
 			continue
 		}
