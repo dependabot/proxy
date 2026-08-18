@@ -36,7 +36,7 @@ func main() {
 	if file != nil {
 		defer func() {
 			if err := file.Close(); err != nil {
-				log.Printf("failed to close log file: %v", err)
+				log.New(os.Stderr, log.Prefix(), log.Flags()).Printf("failed to close log file: %v", err)
 			}
 		}()
 	}
