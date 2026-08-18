@@ -724,7 +724,7 @@ func discoverNugetFeed(t *testing.T, handler *NugetFeedHandler, sourceURL string
 	proxyCtx := &goproxy.ProxyCtx{}
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, sourceURL, nil)
 	handler.PrepareRequest(req, proxyCtx)
-	req = handleRequestAndClose(handler, req, proxyCtx)
+	handleRequestAndClose(handler, req, proxyCtx)
 
 	resp := &http.Response{
 		StatusCode: statusCode,
