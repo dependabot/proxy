@@ -20,9 +20,34 @@ func handleRequestAndClose(handler interface {
 }, req *http.Request, proxyCtx *goproxy.ProxyCtx) *http.Request {
 	req, resp := handler.HandleRequest(req, proxyCtx)
 	if resp != nil && resp.Body != nil {
-		mustClose(resp.Body)
+		defer func() {
+			mustClose(resp.Body)
+		}()
 	}
 	return req
+}
+
+func prepareRequestAndClose(handler interface {
+	PrepareRequest(*http.Request, *goproxy.ProxyCtx) (*http.Request, *http.Response)
+}, req *http.Request, proxyCtx *goproxy.ProxyCtx) *http.Request {
+	req, resp := handler.PrepareRequest(req, proxyCtx)
+	if resp != nil && resp.Body != nil {
+		defer func() {
+			mustClose(resp.Body)
+		}()
+	}
+	return req
+}
+
+func handleResponseAndClose(handler interface {
+	HandleResponse(*http.Response, *goproxy.ProxyCtx) *http.Response
+}, resp *http.Response, proxyCtx *goproxy.ProxyCtx) {
+	resp = handler.HandleResponse(resp, proxyCtx)
+	if resp != nil && resp.Body != nil {
+		defer func() {
+			mustClose(resp.Body)
+		}()
+	}
 }
 
 func mustClose(closer io.Closer) {

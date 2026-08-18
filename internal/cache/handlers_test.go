@@ -193,6 +193,9 @@ func TestCache_BodylessResponses(t *testing.T) {
 			missReq := httptest.NewRequestWithContext(t.Context(), tc.method, URL, nil)
 			missCtx := &goproxy.ProxyCtx{Req: missReq}
 			_, resp := cacher.OnRequest(missReq, missCtx)
+			if resp != nil && resp.Body != nil {
+				require.NoError(t, resp.Body.Close())
+			}
 			require.Nil(t, resp)
 
 			resp = &http.Response{
@@ -208,6 +211,7 @@ func TestCache_BodylessResponses(t *testing.T) {
 			assert.True(t, resp.Body == http.NoBody,
 				"OnResponse must leave bodyless Body as http.NoBody (not tee-wrapped)")
 			assert.Len(t, cacher.cacheDB, 1, "bodyless response should still be cached")
+			require.NoError(t, resp.Body.Close())
 
 			// --- Cache hit: OnRequest must serve a bodyless response. ---
 			hitReq := httptest.NewRequestWithContext(t.Context(), tc.method, URL, nil)
@@ -218,6 +222,7 @@ func TestCache_BodylessResponses(t *testing.T) {
 				"cache hit must serve bodyless responses with http.NoBody")
 			assert.Equal(t, tc.wantHitContentLen, hit.ContentLength)
 			assert.Empty(t, hit.TransferEncoding)
+			require.NoError(t, hit.Body.Close())
 		})
 	}
 }
@@ -250,6 +255,9 @@ func TestCache_BodylessResponseWithWrappedBodyIsRestored(t *testing.T) {
 			req := httptest.NewRequestWithContext(t.Context(), tc.method, URL, nil)
 			proxyCtx := &goproxy.ProxyCtx{Req: req}
 			_, resp := cacher.OnRequest(req, proxyCtx)
+			if resp != nil && resp.Body != nil {
+				require.NoError(t, resp.Body.Close())
+			}
 			require.Nil(t, resp)
 
 			// Simulate an upstream handler that swapped in a non-NoBody wrapper.
@@ -267,6 +275,7 @@ func TestCache_BodylessResponseWithWrappedBodyIsRestored(t *testing.T) {
 				"OnResponse must restore http.NoBody when a bodyless response was wrapped")
 			assert.True(t, closed, "the replaced wrapper must be closed to avoid leaks")
 			assert.Len(t, cacher.cacheDB, 1, "bodyless response should still be cached")
+			require.NoError(t, resp.Body.Close())
 		})
 	}
 }
@@ -284,6 +293,9 @@ func TestCache_SwitchingProtocolsNotCached(t *testing.T) {
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
 	proxyCtx := &goproxy.ProxyCtx{Req: req}
 	_, resp := cacher.OnRequest(req, proxyCtx)
+	if resp != nil && resp.Body != nil {
+		require.NoError(t, resp.Body.Close())
+	}
 	require.Nil(t, resp)
 
 	upgraded := io.NopCloser(bytes.NewBufferString("websocket-stream"))
@@ -295,6 +307,7 @@ func TestCache_SwitchingProtocolsNotCached(t *testing.T) {
 	resp = cacher.OnResponse(resp, proxyCtx)
 	assert.True(t, resp.Body == upgraded, "101 body must be passed through untouched")
 	assert.Empty(t, cacher.cacheDB, "101 must not be cached")
+	require.NoError(t, resp.Body.Close())
 }
 
 // TestCache_ZeroByteBodyIsCached verifies a valid 200 response with an empty
@@ -310,6 +323,9 @@ func TestCache_ZeroByteBodyIsCached(t *testing.T) {
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
 	proxyCtx := &goproxy.ProxyCtx{Req: req}
 	_, resp := cacher.OnRequest(req, proxyCtx)
+	if resp != nil && resp.Body != nil {
+		require.NoError(t, resp.Body.Close())
+	}
 	require.Nil(t, resp)
 
 	resp = &http.Response{
@@ -350,6 +366,9 @@ func TestCache_MissingCacheFileIsNotCountedAsHit(t *testing.T) {
 	missReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
 	missCtx := &goproxy.ProxyCtx{Req: missReq}
 	_, resp := cacher.OnRequest(missReq, missCtx)
+	if resp != nil && resp.Body != nil {
+		require.NoError(t, resp.Body.Close())
+	}
 	require.Nil(t, resp)
 	resp = &http.Response{
 		Request:    missReq,
@@ -370,6 +389,9 @@ func TestCache_MissingCacheFileIsNotCountedAsHit(t *testing.T) {
 	hitReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
 	hitCtx := &goproxy.ProxyCtx{Req: hitReq}
 	_, hit := cacher.OnRequest(hitReq, hitCtx)
+	if hit != nil && hit.Body != nil {
+		require.NoError(t, hit.Body.Close())
+	}
 
 	assert.Nil(t, hit, "a missing cache file must fall through to upstream")
 	assert.Equal(t, cachedBefore, cacher.cached, "a missing cache file must not be counted as a hit")

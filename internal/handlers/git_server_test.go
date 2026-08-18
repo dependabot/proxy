@@ -662,7 +662,7 @@ func TestJITEndpointUsesExplicitAuthWhenProvided(t *testing.T) {
 	})
 	proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 
-	req, _ = handler.HandleRequest(req, proxyCtx)
+	req = handleRequestAndClose(handler, req, proxyCtx)
 
 	client := &http.Client{
 		Timeout: 10 * time.Second,

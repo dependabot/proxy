@@ -13,6 +13,7 @@ import (
 	"github.com/elazarl/goproxy"
 	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
 )
@@ -1695,7 +1696,8 @@ func TestPythonOIDCAuthenticatesDiscoveredDownloadPrefix(t *testing.T) {
 			</body></html>
 		`)),
 	}
-	handler.HandleResponse(indexResp, proxyCtx)
+	indexResp = handler.HandleResponse(indexResp, proxyCtx)
+	require.NoError(t, indexResp.Body.Close())
 
 	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"HEAD",

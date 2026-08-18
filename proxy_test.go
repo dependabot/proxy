@@ -54,7 +54,9 @@ func TestProxyHTTPRequest(t *testing.T) {
 	require.NoError(t, err)
 	rsp, err := client.Do(req)
 	require.NoError(t, err)
-	closeOnCleanup(t, rsp.Body)
+	defer func() {
+		require.NoError(t, rsp.Body.Close())
+	}()
 	assert.Equal(t, 200, rsp.StatusCode)
 }
 
@@ -377,7 +379,9 @@ func TestIPRestrictions(t *testing.T) {
 			require.NoError(t, err)
 			rsp, err := client.Do(req)
 			require.NoError(t, err)
-			closeOnCleanup(t, rsp.Body)
+			defer func() {
+				require.NoError(t, rsp.Body.Close())
+			}()
 
 			assert.Equal(t, 403, rsp.StatusCode)
 		})
@@ -451,7 +455,9 @@ func TestMetadataAPIRestriction(t *testing.T) {
 
 			rsp, err := client.Do(req)
 			require.NoError(t, err)
-			closeOnCleanup(t, rsp.Body)
+			defer func() {
+				require.NoError(t, rsp.Body.Close())
+			}()
 
 			assert.Equal(t, 403, rsp.StatusCode)
 		})
