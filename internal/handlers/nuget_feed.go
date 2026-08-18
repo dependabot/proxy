@@ -368,6 +368,7 @@ func (h *NugetFeedHandler) addStaticCredential(credential nugetFeedCredentials) 
 	if credential.url != "" {
 		key := nugetCredentialURLKey(credential.url)
 		if _, ok := h.credentialURLs[key]; ok {
+			logging.RequestLogf(nil, "skipping duplicate NuGet credential URL because it is already registered: %s", credential.url)
 			return false
 		}
 		h.credentialURLs[key] = struct{}{}

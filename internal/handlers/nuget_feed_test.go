@@ -548,6 +548,24 @@ func TestNugetFeedHandlerIgnoresUnusableStaticCredentials(t *testing.T) {
 	}
 }
 
+func TestNugetFeedHandlerLogsIgnoredDuplicateResourceURL(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	handler := NewNugetFeedHandler(config.Credentials{
+		testNugetFeedCredential("https://first.example.com/index.json", "first-token"),
+		testNugetFeedCredential("https://second.example.com/index.json", "second-token"),
+	})
+
+	const resourceURL = "https://shared.example.com/packages"
+	discoverNugetFeed(t, handler, "https://first.example.com/index.json", http.StatusOK, nugetV3Response(resourceURL))
+	discoverNugetFeed(t, handler, "https://second.example.com/index.json", http.StatusOK, nugetV3Response(resourceURL))
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, resourceURL+"/example/index.json", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "first-token", "first credential registered for shared resource")
+	assert.Contains(t, buf.String(), "skipping duplicate NuGet credential URL because it is already registered: "+resourceURL)
+}
+
 func TestNugetFeedHandlerUnusableCredentialDoesNotBlockDiscoveredCredential(t *testing.T) {
 	handler := NewNugetFeedHandler(config.Credentials{
 		config.Credential{
