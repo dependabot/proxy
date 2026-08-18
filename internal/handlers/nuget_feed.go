@@ -55,11 +55,10 @@ type nugetFeedCredentials struct {
 }
 
 type nugetDiscoveryAuth struct {
-	serviceIndexURL string
-	static          nugetFeedCredentials
-	hasStatic       bool
-	oidc            *oidc.OIDCCredential
-	authenticateURL bool
+	serviceIndexURL      string
+	static               nugetFeedCredentials
+	oidc                 *oidc.OIDCCredential
+	registerRedirectAuth bool
 }
 
 // NewNugetFeedHandler returns a new NugetFeedHandler.
@@ -87,9 +86,9 @@ func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
 		if ok {
 			if url != "" {
 				handler.addDiscoverySource(nugetDiscoveryAuth{
-					serviceIndexURL: url,
-					oidc:            oidcCredential,
-					authenticateURL: true,
+					serviceIndexURL:      url,
+					oidc:                 oidcCredential,
+					registerRedirectAuth: true,
 				})
 			}
 			continue
@@ -109,10 +108,9 @@ func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
 		handler.addStaticCredential(feedCred)
 		if url != "" && (token != "" || password != "") {
 			handler.addDiscoverySource(nugetDiscoveryAuth{
-				serviceIndexURL: url,
-				static:          feedCred,
-				hasStatic:       true,
-				authenticateURL: true,
+				serviceIndexURL:      url,
+				static:               feedCred,
+				registerRedirectAuth: true,
 			})
 		}
 	}
@@ -300,9 +298,6 @@ func (h *NugetFeedHandler) HandleResponse(resp *http.Response, proxyCtx *goproxy
 			h.oidcRegistry.RegisterURL(discoveredURL, discoveryAuth.oidc, "nuget resource")
 			continue
 		}
-		if !discoveryAuth.hasStatic {
-			continue
-		}
 
 		credential := discoveryAuth.static
 		credential.url = discoveredURL
@@ -338,16 +333,15 @@ func (h *NugetFeedHandler) registerServiceIndexRedirect(resp *http.Response, sou
 
 	redirectedSource := source
 	redirectedSource.serviceIndexURL = redirectURL.String()
-	redirectedSource.authenticateURL = source.authenticateURL && sameOrigin(baseURL, redirectURL)
+	redirectedSource.registerRedirectAuth = source.registerRedirectAuth && sameOrigin(baseURL, redirectURL)
 	if !h.addDiscoverySource(redirectedSource) {
 		return
 	}
 
-	if redirectedSource.authenticateURL {
+	if redirectedSource.registerRedirectAuth {
 		if source.oidc != nil {
 			h.oidcRegistry.RegisterURL(redirectURL.String(), source.oidc, "nuget service-index redirect")
-		}
-		if source.hasStatic {
+		} else {
 			credential := source.static
 			credential.url = redirectURL.String()
 			credential.host = ""
