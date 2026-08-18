@@ -68,6 +68,9 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 	proxy.OnRequest().DoFunc(logger.logRequest)
 	proxy.OnResponse().DoFunc(logger.logResponse)
 
+	nugetFeedHandler := handlers.NewNugetFeedHandler(cfg.Credentials)
+	proxy.OnRequest().DoFunc(nugetFeedHandler.PrepareRequest)
+
 	enableCache := os.Getenv("PROXY_CACHE") == "true"
 	cacher, err := cache.New(enableCache, cacheDir)
 	if err != nil {
@@ -117,8 +120,8 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 	rubyGemsServerHandler := handlers.NewRubyGemsServerHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(rubyGemsServerHandler.HandleRequest)
 
-	nugetFeedHandler := handlers.NewNugetFeedHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(nugetFeedHandler.HandleRequest)
+	proxy.OnResponse().DoFunc(nugetFeedHandler.HandleResponse)
 
 	mavenRepositoryHandler := handlers.NewMavenRepositoryHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(mavenRepositoryHandler.HandleRequest)
