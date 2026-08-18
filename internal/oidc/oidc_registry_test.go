@@ -2,9 +2,7 @@ package oidc
 
 import (
 	"bytes"
-	"log"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/testhelpers"
 )
 
 func setupOIDCEnv(t *testing.T) {
@@ -570,8 +569,7 @@ func TestOIDCRegistry_Register_NoDuplicateEntries(t *testing.T) {
 	cred2 := azureCredWithURL("tenant-2", "client-2", "https://registry.example.com/packages")
 
 	var logBuf bytes.Buffer
-	log.SetOutput(&logBuf)
-	defer log.SetOutput(os.Stderr)
+	testhelpers.CaptureStandardLog(t, &logBuf)
 
 	oidcCred1, key1, ok1 := r.Register(cred1, []string{"url"}, "test registry")
 	oidcCred2, key2, ok2 := r.Register(cred2, []string{"url"}, "test registry")

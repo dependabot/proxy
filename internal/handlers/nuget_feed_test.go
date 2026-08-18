@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -19,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/testhelpers"
 )
 
 func TestNugetFeedHandler(t *testing.T) {
@@ -113,7 +113,7 @@ func TestNugetFeedHandler(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	log.SetOutput(&buf)
+	testhelpers.CaptureStandardLog(t, &buf)
 	handler := NewNugetFeedHandler(credentials)
 
 	discoverNugetFeed(t, handler, "https://corp.dependabot.com/nuget/", http.StatusOK, mustMarshalJSON(t, rsp))
@@ -313,7 +313,7 @@ func TestExtraAuthenticatedURLsAreReportedInTheLog(t *testing.T) {
 	}`
 
 	var buf bytes.Buffer
-	log.SetOutput(&buf)
+	testhelpers.CaptureStandardLog(t, &buf)
 	handler := NewNugetFeedHandler(credentials)
 	discoverNugetFeed(t, handler, "https://nuget.example.com/index.json", http.StatusOK, jsonResponse)
 	logContents := buf.String()
@@ -555,7 +555,7 @@ func TestNugetFeedHandlerIgnoresUnusableStaticCredentials(t *testing.T) {
 
 func TestNugetFeedHandlerLogsIgnoredDuplicateResourceURL(t *testing.T) {
 	var buf bytes.Buffer
-	log.SetOutput(&buf)
+	testhelpers.CaptureStandardLog(t, &buf)
 	handler := NewNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://first.example.com/index.json", "first-token"),
 		testNugetFeedCredential("https://second.example.com/index.json", "second-token"),

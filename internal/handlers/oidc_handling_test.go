@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/testhelpers"
 )
 
 type oidcHandler interface {
@@ -1557,7 +1557,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 
 			// create handler and capture log output
 			var buf bytes.Buffer
-			log.SetOutput(&buf)
+			testhelpers.CaptureStandardLog(t, &buf)
 			handler := tc.handlerFactory(tc.credentials)
 			if tc.serviceIndexURL != "" {
 				nugetHandler, ok := handler.(*NugetFeedHandler)

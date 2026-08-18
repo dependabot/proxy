@@ -3,12 +3,13 @@ package logging
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"strings"
 	"testing"
 
 	"github.com/elazarl/goproxy"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/dependabot/proxy/internal/testhelpers"
 )
 
 func TestRequestLogf(t *testing.T) {
@@ -60,7 +61,7 @@ func TestRequestLogf(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			var buf bytes.Buffer
-			log.SetOutput(&buf)
+			testhelpers.CaptureStandardLog(t, &buf)
 
 			RequestLogf(proxyCtx, tc.format, tc.argv...)
 
@@ -119,7 +120,7 @@ func TestRequestMultilineLogf(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			var buf bytes.Buffer
-			log.SetOutput(&buf)
+			testhelpers.CaptureStandardLog(t, &buf)
 
 			RequestMultilineLogf(proxyCtx, tc.format, tc.argv...)
 
