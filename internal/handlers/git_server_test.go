@@ -583,6 +583,7 @@ func TestGitServerHandler_RequestJITAccess(t *testing.T) {
 	}
 }
 
+//nolint:gosec // The test credentials are intentionally fake fixtures.
 func TestJITEndpointUsesExplicitAuthWhenProvided(t *testing.T) {
 	// jit_access host is different from the endpoint host _AND_ requires separate auth
 	// This test verifies that the explicit username and password that accompany the jit_access cred are used

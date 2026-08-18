@@ -97,6 +97,7 @@ func TestIsOIDCConfigured(t *testing.T) {
 	}
 }
 
+//nolint:gosec // The test credentials are intentionally fake fixtures.
 func TestGetToken(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -319,6 +320,7 @@ func TestGetToken_URLParsing(t *testing.T) {
 	}
 }
 
+//nolint:gosec // The test credentials are intentionally fake fixtures.
 func TestGetAzureAccessToken(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -468,6 +470,7 @@ func TestGetAzureAccessToken(t *testing.T) {
 	}
 }
 
+//nolint:gosec // The test credentials are intentionally fake fixtures.
 func TestGetJFrogAccessToken(t *testing.T) {
 	tests := []struct {
 		name                string
@@ -647,6 +650,7 @@ func TestGetJFrogAccessToken(t *testing.T) {
 	}
 }
 
+//nolint:gosec // The test credentials are intentionally fake fixtures.
 func TestGetAWSAccessToken(t *testing.T) {
 	testRegion := "us-east-1"
 	tests := []struct {
@@ -836,6 +840,7 @@ func TestGetAWSAccessToken(t *testing.T) {
 	}
 }
 
+//nolint:gosec // The test credentials are intentionally fake fixtures.
 func TestGetCloudsmithAccessToken(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -1018,6 +1023,7 @@ func TestGetCloudsmithAccessToken(t *testing.T) {
 	}
 }
 
+//nolint:gosec // The test credentials are intentionally fake fixtures.
 func TestGetGCPAccessToken(t *testing.T) {
 	tests := []struct {
 		name          string

@@ -335,7 +335,7 @@ func GetJFrogAccessToken(ctx context.Context, params JFrogOIDCParameters, github
 		return nil, fmt.Errorf("GitHub token is required")
 	}
 
-	tokenRequest := jfrogTokenRequest{
+	tokenRequest := jfrogTokenRequest{ //nolint:gosec // OIDC token is supplied by the caller, not hardcoded.
 		GrantType:           "urn:ietf:params:oauth:grant-type:token-exchange",
 		SubjectTokenType:    "urn:ietf:params:oauth:token-type:id_token",
 		ProviderType:        "GitHub",
@@ -692,7 +692,7 @@ func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToke
 	}
 
 	// Step A: STS token exchange (always)
-	stsReqBody := gcpSTSTokenRequest{
+	stsReqBody := gcpSTSTokenRequest{ //nolint:gosec // OIDC token is supplied by the caller, not hardcoded.
 		Audience:           params.Audience,
 		GrantType:          "urn:ietf:params:oauth:grant-type:token-exchange",
 		RequestedTokenType: "urn:ietf:params:oauth:token-type:access_token",
