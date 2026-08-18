@@ -501,6 +501,7 @@ func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
 	const workers = 50
 	responseBody := nugetV3Response("https://cdn.example.com/packages")
 	start := make(chan struct{})
+	ctx := t.Context()
 	var waitGroup sync.WaitGroup
 	for range workers {
 		waitGroup.Add(1)
@@ -508,7 +509,7 @@ func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
 			defer waitGroup.Done()
 			<-start
 			proxyCtx := &goproxy.ProxyCtx{}
-			indexReq := httptest.NewRequest(http.MethodGet, "https://nuget.example.com/index.json", nil)
+			indexReq := httptest.NewRequestWithContext(ctx, http.MethodGet, "https://nuget.example.com/index.json", nil)
 			handler.PrepareRequest(indexReq, proxyCtx)
 			handler.HandleRequest(indexReq, proxyCtx)
 			resp := &http.Response{
@@ -518,7 +519,7 @@ func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
 			handler.HandleResponse(resp, proxyCtx)
 			resp.Body.Close()
 
-			packageReq := httptest.NewRequest(http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
+			packageReq := httptest.NewRequestWithContext(ctx, http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
 			handler.HandleRequest(packageReq, &goproxy.ProxyCtx{})
 		}()
 	}
