@@ -17,62 +17,79 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+
+	value, ok := os.LookupEnv(key)
+	require.NoError(t, os.Unsetenv(key))
+	t.Cleanup(func() {
+		if ok {
+			require.NoError(t, os.Setenv(key, value))
+			return
+		}
+		require.NoError(t, os.Unsetenv(key))
+	})
+}
+
+func writeResponse(t *testing.T, w io.Writer, body string) {
+	t.Helper()
+	_, err := io.WriteString(w, body)
+	require.NoError(t, err)
+}
+
+func encodeJSONResponse(t *testing.T, w io.Writer, value any) {
+	t.Helper()
+	require.NoError(t, json.NewEncoder(w).Encode(value))
+}
+
+func encodeXMLResponse(t *testing.T, w io.Writer, value any) {
+	t.Helper()
+	require.NoError(t, xml.NewEncoder(w).Encode(value))
+}
+
 func TestIsOIDCConfigured(t *testing.T) {
 	tests := []struct {
-		name       string
-		setupEnv   func()
-		cleanupEnv func()
-		expected   bool
+		name     string
+		setupEnv func(t *testing.T)
+		expected bool
 	}{
 		{
 			name: "both environment variables set",
-			setupEnv: func() {
-				os.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
-				os.Setenv(envActionsIDTokenRequestToken, "test-token")
-			},
-			cleanupEnv: func() {
-				os.Unsetenv(envActionsIDTokenRequestURL)
-				os.Unsetenv(envActionsIDTokenRequestToken)
+			setupEnv: func(t *testing.T) {
+				t.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
+				t.Setenv(envActionsIDTokenRequestToken, "test-token")
 			},
 			expected: true,
 		},
 		{
 			name: "missing request URL",
-			setupEnv: func() {
-				os.Unsetenv(envActionsIDTokenRequestURL)
-				os.Setenv(envActionsIDTokenRequestToken, "test-token")
-			},
-			cleanupEnv: func() {
-				os.Unsetenv(envActionsIDTokenRequestToken)
+			setupEnv: func(t *testing.T) {
+				unsetEnv(t, envActionsIDTokenRequestURL)
+				t.Setenv(envActionsIDTokenRequestToken, "test-token")
 			},
 			expected: false,
 		},
 		{
 			name: "missing request token",
-			setupEnv: func() {
-				os.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
-				os.Unsetenv(envActionsIDTokenRequestToken)
-			},
-			cleanupEnv: func() {
-				os.Unsetenv(envActionsIDTokenRequestURL)
+			setupEnv: func(t *testing.T) {
+				t.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
+				unsetEnv(t, envActionsIDTokenRequestToken)
 			},
 			expected: false,
 		},
 		{
 			name: "both environment variables missing",
-			setupEnv: func() {
-				os.Unsetenv(envActionsIDTokenRequestURL)
-				os.Unsetenv(envActionsIDTokenRequestToken)
+			setupEnv: func(t *testing.T) {
+				unsetEnv(t, envActionsIDTokenRequestURL)
+				unsetEnv(t, envActionsIDTokenRequestToken)
 			},
-			cleanupEnv: func() {},
-			expected:   false,
+			expected: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.setupEnv()
-			defer tt.cleanupEnv()
+			tt.setupEnv(t)
 
 			result := IsOIDCConfigured()
 			assert.Equal(t, tt.expected, result)
@@ -84,8 +101,7 @@ func TestGetToken(t *testing.T) {
 	tests := []struct {
 		name          string
 		audience      string
-		setupEnv      func(serverURL, token string)
-		cleanupEnv    func()
+		setupEnv      func(t *testing.T, serverURL, token string)
 		serverHandler http.HandlerFunc
 		expectError   bool
 		expectedToken string
@@ -93,13 +109,9 @@ func TestGetToken(t *testing.T) {
 		{
 			name:     "successful token request without audience",
 			audience: "",
-			setupEnv: func(serverURL, token string) {
-				os.Setenv(envActionsIDTokenRequestURL, serverURL)
-				os.Setenv(envActionsIDTokenRequestToken, token)
-			},
-			cleanupEnv: func() {
-				os.Unsetenv(envActionsIDTokenRequestURL)
-				os.Unsetenv(envActionsIDTokenRequestToken)
+			setupEnv: func(t *testing.T, serverURL, token string) {
+				t.Setenv(envActionsIDTokenRequestURL, serverURL)
+				t.Setenv(envActionsIDTokenRequestToken, token)
 			},
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				// Verify request headers
@@ -113,7 +125,7 @@ func TestGetToken(t *testing.T) {
 				// Return success response
 				resp := tokenResponse{Count: 1, Value: "test-jwt-token"}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				require.NoError(t, json.NewEncoder(w).Encode(resp))
 			},
 			expectError:   false,
 			expectedToken: "test-jwt-token",
@@ -121,13 +133,9 @@ func TestGetToken(t *testing.T) {
 		{
 			name:     "successful token request with audience",
 			audience: "api://AzureADTokenExchange",
-			setupEnv: func(serverURL, token string) {
-				os.Setenv(envActionsIDTokenRequestURL, serverURL)
-				os.Setenv(envActionsIDTokenRequestToken, token)
-			},
-			cleanupEnv: func() {
-				os.Unsetenv(envActionsIDTokenRequestURL)
-				os.Unsetenv(envActionsIDTokenRequestToken)
+			setupEnv: func(t *testing.T, serverURL, token string) {
+				t.Setenv(envActionsIDTokenRequestURL, serverURL)
+				t.Setenv(envActionsIDTokenRequestToken, token)
 			},
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				// Verify audience parameter
@@ -136,7 +144,7 @@ func TestGetToken(t *testing.T) {
 				// Return success response
 				resp := tokenResponse{Count: 1, Value: "test-jwt-token-with-audience"}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				require.NoError(t, json.NewEncoder(w).Encode(resp))
 			},
 			expectError:   false,
 			expectedToken: "test-jwt-token-with-audience",
@@ -144,25 +152,24 @@ func TestGetToken(t *testing.T) {
 		{
 			name:     "server returns 500 error",
 			audience: "",
-			setupEnv: func(serverURL, token string) {
-				os.Setenv(envActionsIDTokenRequestURL, serverURL)
-				os.Setenv(envActionsIDTokenRequestToken, token)
-			},
-			cleanupEnv: func() {
-				os.Unsetenv(envActionsIDTokenRequestURL)
-				os.Unsetenv(envActionsIDTokenRequestToken)
+			setupEnv: func(t *testing.T, serverURL, token string) {
+				t.Setenv(envActionsIDTokenRequestURL, serverURL)
+				t.Setenv(envActionsIDTokenRequestToken, token)
 			},
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte("Internal Server Error"))
+				_, err := w.Write([]byte("Internal Server Error"))
+				require.NoError(t, err)
 			},
 			expectError: true,
 		},
 		{
-			name:        "environment not available",
-			audience:    "",
-			setupEnv:    func(serverURL, token string) {},
-			cleanupEnv:  func() {},
+			name:     "environment not available",
+			audience: "",
+			setupEnv: func(t *testing.T, serverURL, token string) {
+				unsetEnv(t, envActionsIDTokenRequestURL)
+				unsetEnv(t, envActionsIDTokenRequestToken)
+			},
 			expectError: true,
 		},
 	}
@@ -181,8 +188,7 @@ func TestGetToken(t *testing.T) {
 				serverURL = server.URL
 			}
 
-			tt.setupEnv(serverURL, "test-token")
-			defer tt.cleanupEnv()
+			tt.setupEnv(t, serverURL, "test-token")
 
 			ctx := context.Background()
 
@@ -205,16 +211,12 @@ func TestGetTokenForAzureADExchange(t *testing.T) {
 
 		resp := tokenResponse{Count: 1, Value: "azure-exchange-token"}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		require.NoError(t, json.NewEncoder(w).Encode(resp))
 	}))
 	defer server.Close()
 
-	os.Setenv(envActionsIDTokenRequestURL, server.URL)
-	os.Setenv(envActionsIDTokenRequestToken, "test-token")
-	defer func() {
-		os.Unsetenv(envActionsIDTokenRequestURL)
-		os.Unsetenv(envActionsIDTokenRequestToken)
-	}()
+	t.Setenv(envActionsIDTokenRequestURL, server.URL)
+	t.Setenv(envActionsIDTokenRequestToken, "test-token")
 
 	ctx := context.Background()
 
@@ -284,7 +286,7 @@ func TestGetToken_URLParsing(t *testing.T) {
 
 				resp := tokenResponse{Count: 1, Value: "test-token"}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				require.NoError(t, json.NewEncoder(w).Encode(resp))
 			}))
 			defer server.Close()
 
@@ -302,12 +304,8 @@ func TestGetToken_URLParsing(t *testing.T) {
 				}
 			}
 
-			os.Setenv(envActionsIDTokenRequestURL, testURL)
-			os.Setenv(envActionsIDTokenRequestToken, "test-token")
-			defer func() {
-				os.Unsetenv(envActionsIDTokenRequestURL)
-				os.Unsetenv(envActionsIDTokenRequestToken)
-			}()
+			t.Setenv(envActionsIDTokenRequestURL, testURL)
+			t.Setenv(envActionsIDTokenRequestToken, "test-token")
 
 			ctx := context.Background()
 			_, err := GetToken(ctx, tt.audience)
@@ -360,7 +358,7 @@ func TestGetAzureAccessToken(t *testing.T) {
 					TokenType:   "Bearer",
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				encodeJSONResponse(t, w, resp)
 			},
 			expectError:   false,
 			expectedToken: "test-azure-access-token",
@@ -393,7 +391,7 @@ func TestGetAzureAccessToken(t *testing.T) {
 			githubToken: "invalid-token",
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":"invalid_client","error_description":"Invalid client assertion"}`))
+				writeResponse(t, w, `{"error":"invalid_client","error_description":"Invalid client assertion"}`)
 			},
 			expectError: true,
 		},
@@ -404,7 +402,7 @@ func TestGetAzureAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{invalid json`))
+				writeResponse(t, w, `{invalid json`)
 			},
 			expectError: true,
 		},
@@ -420,7 +418,7 @@ func TestGetAzureAccessToken(t *testing.T) {
 					TokenType:   "Bearer",
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				encodeJSONResponse(t, w, resp)
 			},
 			expectError: true,
 		},
@@ -496,7 +494,9 @@ func TestGetJFrogAccessToken(t *testing.T) {
 				// Parse request
 				bodyBytes, err := io.ReadAll(r.Body)
 				require.NoError(t, err)
-				defer r.Body.Close()
+				defer func() {
+					require.NoError(t, r.Body.Close())
+				}()
 				var request jfrogTokenRequest
 				err = json.Unmarshal(bodyBytes, &request)
 				require.NoError(t, err)
@@ -516,7 +516,7 @@ func TestGetJFrogAccessToken(t *testing.T) {
 					TokenType:   "Bearer",
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				encodeJSONResponse(t, w, resp)
 			},
 			expectError:   false,
 			expectedToken: "test-jfrog-access-token",
@@ -532,7 +532,9 @@ func TestGetJFrogAccessToken(t *testing.T) {
 				// Parse request
 				bodyBytes, err := io.ReadAll(r.Body)
 				require.NoError(t, err)
-				defer r.Body.Close()
+				defer func() {
+					require.NoError(t, r.Body.Close())
+				}()
 				var request jfrogTokenRequest
 				err = json.Unmarshal(bodyBytes, &request)
 				require.NoError(t, err)
@@ -547,7 +549,7 @@ func TestGetJFrogAccessToken(t *testing.T) {
 					TokenType:   "Bearer",
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				encodeJSONResponse(t, w, resp)
 			},
 			expectError:   false,
 			expectedToken: "test-jfrog-access-token",
@@ -580,7 +582,7 @@ func TestGetJFrogAccessToken(t *testing.T) {
 			githubToken:  "invalid-token",
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":"invalid_client","error_description":"Invalid client assertion"}`))
+				writeResponse(t, w, `{"error":"invalid_client","error_description":"Invalid client assertion"}`)
 			},
 			expectError: true,
 		},
@@ -590,7 +592,7 @@ func TestGetJFrogAccessToken(t *testing.T) {
 			providerName: "some-provider",
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{invalid json`))
+				writeResponse(t, w, `{invalid json`)
 			},
 			expectError: true,
 		},
@@ -605,7 +607,7 @@ func TestGetJFrogAccessToken(t *testing.T) {
 					TokenType:   "Bearer",
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				encodeJSONResponse(t, w, resp)
 			},
 			expectError: true,
 		},
@@ -695,7 +697,7 @@ func TestGetAWSAccessToken(t *testing.T) {
 					Expiration:      "test-expiration-not-used",
 				}
 				w.Header().Set("Content-Type", "application/xml")
-				xml.NewEncoder(w).Encode(resp)
+				encodeXMLResponse(t, w, resp)
 			},
 			tokenServerHandler: func(w http.ResponseWriter, r *http.Request) {
 				// Verify request method and headers
@@ -735,7 +737,7 @@ func TestGetAWSAccessToken(t *testing.T) {
 					Expiration:         1.5,
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				encodeJSONResponse(t, w, resp)
 			},
 			expectError:   false,
 			expectedToken: "test-aws-access-token",
@@ -762,7 +764,7 @@ func TestGetAWSAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			credentialServerHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte("nope"))
+				writeResponse(t, w, "nope")
 			},
 			expectError: true,
 		},
@@ -783,11 +785,11 @@ func TestGetAWSAccessToken(t *testing.T) {
 					Expiration:      "test-expiration-not-used",
 				}
 				w.Header().Set("Content-Type", "application/xml")
-				xml.NewEncoder(w).Encode(resp)
+				encodeXMLResponse(t, w, resp)
 			},
 			tokenServerHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte("nope"))
+				writeResponse(t, w, "nope")
 			},
 			expectError: true,
 		},
@@ -862,7 +864,9 @@ func TestGetCloudsmithAccessToken(t *testing.T) {
 
 				bodyBytes, err := io.ReadAll(r.Body)
 				require.NoError(t, err)
-				defer r.Body.Close()
+				defer func() {
+					require.NoError(t, r.Body.Close())
+				}()
 
 				var request cloudsmithTokenRequest
 				err = json.Unmarshal(bodyBytes, &request)
@@ -875,7 +879,7 @@ func TestGetCloudsmithAccessToken(t *testing.T) {
 					Token: "test-cloudsmith-token",
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				encodeJSONResponse(t, w, resp)
 			},
 			expectError:   false,
 			expectedToken: "test-cloudsmith-token",
@@ -942,7 +946,7 @@ func TestGetCloudsmithAccessToken(t *testing.T) {
 			githubToken: "invalid-token",
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"detail":"Invalid token."}`))
+				writeResponse(t, w, `{"detail":"Invalid token."}`)
 			},
 			expectError: true,
 		},
@@ -957,7 +961,7 @@ func TestGetCloudsmithAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{invalid json`))
+				writeResponse(t, w, `{invalid json`)
 			},
 			expectError: true,
 		},
@@ -975,7 +979,7 @@ func TestGetCloudsmithAccessToken(t *testing.T) {
 					Token: "",
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				encodeJSONResponse(t, w, resp)
 			},
 			expectError: true,
 		},
@@ -1038,7 +1042,9 @@ func TestGetGCPAccessToken(t *testing.T) {
 
 				bodyBytes, err := io.ReadAll(r.Body)
 				require.NoError(t, err)
-				defer r.Body.Close()
+				defer func() {
+					require.NoError(t, r.Body.Close())
+				}()
 
 				var request gcpSTSTokenRequest
 				err = json.Unmarshal(bodyBytes, &request)
@@ -1051,7 +1057,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 				assert.Equal(t, "https://www.googleapis.com/auth/cloud-platform", request.Scope)
 
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+				encodeJSONResponse(t, w, gcpSTSTokenResponse{
 					AccessToken: "federated-access-token",
 					ExpiresIn:   3600,
 					TokenType:   "urn:ietf:params:oauth:token-type:access_token",
@@ -1070,7 +1076,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			stsHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+				encodeJSONResponse(t, w, gcpSTSTokenResponse{
 					AccessToken: "federated-access-token",
 					ExpiresIn:   3600,
 				})
@@ -1081,7 +1087,9 @@ func TestGetGCPAccessToken(t *testing.T) {
 
 				bodyBytes, err := io.ReadAll(r.Body)
 				require.NoError(t, err)
-				defer r.Body.Close()
+				defer func() {
+					require.NoError(t, r.Body.Close())
+				}()
 
 				var request gcpIAMGenerateAccessTokenRequest
 				err = json.Unmarshal(bodyBytes, &request)
@@ -1089,7 +1097,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 				assert.Contains(t, request.Scope, "https://www.googleapis.com/auth/cloud-platform")
 
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpIAMGenerateAccessTokenResponse{
+				encodeJSONResponse(t, w, gcpIAMGenerateAccessTokenResponse{
 					AccessToken: "impersonated-access-token",
 					ExpireTime:  "2099-12-31T23:59:59Z",
 				})
@@ -1107,14 +1115,14 @@ func TestGetGCPAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			stsHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+				encodeJSONResponse(t, w, gcpSTSTokenResponse{
 					AccessToken: "federated-access-token",
 					ExpiresIn:   3600,
 				})
 			},
 			iamHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpIAMGenerateAccessTokenResponse{
+				encodeJSONResponse(t, w, gcpIAMGenerateAccessTokenResponse{
 					AccessToken: "impersonated-nano-token",
 					ExpireTime:  "2099-12-31T23:59:59.999999999Z",
 				})
@@ -1157,7 +1165,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 			githubToken: "invalid-token",
 			stsHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":"invalid_grant"}`))
+				writeResponse(t, w, `{"error":"invalid_grant"}`)
 			},
 			expectError: true,
 		},
@@ -1170,7 +1178,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			stsHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{invalid json`))
+				writeResponse(t, w, `{invalid json`)
 			},
 			expectError: true,
 		},
@@ -1183,7 +1191,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			stsHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+				encodeJSONResponse(t, w, gcpSTSTokenResponse{
 					AccessToken: "",
 					ExpiresIn:   3600,
 				})
@@ -1199,7 +1207,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			stsHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+				encodeJSONResponse(t, w, gcpSTSTokenResponse{
 					AccessToken: "federated-access-token",
 					ExpiresIn:   0,
 				})
@@ -1215,7 +1223,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			stsHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+				encodeJSONResponse(t, w, gcpSTSTokenResponse{
 					AccessToken: "federated-access-token",
 					ExpiresIn:   300,
 				})
@@ -1232,14 +1240,14 @@ func TestGetGCPAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			stsHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+				encodeJSONResponse(t, w, gcpSTSTokenResponse{
 					AccessToken: "federated-access-token",
 					ExpiresIn:   3600,
 				})
 			},
 			iamHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusForbidden)
-				w.Write([]byte(`{"error":{"code":403,"message":"Permission denied"}}`))
+				writeResponse(t, w, `{"error":{"code":403,"message":"Permission denied"}}`)
 			},
 			expectError: true,
 		},
@@ -1253,14 +1261,14 @@ func TestGetGCPAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			stsHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+				encodeJSONResponse(t, w, gcpSTSTokenResponse{
 					AccessToken: "federated-access-token",
 					ExpiresIn:   3600,
 				})
 			},
 			iamHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpIAMGenerateAccessTokenResponse{
+				encodeJSONResponse(t, w, gcpIAMGenerateAccessTokenResponse{
 					AccessToken: "",
 					ExpireTime:  "2099-12-31T23:59:59Z",
 				})
@@ -1277,14 +1285,14 @@ func TestGetGCPAccessToken(t *testing.T) {
 			githubToken: "test-github-jwt-token",
 			stsHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpSTSTokenResponse{
+				encodeJSONResponse(t, w, gcpSTSTokenResponse{
 					AccessToken: "federated-access-token",
 					ExpiresIn:   3600,
 				})
 			},
 			iamHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(gcpIAMGenerateAccessTokenResponse{
+				encodeJSONResponse(t, w, gcpIAMGenerateAccessTokenResponse{
 					AccessToken: "impersonated-access-token",
 					ExpireTime:  "2000-01-01T00:00:00Z",
 				})

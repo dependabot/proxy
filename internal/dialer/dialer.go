@@ -185,8 +185,7 @@ func checkConnectivity(network, address string) bool {
 	if err != nil {
 		return false
 	}
-	conn.Close()
-	return true
+	return conn.Close() == nil
 }
 
 type control func(network, address string, conn syscall.RawConn) error

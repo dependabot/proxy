@@ -409,7 +409,9 @@ func TestGitHubAPIHandler_TokenFallback(t *testing.T) {
 			_ = handleRequestAndClose(handler, req, proxyCtx)
 
 			newRsp := handler.HandleResponse(rsp, proxyCtx)
-			defer newRsp.Body.Close()
+			defer func() {
+				require.NoError(t, newRsp.Body.Close())
+			}()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")
 			if tt.expectReplacedResponse {
@@ -512,7 +514,9 @@ func TestGitHubAPIHandler_TokenFallback_In_Proxima(t *testing.T) {
 			_ = handleRequestAndClose(handler, req, proxyCtx)
 
 			newRsp := handler.HandleResponse(rsp, proxyCtx)
-			defer newRsp.Body.Close()
+			defer func() {
+				require.NoError(t, newRsp.Body.Close())
+			}()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")
 			if tt.expectReplacedResponse {

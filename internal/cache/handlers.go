@@ -67,7 +67,9 @@ var ignoreHeaders = map[string]struct{}{
 // generates the key used in the DB, includes a hash of the body
 func key(r *http.Request) Key {
 	data, _ := io.ReadAll(r.Body)
-	r.Body.Close()
+	if err := r.Body.Close(); err != nil {
+		logrus.Warnf("failed to close request body while generating cache key: %v", err)
+	}
 	r.Body = io.NopCloser(bytes.NewBuffer(data))
 	k := Key{
 		Method: r.Method,

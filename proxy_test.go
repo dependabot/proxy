@@ -35,19 +35,26 @@ var (
 	}
 )
 
+func closeOnCleanup(t *testing.T, closer io.Closer) {
+	t.Helper()
+	t.Cleanup(func() {
+		require.NoError(t, closer.Close())
+	})
+}
+
 func TestProxyHTTPRequest(t *testing.T) {
 	var blockedIPs []net.IP
 	client, proxy := testProxyServer(t, testProxyConfig, blockedIPs)
-	defer proxy.Close()
+	closeOnCleanup(t, proxy)
 
 	url, httpSrv := testHTTPServer(t)
-	defer httpSrv.Close()
+	closeOnCleanup(t, httpSrv)
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
 	require.NoError(t, err)
 	rsp, err := client.Do(req)
 	require.NoError(t, err)
-	defer rsp.Body.Close()
+	closeOnCleanup(t, rsp.Body)
 	assert.Equal(t, 200, rsp.StatusCode)
 }
 
@@ -61,7 +68,7 @@ func TestProxyHTTPSMITMFixedLengthResponseFraming(t *testing.T) {
 
 	t.Setenv("PROXY_CACHE", "false")
 	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
-	defer proxy.Close()
+	closeOnCleanup(t, proxy)
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
 	require.NoError(t, err)
@@ -114,7 +121,7 @@ func TestProxyHTTPSMITMResponseFraming(t *testing.T) {
 
 	t.Setenv("PROXY_CACHE", "true")
 	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
-	defer proxy.Close()
+	closeOnCleanup(t, proxy)
 	transport := client.Transport.(*http.Transport)
 	var proxyDials atomic.Int32
 	dialer := &net.Dialer{}
@@ -193,7 +200,7 @@ func TestProxyHTTPSMITMHeadCacheHitPreservesContentLength(t *testing.T) {
 
 	t.Setenv("PROXY_CACHE", "true")
 	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
-	defer proxy.Close()
+	closeOnCleanup(t, proxy)
 	transport := client.Transport.(*http.Transport)
 	var proxyDials atomic.Int32
 	dialer := &net.Dialer{}
@@ -245,7 +252,7 @@ func TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse(t *testing.T) {
 
 	t.Setenv("PROXY_CACHE", "true")
 	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
-	defer proxy.Close()
+	closeOnCleanup(t, proxy)
 	transport := client.Transport.(*http.Transport)
 	var proxyDials atomic.Int32
 	dialer := &net.Dialer{}
@@ -319,7 +326,7 @@ func TestProxyUpstreamCloseIsNotCachedAsBodylessResponse(t *testing.T) {
 
 	t.Setenv("PROXY_CACHE", "true")
 	client, proxy := testProxyServer(t, testProxyConfig, nil)
-	defer proxy.Close()
+	closeOnCleanup(t, proxy)
 
 	request := func() *http.Response {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
@@ -351,10 +358,10 @@ func TestProxyUpstreamCloseIsNotCachedAsBodylessResponse(t *testing.T) {
 func TestIPRestrictions(t *testing.T) {
 	blockedIPs = []net.IP{iPV4Localhost, iPV6Localhost}
 	client, proxy := testProxyServer(t, testProxyConfig, blockedIPs)
-	defer proxy.Close()
+	closeOnCleanup(t, proxy)
 
 	_, httpSrv := testHTTPServer(t)
-	defer httpSrv.Close()
+	closeOnCleanup(t, httpSrv)
 
 	httpTestCases := []string{
 		"http://127.0.0.1",
@@ -370,7 +377,7 @@ func TestIPRestrictions(t *testing.T) {
 			require.NoError(t, err)
 			rsp, err := client.Do(req)
 			require.NoError(t, err)
-			defer rsp.Body.Close()
+			closeOnCleanup(t, rsp.Body)
 
 			assert.Equal(t, 403, rsp.StatusCode)
 		})
@@ -399,7 +406,7 @@ func TestIPRestrictions(t *testing.T) {
 func TestMetadataAPIRestriction(t *testing.T) {
 	var blockedIPs []net.IP
 	client, proxy := testProxyServer(t, testProxyConfig, blockedIPs)
-	defer proxy.Close()
+	closeOnCleanup(t, proxy)
 
 	type testCase struct {
 		url  string
@@ -444,7 +451,7 @@ func TestMetadataAPIRestriction(t *testing.T) {
 
 			rsp, err := client.Do(req)
 			require.NoError(t, err)
-			defer rsp.Body.Close()
+			closeOnCleanup(t, rsp.Body)
 
 			assert.Equal(t, 403, rsp.StatusCode)
 		})
@@ -555,16 +562,20 @@ func testCA() config.CaDetails {
 	}
 
 	caPEM := new(bytes.Buffer)
-	pem.Encode(caPEM, &pem.Block{
+	if err := pem.Encode(caPEM, &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: caBytes,
-	})
+	}); err != nil {
+		panic(err)
+	}
 
 	caPrivKeyPEM := new(bytes.Buffer)
-	pem.Encode(caPrivKeyPEM, &pem.Block{
+	if err := pem.Encode(caPrivKeyPEM, &pem.Block{
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(caPrivKey),
-	})
+	}); err != nil {
+		panic(err)
+	}
 
 	return config.CaDetails{
 		Cert: caPEM.String(),

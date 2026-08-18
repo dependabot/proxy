@@ -54,12 +54,12 @@ func TestHandlerMetrics(t *testing.T) {
 				proxyCtx := &goproxy.ProxyCtx{Req: req}
 				_, resp := h.HandleRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
-					resp.Body.Close()
+					require.NoError(t, resp.Body.Close())
 				}
 				time.Sleep(200 * time.Millisecond)
 				rsp := h.HandleResponse(&http.Response{StatusCode: 201}, proxyCtx)
 				if rsp != nil && rsp.Body != nil {
-					rsp.Body.Close()
+					require.NoError(t, rsp.Body.Close())
 				}
 			},
 			validateMetric: func(t *testing.T, metric string) {
@@ -83,13 +83,13 @@ func TestHandlerMetrics(t *testing.T) {
 				proxyCtx := &goproxy.ProxyCtx{Req: req}
 				_, resp := h.HandleRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
-					resp.Body.Close()
+					require.NoError(t, resp.Body.Close())
 				}
 				// Simulate a delay to test the timing metric
 				time.Sleep(200 * time.Millisecond)
 				rsp := h.HandleResponse(&http.Response{StatusCode: 200}, proxyCtx)
 				if rsp != nil && rsp.Body != nil {
-					rsp.Body.Close()
+					require.NoError(t, rsp.Body.Close())
 				}
 			},
 			expMetricCount: 2,
@@ -112,11 +112,11 @@ func TestHandlerMetrics(t *testing.T) {
 					proxyCtx := &goproxy.ProxyCtx{Req: req}
 					_, resp := h.HandleRequest(req, proxyCtx)
 					if resp != nil && resp.Body != nil {
-						resp.Body.Close()
+						require.NoError(t, resp.Body.Close())
 					}
 					rsp := h.HandleResponse(&http.Response{StatusCode: 200}, proxyCtx)
 					if rsp != nil && rsp.Body != nil {
-						rsp.Body.Close()
+						require.NoError(t, rsp.Body.Close())
 					}
 				}
 			},
@@ -140,11 +140,11 @@ func TestHandlerMetrics(t *testing.T) {
 					proxyCtx := &goproxy.ProxyCtx{Req: req}
 					_, resp := h.HandleRequest(req, proxyCtx)
 					if resp != nil && resp.Body != nil {
-						resp.Body.Close()
+						require.NoError(t, resp.Body.Close())
 					}
 					rsp := h.HandleResponse(&http.Response{StatusCode: 200}, proxyCtx)
 					if rsp != nil && rsp.Body != nil {
-						rsp.Body.Close()
+						require.NoError(t, rsp.Body.Close())
 					}
 				}
 			},
@@ -168,11 +168,11 @@ func TestHandlerMetrics(t *testing.T) {
 					proxyCtx := &goproxy.ProxyCtx{Req: req}
 					_, resp := h.HandleRequest(req, proxyCtx)
 					if resp != nil && resp.Body != nil {
-						resp.Body.Close()
+						require.NoError(t, resp.Body.Close())
 					}
 					rsp := h.HandleResponse(&http.Response{StatusCode: 200}, proxyCtx)
 					if rsp != nil && rsp.Body != nil {
-						rsp.Body.Close()
+						require.NoError(t, rsp.Body.Close())
 					}
 				}
 			},

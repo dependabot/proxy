@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -55,7 +56,7 @@ func GetRequestToken() string {
 }
 
 // GetToken retrieves a GitHub Actions OIDC token with an optional audience
-func GetToken(ctx context.Context, audience string) (string, error) {
+func GetToken(ctx context.Context, audience string) (_ string, err error) {
 	if !IsOIDCConfigured() {
 		return "", fmt.Errorf("GitHub Actions OIDC is not available: missing %s or %s environment variables",
 			envActionsIDTokenRequestURL, envActionsIDTokenRequestToken)
@@ -92,7 +93,7 @@ func GetToken(ctx context.Context, audience string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to execute OIDC request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body, &err)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -227,7 +228,7 @@ type OIDCAccessToken struct {
 // githubToken: The GitHub Actions OIDC token obtained via GetTokenForAzureADExchange
 //
 // Returns an Azure AD access token scoped for Azure DevOps (499b84ac-1321-427f-aa17-267ca6975798/.default)
-func GetAzureAccessToken(ctx context.Context, params AzureOIDCParameters, githubToken string) (*OIDCAccessToken, error) {
+func GetAzureAccessToken(ctx context.Context, params AzureOIDCParameters, githubToken string) (_ *OIDCAccessToken, err error) {
 	if params.TenantID == "" {
 		return nil, fmt.Errorf("tenant ID is required")
 	}
@@ -267,7 +268,7 @@ func GetAzureAccessToken(ctx context.Context, params AzureOIDCParameters, github
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Azure token request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body, &err)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -323,7 +324,7 @@ func GetAzureAccessTokenForDevOps(ctx context.Context, params AzureOIDCParameter
 // githubToken: The GitHub Actions OIDC token obtained via GetToken
 //
 // Returns a JFrog access token
-func GetJFrogAccessToken(ctx context.Context, params JFrogOIDCParameters, githubToken string) (*OIDCAccessToken, error) {
+func GetJFrogAccessToken(ctx context.Context, params JFrogOIDCParameters, githubToken string) (_ *OIDCAccessToken, err error) {
 	if params.JFrogURL == "" {
 		return nil, fmt.Errorf("token URL base is required")
 	}
@@ -365,7 +366,7 @@ func GetJFrogAccessToken(ctx context.Context, params JFrogOIDCParameters, github
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute JFrog token request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body, &err)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -424,7 +425,7 @@ func GetJFrogAccessTokenForDevOps(ctx context.Context, params JFrogOIDCParameter
 // githubToken: The GitHub Actions OIDC token obtained via GetToken
 //
 // Returns temporary AWS credentials
-func GetAWSAccessToken(ctx context.Context, params AWSOIDCParameters, githubToken string) (*OIDCAccessToken, error) {
+func GetAWSAccessToken(ctx context.Context, params AWSOIDCParameters, githubToken string) (_ *OIDCAccessToken, err error) {
 	if params.Region == "" {
 		return nil, fmt.Errorf("AWS region is required")
 	}
@@ -468,7 +469,7 @@ func GetAWSAccessToken(ctx context.Context, params AWSOIDCParameters, githubToke
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute AWS credential request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body, &err)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -542,7 +543,7 @@ func GetAWSAccessToken(ctx context.Context, params AWSOIDCParameters, githubToke
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute AWS token request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body, &err)
 
 	body, err = io.ReadAll(resp.Body)
 	if err != nil {
@@ -592,7 +593,7 @@ func GetAWSAccessTokenForDevOps(ctx context.Context, params AWSOIDCParameters) (
 	return awsToken, nil
 }
 
-func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParameters, githubToken string) (*OIDCAccessToken, error) {
+func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParameters, githubToken string) (_ *OIDCAccessToken, err error) {
 	if params.ServiceSlug == "" {
 		return nil, fmt.Errorf("service slug is required")
 	}
@@ -633,7 +634,7 @@ func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParamete
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute cloudsmith token request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body, &err)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -679,7 +680,7 @@ func GetCloudsmithAccessTokenForDevOps(ctx context.Context, params CloudsmithOID
 	return cloudsmithToken, nil
 }
 
-func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToken string) (*OIDCAccessToken, error) {
+func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToken string) (_ *OIDCAccessToken, err error) {
 	if params.WorkloadIdentityProvider == "" {
 		return nil, fmt.Errorf("workload-identity-provider is required")
 	}
@@ -721,7 +722,7 @@ func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToke
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute GCP STS request: %w", err)
 	}
-	defer stsResp.Body.Close()
+	defer closeBody(stsResp.Body, &err)
 
 	stsBody, err := io.ReadAll(stsResp.Body)
 	if err != nil {
@@ -778,7 +779,7 @@ func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToke
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute GCP IAM request: %w", err)
 	}
-	defer iamResp.Body.Close()
+	defer closeBody(iamResp.Body, &err)
 
 	iamBody, err := io.ReadAll(iamResp.Body)
 	if err != nil {
@@ -836,4 +837,8 @@ func GetGCPAccessTokenForDevOps(ctx context.Context, params GCPOIDCParameters) (
 func calculateContentSha256Header(payload []byte) string {
 	payloadHash := sha256.Sum256(payload)
 	return hex.EncodeToString(payloadHash[:])
+}
+
+func closeBody(body io.Closer, err *error) {
+	*err = errors.Join(*err, body.Close())
 }

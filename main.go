@@ -34,7 +34,11 @@ func main() {
 	flag.Parse()
 	file := setupLogging()
 	if file != nil {
-		defer file.Close()
+		defer func() {
+			if err := file.Close(); err != nil {
+				log.Printf("failed to close log file: %v", err)
+			}
+		}()
 	}
 	logrus.Info("proxy starting, commit: " + version.GitCommit)
 

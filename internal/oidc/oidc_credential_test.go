@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
@@ -20,12 +19,8 @@ import (
 
 func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {
 	// these variables are necessary
-	os.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
-	os.Setenv(envActionsIDTokenRequestToken, "test-token")
-	defer func() {
-		os.Unsetenv(envActionsIDTokenRequestURL)
-		os.Unsetenv(envActionsIDTokenRequestToken)
-	}()
+	t.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
+	t.Setenv(envActionsIDTokenRequestToken, "test-token")
 
 	// we're using Azure for this, but anything will work
 	creds, err := CreateOIDCCredential(config.Credential{
@@ -85,12 +80,8 @@ func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {
 
 func TestFailedAuthenticationIsNotRetried(t *testing.T) {
 	// these variables are necessary
-	os.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
-	os.Setenv(envActionsIDTokenRequestToken, "test-token")
-	defer func() {
-		os.Unsetenv(envActionsIDTokenRequestURL)
-		os.Unsetenv(envActionsIDTokenRequestToken)
-	}()
+	t.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
+	t.Setenv(envActionsIDTokenRequestToken, "test-token")
 
 	// we're using Azure for this, but anything will work
 	creds, err := CreateOIDCCredential(config.Credential{
@@ -339,12 +330,8 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// these variables are necessary
-			os.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
-			os.Setenv(envActionsIDTokenRequestToken, "test-token")
-			defer func() {
-				os.Unsetenv(envActionsIDTokenRequestURL)
-				os.Unsetenv(envActionsIDTokenRequestToken)
-			}()
+			t.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
+			t.Setenv(envActionsIDTokenRequestToken, "test-token")
 
 			actual, _ := CreateOIDCCredential(tc.cred)
 			if tc.expectedParameters == nil {

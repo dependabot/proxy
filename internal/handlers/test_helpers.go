@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -18,9 +20,15 @@ func handleRequestAndClose(handler interface {
 }, req *http.Request, proxyCtx *goproxy.ProxyCtx) *http.Request {
 	req, resp := handler.HandleRequest(req, proxyCtx)
 	if resp != nil && resp.Body != nil {
-		resp.Body.Close()
+		mustClose(resp.Body)
 	}
 	return req
+}
+
+func mustClose(closer io.Closer) {
+	if err := closer.Close(); err != nil {
+		panic(fmt.Sprintf("failed to close test resource: %v", err))
+	}
 }
 
 func assertHasTokenAuth(t *testing.T, r *http.Request, prefix, token, msg string) {

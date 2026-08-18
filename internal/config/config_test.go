@@ -93,6 +93,6 @@ func mockStdin(t testing.TB, input string) {
 	t.Cleanup(func() {
 		// reset os.Stdin
 		os.Stdin = oldOsStdin
-		tmpfile.Close()
+		require.NoError(t, tmpfile.Close())
 	})
 }
