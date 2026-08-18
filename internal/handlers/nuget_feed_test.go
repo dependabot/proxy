@@ -366,12 +366,13 @@ func TestNugetFeedHandlerLeavesBodylessResponseUnchanged(t *testing.T) {
 	for _, statusCode := range []int{http.StatusNoContent, http.StatusResetContent} {
 		proxyCtx := &goproxy.ProxyCtx{}
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/index.json", nil)
-		handler.PrepareRequest(req, proxyCtx)
+		prepareRequestAndClose(handler, req, proxyCtx)
 		resp := &http.Response{StatusCode: statusCode, Body: http.NoBody}
 
-		handler.HandleResponse(resp, proxyCtx)
+		resp = handler.HandleResponse(resp, proxyCtx)
 
 		assert.True(t, resp.Body == http.NoBody)
+		require.NoError(t, resp.Body.Close())
 	}
 }
 
@@ -381,17 +382,18 @@ func TestNugetFeedHandlerReplaysBodyAfterReadError(t *testing.T) {
 	})
 	proxyCtx := &goproxy.ProxyCtx{}
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/index.json", nil)
-	handler.PrepareRequest(req, proxyCtx)
+	prepareRequestAndClose(handler, req, proxyCtx)
 	originalBody := &readErrorThenData{
 		first: []byte("first"),
 		rest:  strings.NewReader("second"),
 	}
 	resp := &http.Response{StatusCode: http.StatusOK, Body: originalBody}
 
-	handler.HandleResponse(resp, proxyCtx)
+	resp = handler.HandleResponse(resp, proxyCtx)
 	replayed, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	assert.Equal(t, "firstsecond", string(replayed))
+	require.NoError(t, resp.Body.Close())
 }
 
 func TestNugetFeedHandlerOnlyDiscoversFromConfiguredServiceIndex(t *testing.T) {
@@ -400,13 +402,13 @@ func TestNugetFeedHandlerOnlyDiscoversFromConfiguredServiceIndex(t *testing.T) {
 	})
 	proxyCtx := &goproxy.ProxyCtx{}
 	packageReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/v3/some-package/index.json", nil)
-	handler.PrepareRequest(packageReq, proxyCtx)
+	prepareRequestAndClose(handler, packageReq, proxyCtx)
 
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(nugetV3Response("https://untrusted.example.com/packages"))),
 	}
-	handler.HandleResponse(resp, proxyCtx)
+	handleResponseAndClose(handler, resp, proxyCtx)
 
 	untrustedReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://untrusted.example.com/packages/example/index.json", nil)
 	untrustedReq = handleRequestAndClose(handler, untrustedReq, &goproxy.ProxyCtx{})
@@ -453,8 +455,8 @@ func TestNugetFeedHandlerRequiresConfiguredServiceIndexSchemeForDiscovery(t *tes
 			})
 			proxyCtx := &goproxy.ProxyCtx{}
 			indexReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, testCase.requestedURL, nil)
-			handler.PrepareRequest(indexReq, proxyCtx)
-			handler.HandleResponse(&http.Response{
+			prepareRequestAndClose(handler, indexReq, proxyCtx)
+			handleResponseAndClose(handler, &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(strings.NewReader(nugetV3Response("https://attacker.example.com/packages"))),
 			}, proxyCtx)
@@ -510,17 +512,19 @@ func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
 			<-start
 			proxyCtx := &goproxy.ProxyCtx{}
 			indexReq := httptest.NewRequestWithContext(ctx, http.MethodGet, "https://nuget.example.com/index.json", nil)
-			handler.PrepareRequest(indexReq, proxyCtx)
-			handler.HandleRequest(indexReq, proxyCtx)
+			indexReq = prepareRequestAndClose(handler, indexReq, proxyCtx)
+			handleRequestAndClose(handler, indexReq, proxyCtx)
 			resp := &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(strings.NewReader(responseBody)),
 			}
-			handler.HandleResponse(resp, proxyCtx)
-			mustClose(resp.Body)
+			resp = handler.HandleResponse(resp, proxyCtx)
+			if err := resp.Body.Close(); err != nil {
+				panic(err)
+			}
 
 			packageReq := httptest.NewRequestWithContext(ctx, http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
-			handler.HandleRequest(packageReq, &goproxy.ProxyCtx{})
+			handleRequestAndClose(handler, packageReq, &goproxy.ProxyCtx{})
 		}()
 	}
 	close(start)
@@ -607,34 +611,34 @@ func TestNugetFeedHandlerDiscoversThroughCrossOriginRedirectWithoutLeakingCreden
 
 	initialCtx := &goproxy.ProxyCtx{}
 	initialReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/index.json", nil)
-	handler.PrepareRequest(initialReq, initialCtx)
+	initialReq = prepareRequestAndClose(handler, initialReq, initialCtx)
 	initialReq = handleRequestAndClose(handler, initialReq, initialCtx)
 	assertHasTokenAuth(t, initialReq, "Bearer", "some-token", "configured service index")
-	handler.HandleResponse(&http.Response{
+	handleResponseAndClose(handler, &http.Response{
 		StatusCode: http.StatusFound,
 		Header:     http.Header{"Location": []string{"https://redirect.example.com/index.json"}},
 	}, initialCtx)
 
 	redirectCtx := &goproxy.ProxyCtx{}
 	redirectReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://redirect.example.com/index.json", nil)
-	handler.PrepareRequest(redirectReq, redirectCtx)
+	redirectReq = prepareRequestAndClose(handler, redirectReq, redirectCtx)
 	redirectReq = handleRequestAndClose(handler, redirectReq, redirectCtx)
 	assertUnauthenticated(t, redirectReq, "cross-origin service-index redirect")
-	handler.HandleResponse(&http.Response{
+	handleResponseAndClose(handler, &http.Response{
 		StatusCode: http.StatusTemporaryRedirect,
 		Header:     http.Header{"Location": []string{"/v3/index.json"}},
 	}, redirectCtx)
 
 	finalCtx := &goproxy.ProxyCtx{}
 	finalReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://redirect.example.com/v3/index.json", nil)
-	handler.PrepareRequest(finalReq, finalCtx)
+	finalReq = prepareRequestAndClose(handler, finalReq, finalCtx)
 	finalReq = handleRequestAndClose(handler, finalReq, finalCtx)
 	assertUnauthenticated(t, finalReq, "redirect after cross-origin service-index redirect")
 	finalResp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(nugetV3Response("https://cdn.example.com/packages"))),
 	}
-	handler.HandleResponse(finalResp, finalCtx)
+	handleResponseAndClose(handler, finalResp, finalCtx)
 
 	packageReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
 	packageReq = handleRequestAndClose(handler, packageReq, &goproxy.ProxyCtx{})
@@ -648,9 +652,9 @@ func TestNugetFeedHandlerAuthenticatesSameOriginServiceIndexRedirect(t *testing.
 
 	initialCtx := &goproxy.ProxyCtx{}
 	initialReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/index.json", nil)
-	handler.PrepareRequest(initialReq, initialCtx)
+	initialReq = prepareRequestAndClose(handler, initialReq, initialCtx)
 	handleRequestAndClose(handler, initialReq, initialCtx)
-	handler.HandleResponse(&http.Response{
+	handleResponseAndClose(handler, &http.Response{
 		StatusCode: http.StatusTemporaryRedirect,
 		Header:     http.Header{"Location": []string{"/v3/index.json"}},
 	}, initialCtx)
@@ -689,16 +693,16 @@ func TestNugetFeedHandlerResolvesRelativeRedirectAgainstRequestedServiceIndexURL
 
 			initialCtx := &goproxy.ProxyCtx{}
 			initialReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, testCase.requestedURL, nil)
-			handler.PrepareRequest(initialReq, initialCtx)
-			handler.HandleResponse(&http.Response{
+			prepareRequestAndClose(handler, initialReq, initialCtx)
+			handleResponseAndClose(handler, &http.Response{
 				StatusCode: http.StatusTemporaryRedirect,
 				Header:     http.Header{"Location": []string{"next.json"}},
 			}, initialCtx)
 
 			redirectCtx := &goproxy.ProxyCtx{}
 			redirectReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, testCase.redirectURL, nil)
-			handler.PrepareRequest(redirectReq, redirectCtx)
-			handler.HandleResponse(&http.Response{
+			prepareRequestAndClose(handler, redirectReq, redirectCtx)
+			handleResponseAndClose(handler, &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(strings.NewReader(nugetV3Response("https://cdn.example.com/packages"))),
 			}, redirectCtx)
@@ -724,14 +728,14 @@ func discoverNugetFeed(t *testing.T, handler *NugetFeedHandler, sourceURL string
 	t.Helper()
 	proxyCtx := &goproxy.ProxyCtx{}
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, sourceURL, nil)
-	handler.PrepareRequest(req, proxyCtx)
+	req = prepareRequestAndClose(handler, req, proxyCtx)
 	handleRequestAndClose(handler, req, proxyCtx)
 
 	resp := &http.Response{
 		StatusCode: statusCode,
 		Body:       io.NopCloser(strings.NewReader(responseBody)),
 	}
-	handler.HandleResponse(resp, proxyCtx)
+	resp = handler.HandleResponse(resp, proxyCtx)
 
 	replayedBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)

@@ -148,7 +148,8 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromHTML(t *test
 			</body></html>
 		`)),
 	}
-	handler.HandleResponse(indexResp, proxyCtx)
+	indexResp = handler.HandleResponse(indexResp, proxyCtx)
+	require.NoError(t, indexResp.Body.Close())
 
 	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"HEAD",
@@ -206,7 +207,8 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromJSON(t *test
 			]
 		}`)),
 	}
-	handler.HandleResponse(indexResp, proxyCtx)
+	indexResp = handler.HandleResponse(indexResp, proxyCtx)
+	require.NoError(t, indexResp.Body.Close())
 
 	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
@@ -277,7 +279,8 @@ func TestPythonIndexHandlerSkipsDiscoveryForAuthenticatedNonSimpleResponse(t *te
 			</a>
 		`)),
 	}
-	handler.HandleResponse(indexResp, proxyCtx)
+	indexResp = handler.HandleResponse(indexResp, proxyCtx)
+	require.NoError(t, indexResp.Body.Close())
 
 	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
@@ -317,7 +320,8 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixPort(t *testing.T) {
 			</a>
 		`)),
 	}
-	handler.HandleResponse(indexResp, proxyCtx)
+	indexResp = handler.HandleResponse(indexResp, proxyCtx)
+	require.NoError(t, indexResp.Body.Close())
 
 	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
@@ -365,7 +369,8 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixIPv6Host(t *testing.
 			</a>
 		`)),
 	}
-	handler.HandleResponse(indexResp, proxyCtx)
+	indexResp = handler.HandleResponse(indexResp, proxyCtx)
+	require.NoError(t, indexResp.Body.Close())
 
 	downloadReq := httptest.NewRequestWithContext(t.Context(),
 		"GET",
@@ -445,11 +450,12 @@ func TestPythonIndexHandlerSkipsDiscoveryForLargeSimpleResponse(t *testing.T) {
 		},
 		Body: io.NopCloser(strings.NewReader(responseBody)),
 	}
-	handler.HandleResponse(indexResp, proxyCtx)
+	indexResp = handler.HandleResponse(indexResp, proxyCtx)
 
 	replayedBody, err := io.ReadAll(indexResp.Body)
 	require.NoError(t, err)
 	assert.Equal(t, responseBody, string(replayedBody))
+	require.NoError(t, indexResp.Body.Close())
 
 	downloadReq := httptest.NewRequestWithContext(t.Context(), "GET", downloadURL, nil)
 	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
