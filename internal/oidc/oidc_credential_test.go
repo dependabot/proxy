@@ -17,6 +17,7 @@ import (
 	"github.com/dependabot/proxy/internal/config"
 )
 
+//nolint:gosec // The test credentials are intentionally fake fixtures.
 func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {
 	// these variables are necessary
 	t.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")

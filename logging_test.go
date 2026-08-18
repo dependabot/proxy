@@ -24,6 +24,7 @@ import (
 
 var timestamp = regexp.MustCompile(`\d{4}/\d{2}/{2} \d{2}:\d{2}:\d{2} `)
 
+//nolint:gosec // The URL contains intentionally fake credentials for redaction testing.
 func TestURLWithoutCredentials(t *testing.T) {
 	cases := map[string]struct {
 		url      string
