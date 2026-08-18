@@ -4,6 +4,7 @@ package apiclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -100,7 +101,7 @@ func WithTransport(transport *http.Transport) ClientOpt {
 // RequestJITAccess asks the API to create a token with access to the specified repository.
 // If username and password are provided, they are used for basic auth; otherwise the client's
 // default token is used in the Authorization header.
-func (c *Client) RequestJITAccess(proxyCtx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (*config.Credential, error) {
+func (c *Client) RequestJITAccess(proxyCtx *goproxy.ProxyCtx, endpoint string, username string, password string, account string, repo string) (_ *config.Credential, err error) {
 	url := c.newURL("%s", endpoint)
 
 	if err := c.jitRateLimit.Acquire(proxyCtx.Req.Context(), 1); err != nil {
@@ -126,7 +127,9 @@ func (c *Client) RequestJITAccess(proxyCtx *goproxy.ProxyCtx, endpoint string, u
 	if err != nil {
 		return nil, err
 	}
-	defer rsp.Body.Close()
+	defer func() {
+		err = errors.Join(err, rsp.Body.Close())
+	}()
 	data, err := io.ReadAll(rsp.Body)
 	if err != nil {
 		logging.RequestLogf(proxyCtx, "Failed reading scope response: %v", err)
@@ -148,7 +151,7 @@ func (c *Client) RequestJITAccess(proxyCtx *goproxy.ProxyCtx, endpoint string, u
 }
 
 // ReportMetrics sends metric data to the server.
-func (c *Client) ReportMetrics(ctx context.Context, metricsData string) error {
+func (c *Client) ReportMetrics(ctx context.Context, metricsData string) (err error) {
 	metricErrorURL := c.newURL("/update_jobs/%s/record_metrics", c.jobID)
 
 	// Submit JSON:
@@ -156,7 +159,9 @@ func (c *Client) ReportMetrics(ctx context.Context, metricsData string) error {
 	if err != nil {
 		return err
 	}
-	defer rsp.Body.Close()
+	defer func() {
+		err = errors.Join(err, rsp.Body.Close())
+	}()
 	return nil
 }
 

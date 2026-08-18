@@ -124,7 +124,8 @@ func TestClient_RequestJITAccess(t *testing.T) {
 			var repoData map[string]string
 			if err := json.NewDecoder(r.Body).Decode(&repoData); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte("Invalid request"))
+				_, err := w.Write([]byte("Invalid request"))
+				require.NoError(t, err)
 				return
 			}
 
@@ -136,7 +137,8 @@ func TestClient_RequestJITAccess(t *testing.T) {
 			}
 			data, err := json.Marshal(credentialMap)
 			assert.NoError(t, err)
-			w.Write(data)
+			_, err = w.Write(data)
+			require.NoError(t, err)
 		}))
 		defer testServer.Close()
 
@@ -154,7 +156,8 @@ func TestClient_RequestJITAccess(t *testing.T) {
 	t.Run("not implemented", func(t *testing.T) {
 		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotImplemented)
-			w.Write([]byte("Not Implemented"))
+			_, err := w.Write([]byte("Not Implemented"))
+			require.NoError(t, err)
 		}))
 		defer testServer.Close()
 
@@ -178,7 +181,8 @@ func TestClient_RequestJITAccess(t *testing.T) {
 			atomic.AddInt32(&totalCounter, 1)
 			if concurrencyCounter.Load() > 1 {
 				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte("Too many requests"))
+				_, err := w.Write([]byte("Too many requests"))
+				require.NoError(t, err)
 				return
 			}
 			defer concurrencyCounter.Add(-1)

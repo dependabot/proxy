@@ -37,10 +37,17 @@ func (c *closeTrackingReadCloser) Close() error {
 	return nil
 }
 
+func cleanupCacheDir(t *testing.T, cacheDir string) {
+	t.Helper()
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(cacheDir))
+	})
+}
+
 func TestCache_Disabled(t *testing.T) {
 	const enabled = false
 	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
-	defer os.RemoveAll(cacheDir)
+	cleanupCacheDir(t, cacheDir)
 
 	cacher, err := New(enabled, cacheDir)
 	require.NoError(t, err)
@@ -54,7 +61,7 @@ func TestCache_Disabled(t *testing.T) {
 	// If cached there will be a response.
 	_, resp := cacher.OnRequest(req, proxyCtx)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
 	assert.Nil(t, resp)
 
@@ -63,14 +70,16 @@ func TestCache_Disabled(t *testing.T) {
 	resp2 := &http.Response{Body: originalBody}
 	proxyCtx.Resp = resp2
 	resp3 := cacher.OnResponse(resp2, proxyCtx)
-	defer resp3.Body.Close()
+	defer func() {
+		require.NoError(t, resp3.Body.Close())
+	}()
 	assert.Same(t, originalBody, resp3.Body)
 }
 
 func TestCache(t *testing.T) {
 	const enabled = true
 	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
-	defer os.RemoveAll(cacheDir)
+	cleanupCacheDir(t, cacheDir)
 
 	cacher, err := New(enabled, cacheDir)
 	require.NoError(t, err)
@@ -85,7 +94,7 @@ func TestCache(t *testing.T) {
 
 		_, resp := cacher.OnRequest(req, proxyCtx)
 		if resp != nil {
-			resp.Body.Close()
+			require.NoError(t, resp.Body.Close())
 		}
 		assert.Nil(t, resp)
 
@@ -97,7 +106,7 @@ func TestCache(t *testing.T) {
 		}
 		resp = cacher.OnResponse(resp, proxyCtx)
 		result, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 		assert.Len(t, cacher.cacheDB, 1)
 		assert.Equal(t, body, string(result))
 	})
@@ -111,7 +120,7 @@ func TestCache(t *testing.T) {
 		// a cached response means OnRequest returns a resp
 		_, resp := cacher.OnRequest(req, proxyCtx)
 		if assert.NotNil(t, resp) {
-			resp.Body.Close()
+			require.NoError(t, resp.Body.Close())
 		}
 
 		// since the response is already cached, we don't need any other fields
@@ -120,7 +129,7 @@ func TestCache(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBufferString("")),
 		}
 		resp = cacher.OnResponse(resp, proxyCtx)
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 		assert.Len(t, cacher.cacheDB, 1)
 	})
 }
@@ -175,7 +184,7 @@ func TestCache_BodylessResponses(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
-			defer os.RemoveAll(cacheDir)
+			cleanupCacheDir(t, cacheDir)
 
 			cacher, err := New(true, cacheDir)
 			require.NoError(t, err)
@@ -233,7 +242,7 @@ func TestCache_BodylessResponseWithWrappedBodyIsRestored(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
-			defer os.RemoveAll(cacheDir)
+			cleanupCacheDir(t, cacheDir)
 
 			cacher, err := New(true, cacheDir)
 			require.NoError(t, err)
@@ -267,7 +276,7 @@ func TestCache_BodylessResponseWithWrappedBodyIsRestored(t *testing.T) {
 // (e.g. WebSocket) is not replaced with an empty body on a later request.
 func TestCache_SwitchingProtocolsNotCached(t *testing.T) {
 	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
-	defer os.RemoveAll(cacheDir)
+	cleanupCacheDir(t, cacheDir)
 
 	cacher, err := New(true, cacheDir)
 	require.NoError(t, err)
@@ -293,7 +302,7 @@ func TestCache_SwitchingProtocolsNotCached(t *testing.T) {
 // response. It must be tee-wrapped and produce a cache entry.
 func TestCache_ZeroByteBodyIsCached(t *testing.T) {
 	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
-	defer os.RemoveAll(cacheDir)
+	cleanupCacheDir(t, cacheDir)
 
 	cacher, err := New(true, cacheDir)
 	require.NoError(t, err)
@@ -332,7 +341,7 @@ func TestCache_ZeroByteBodyIsCached(t *testing.T) {
 // counter, so logs and statistics stay accurate.
 func TestCache_MissingCacheFileIsNotCountedAsHit(t *testing.T) {
 	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
-	defer os.RemoveAll(cacheDir)
+	cleanupCacheDir(t, cacheDir)
 
 	cacher, err := New(true, cacheDir)
 	require.NoError(t, err)

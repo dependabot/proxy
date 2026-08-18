@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -91,17 +92,18 @@ type BasicAuthCredentials struct {
 }
 
 // Parse parses a config file, returning a pointer to a Config struct
-func Parse(path string) (*Config, error) {
+func Parse(path string) (_ *Config, err error) {
 	var reader *os.File
 	if path == "-" {
 		reader = os.Stdin
 	} else {
-		var err error
 		reader, err = os.Open(filepath.Clean(path))
 		if err != nil {
 			return nil, err
 		}
-		defer reader.Close()
+		defer func() {
+			err = errors.Join(err, reader.Close())
+		}()
 	}
 
 	config := &Config{}

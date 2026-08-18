@@ -107,7 +107,9 @@ func logResponseBody(rsp *http.Response, proxyCtx *goproxy.ProxyCtx, maxBytes in
 			logging.RequestMultilineLogf(proxyCtx, "Remote response: %s", string(bodyBytes[:n]))
 
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
-				rsp.Body.Close()
+				if err := rsp.Body.Close(); err != nil {
+					logging.RequestLogf(proxyCtx, "Failed closing remote response body: %v", err)
+				}
 				rsp.Body = io.NopCloser(bytes.NewReader(bodyBytes[:n]))
 			} else {
 				rsp.Body = newMultiReadCloser(io.NopCloser(bytes.NewReader(bodyBytes[:n])), rsp.Body)
@@ -115,7 +117,9 @@ func logResponseBody(rsp *http.Response, proxyCtx *goproxy.ProxyCtx, maxBytes in
 		}
 	} else {
 		bodyBytes, _ := io.ReadAll(rsp.Body)
-		rsp.Body.Close()
+		if err := rsp.Body.Close(); err != nil {
+			logging.RequestLogf(proxyCtx, "Failed closing remote response body: %v", err)
+		}
 
 		logging.RequestMultilineLogf(proxyCtx, "Remote response: %s", string(bodyBytes))
 		rsp.Body = io.NopCloser(bytes.NewReader(bodyBytes))

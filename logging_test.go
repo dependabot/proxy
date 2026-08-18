@@ -80,7 +80,7 @@ func TestRequestLogger(t *testing.T) {
 	proxyCtx := &goproxy.ProxyCtx{Session: 128}
 
 	cases := map[string]struct {
-		setup     func(l *requestLogger)
+		setup     func(t *testing.T, l *requestLogger)
 		teardown  func()
 		expected  []string
 		multiline bool
@@ -89,23 +89,23 @@ func TestRequestLogger(t *testing.T) {
 			expected: nil,
 		},
 		"request": {
-			setup: func(l *requestLogger) {
+			setup: func(t *testing.T, l *requestLogger) {
 				_, resp := l.logRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
-					resp.Body.Close()
+					require.NoError(t, resp.Body.Close())
 				}
 			},
 			expected: []string{"[128] GET https://github.com:443"},
 		},
 		"requests": {
-			setup: func(l *requestLogger) {
+			setup: func(t *testing.T, l *requestLogger) {
 				_, resp := l.logRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
-					resp.Body.Close()
+					require.NoError(t, resp.Body.Close())
 				}
 				_, resp = l.logRequest(req, proxyCtx)
 				if resp != nil && resp.Body != nil {
-					resp.Body.Close()
+					require.NoError(t, resp.Body.Close())
 				}
 			},
 			expected: []string{
@@ -115,7 +115,7 @@ func TestRequestLogger(t *testing.T) {
 		},
 
 		"response on 40x": {
-			setup: func(l *requestLogger) {
+			setup: func(t *testing.T, l *requestLogger) {
 				resp := &http.Response{
 					Request:    req,
 					StatusCode: http.StatusUnauthorized,
@@ -133,7 +133,7 @@ func TestRequestLogger(t *testing.T) {
 				}
 				resp = l.logResponse(resp, proxyCtx)
 				if resp != nil && resp.Body != nil {
-					resp.Body.Close()
+					require.NoError(t, resp.Body.Close())
 				}
 			},
 			expected: []string{
@@ -157,7 +157,7 @@ func TestRequestLogger(t *testing.T) {
 			log.SetOutput(&buf)
 			l := NewRequestLogger()
 			if tc.setup != nil {
-				tc.setup(l)
+				tc.setup(t, l)
 			}
 
 			// Check the suffix of each line, to avoid timestamps

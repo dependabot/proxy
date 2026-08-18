@@ -517,7 +517,7 @@ func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
 				Body:       io.NopCloser(strings.NewReader(responseBody)),
 			}
 			handler.HandleResponse(resp, proxyCtx)
-			resp.Body.Close()
+			mustClose(resp.Body)
 
 			packageReq := httptest.NewRequestWithContext(ctx, http.MethodGet, "https://cdn.example.com/packages/example/index.json", nil)
 			handler.HandleRequest(packageReq, &goproxy.ProxyCtx{})

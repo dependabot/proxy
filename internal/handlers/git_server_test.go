@@ -219,11 +219,13 @@ func TestGitServerHandler404Retry(t *testing.T) {
 
 	proxyctx.SetValue(proxyCtx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
 	if newRsp.Body != nil {
-		newRsp.Body.Close()
+		require.NoError(t, newRsp.Body.Close())
 	}
 	newRsp = handler.HandleResponse(rsp, proxyCtx)
 	if newRsp != nil && newRsp.Body != nil {
-		defer newRsp.Body.Close()
+		defer func() {
+			require.NoError(t, newRsp.Body.Close())
+		}()
 	}
 	assert.Equal(t, 401, newRsp.StatusCode, "should retry")
 }
@@ -248,11 +250,13 @@ func TestGitServerHandlerNoRetry(t *testing.T) {
 	// Ensure we _don't_ retry
 	proxyctx.SetValue(proxyCtx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
 	if newRsp.Body != nil {
-		newRsp.Body.Close()
+		require.NoError(t, newRsp.Body.Close())
 	}
 	newRsp = handler.HandleResponse(rsp, proxyCtx)
 	if newRsp != nil && newRsp.Body != nil {
-		defer newRsp.Body.Close()
+		defer func() {
+			require.NoError(t, newRsp.Body.Close())
+		}()
 	}
 	assert.Equal(t, 404, newRsp.StatusCode, "")
 }
@@ -339,7 +343,9 @@ func TestGitServerHandler_TokenFallback(t *testing.T) {
 
 			_ = handleRequestAndClose(handler, req, proxyCtx)
 			newRsp := handler.HandleResponse(rsp, proxyCtx)
-			defer newRsp.Body.Close()
+			defer func() {
+				require.NoError(t, newRsp.Body.Close())
+			}()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")
 			if tt.expectReplacedResponse {
@@ -430,11 +436,13 @@ func TestGitServerHandler_TokenFallbackWithPost(t *testing.T) {
 			// trigger cloning body
 			rtResp, err := roundTripper(req, proxyCtx)
 			if rtResp != nil && rtResp.Body != nil {
-				rtResp.Body.Close()
+				require.NoError(t, rtResp.Body.Close())
 			}
 			require.NoError(t, err, "first request err")
 			newRsp := handler.HandleResponse(rsp, proxyCtx)
-			defer newRsp.Body.Close()
+			defer func() {
+				require.NoError(t, newRsp.Body.Close())
+			}()
 			assert.Equal(t, tt.expectRespCode, newRsp.StatusCode, "expected status code")
 			assert.Equal(t, tt.expectTokens, capturedTokens, "attempted tokens")
 		})
@@ -495,7 +503,9 @@ func TestGitServerHandler_RepositoryScopedCredentials(t *testing.T) {
 			rsp := &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(""))}
 
 			newRsp := handler.HandleResponse(rsp, proxyCtx)
-			defer newRsp.Body.Close()
+			defer func() {
+				require.NoError(t, newRsp.Body.Close())
+			}()
 			assert.Equal(t, []string{
 				otherGitHubCred.GetString("password"),
 				unscopedInstallationCred.GetString("password"),
@@ -560,7 +570,9 @@ func TestGitServerHandler_RequestJITAccess(t *testing.T) {
 
 			proxyctx.SetValue(proxyCtx, addedAuthCtxKey, &gitCredentials{username: "x-access-token", password: "v1.token"})
 			newRsp := handler.HandleResponse(rsp, proxyCtx)
-			defer newRsp.Body.Close()
+			defer func() {
+				require.NoError(t, newRsp.Body.Close())
+			}()
 			assert.Equal(t, test.jitAccessEndpoint != "", testClient.receivedRequest, "request more scope unexpected")
 			if test.jitAccessEndpoint != "" {
 				assert.Equal(t, 200, newRsp.StatusCode, "should have succeeded")
@@ -660,7 +672,9 @@ func TestJITEndpointUsesExplicitAuthWhenProvided(t *testing.T) {
 
 	// HandleResponse triggers retry logic including JIT credential refresh
 	resp = handler.HandleResponse(resp, proxyCtx)
-	defer resp.Body.Close()
+	defer func() {
+		require.NoError(t, resp.Body.Close())
+	}()
 
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := string(body)

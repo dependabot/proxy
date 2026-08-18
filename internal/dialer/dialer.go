@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"syscall"
@@ -185,7 +186,9 @@ func checkConnectivity(network, address string) bool {
 	if err != nil {
 		return false
 	}
-	conn.Close()
+	if err := conn.Close(); err != nil {
+		log.Printf("failed to close %s connectivity probe to %s: %v", network, address, err)
+	}
 	return true
 }
 
