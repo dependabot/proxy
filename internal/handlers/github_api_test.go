@@ -103,6 +103,38 @@ func TestGitHubAPIHandler(t *testing.T) {
 	}
 }
 
+func TestGitHubAPIHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "github_pat_fakefakefakesuperfake")
+	handler := NewGitHubAPIHandler(config.Credentials{credential})
+
+	tests := []struct {
+		method        string
+		url           string
+		authenticated bool
+	}{
+		{method: http.MethodGet, url: "https://api.github.com/repos/account/repo", authenticated: true},
+		{method: http.MethodHead, url: "https://api.github.com/repos/account/repo", authenticated: true},
+		{method: http.MethodPost, url: "https://api.github.com/graphql"},
+		{method: http.MethodPost, url: "https://api.github.com/repos/account/repo/issues"},
+		{method: http.MethodPut, url: "https://api.github.com/repos/account/repo/contents/file"},
+		{method: http.MethodPatch, url: "https://api.github.com/repos/account/repo"},
+		{method: http.MethodDelete, url: "https://api.github.com/repos/account/repo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.url, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.url, nil)
+			req = handleRequestAndClose(handler, req, nil)
+
+			if tt.authenticated {
+				assertHasTokenAuth(t, req, "token", credential.GetString("password"), "authenticated")
+			} else {
+				assertUnauthenticated(t, req, "unauthenticated")
+			}
+		})
+	}
+}
+
 func TestGitHubAPIHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 	installationToken1 := "v1.token1"
 	privateRepo1Cred := testGitSourceCred("github.com", "x-access-token", installationToken1, withAccessibleRepos([]string{"github/private-repo-1"}))

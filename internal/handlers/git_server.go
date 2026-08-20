@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 	"sync"
@@ -11,6 +13,7 @@ import (
 	"github.com/elazarl/goproxy"
 
 	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/gitproto"
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
 	"github.com/dependabot/proxy/internal/proxyctx"
@@ -271,6 +274,10 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 		return req, nil
 	}
 
+	if !isReadOnlyGitRequest(req) {
+		return req, nil
+	}
+
 	if _, pw, ok := req.BasicAuth(); ok && pw != "" {
 		return req, nil
 	}
@@ -302,6 +309,44 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 		}
 	}
 	return req, nil
+}
+
+func isReadOnlyGitRequest(req *http.Request) bool {
+	if helpers.MethodPermitted(req, http.MethodGet, http.MethodHead) {
+		return req.URL.Query().Get("service") != "git-receive-pack"
+	}
+	if gitproto.IsUploadPackRequest(req) {
+		return true
+	}
+	return isLFSDownloadRequest(req)
+}
+
+func isLFSDownloadRequest(req *http.Request) bool {
+	if req.Method != http.MethodPost {
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/vnd.git-lfs+json" {
+		return false
+	}
+	if !strings.HasSuffix(req.URL.Path, "/objects/batch") || req.Body == nil {
+		return false
+	}
+
+	var body bytes.Buffer
+	originalBody := req.Body
+	var batch struct {
+		Operation string `json:"operation"`
+	}
+	err = json.NewDecoder(io.TeeReader(originalBody, &body)).Decode(&batch)
+	req.Body = struct {
+		io.Reader
+		io.Closer
+	}{
+		Reader: io.MultiReader(&body, originalBody),
+		Closer: originalBody,
+	}
+	return err == nil && batch.Operation == "download"
 }
 
 // extracts the org and repo from the expected path
@@ -537,8 +582,5 @@ func (h *GitServerHandler) isGitHubAPIRequest(req *http.Request) bool {
 }
 
 func (h *GitServerHandler) isGitUploadPackPost(req *http.Request) bool {
-	if req.Method != "POST" {
-		return false
-	}
-	return strings.HasSuffix(req.URL.Path, "/git-upload-pack")
+	return gitproto.IsUploadPackRequest(req)
 }
