@@ -36,6 +36,8 @@ type jitAccessConfig struct {
 	password string
 }
 
+const blockedGitRequestMessage = "Dependabot proxy blocked authentication for a non-read-only Git request\n"
+
 type gitCredentialsMap struct {
 	sync.RWMutex
 	// data is a nested map structure to store credentials.
@@ -274,10 +276,6 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 		return req, nil
 	}
 
-	if !isReadOnlyGitRequest(req) {
-		return req, nil
-	}
-
 	if _, pw, ok := req.BasicAuth(); ok && pw != "" {
 		return req, nil
 	}
@@ -285,6 +283,11 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 	creds := getCredentialsForRequest(req, h.credentials, gitExtractOrgAndRepo)
 	if len(creds) == 0 {
 		return req, nil
+	}
+
+	if !isReadOnlyGitRequest(req) {
+		logging.RequestLogf(proxyCtx, "* blocked authentication for non-read-only git request (method: %s, host: %s, path: %s)", req.Method, helpers.GetHost(req), req.URL.Path)
+		return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, blockedGitRequestMessage)
 	}
 
 	logging.RequestLogf(proxyCtx, "* authenticating git server request (host: %s)", helpers.GetHost(req))

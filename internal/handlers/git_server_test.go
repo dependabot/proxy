@@ -142,6 +142,7 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 		contentType   string
 		body          string
 		authenticated bool
+		blocked       bool
 	}{
 		{
 			name:          "get",
@@ -172,15 +173,17 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 			authenticated: true,
 		},
 		{
-			name:   "git upload pack without content type",
-			method: http.MethodPost,
-			url:    "https://github.com/account/repo/git-upload-pack",
-			body:   "upload-pack request",
+			name:    "git upload pack without content type",
+			method:  http.MethodPost,
+			url:     "https://github.com/account/repo/git-upload-pack",
+			body:    "upload-pack request",
+			blocked: true,
 		},
 		{
-			name:   "git receive pack discovery",
-			method: http.MethodGet,
-			url:    "https://github.com/account/repo/info/refs?service=git-receive-pack",
+			name:    "git receive pack discovery",
+			method:  http.MethodGet,
+			url:     "https://github.com/account/repo/info/refs?service=git-receive-pack",
+			blocked: true,
 		},
 		{
 			name:        "git receive pack",
@@ -188,6 +191,7 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 			url:         "https://github.com/account/repo/git-receive-pack",
 			contentType: "application/x-git-receive-pack-request",
 			body:        "receive-pack request",
+			blocked:     true,
 		},
 		{
 			name:          "lfs download",
@@ -211,6 +215,7 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 			url:         "https://github.com/account/repo.git/info/lfs/objects/batch",
 			contentType: "application/vnd.git-lfs+json",
 			body:        `{"operation":"upload","objects":[{"oid":"abc","size":3}]}`,
+			blocked:     true,
 		},
 		{
 			name:        "lfs lock creation",
@@ -218,6 +223,7 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 			url:         "https://github.com/account/repo.git/info/lfs/locks",
 			contentType: "application/vnd.git-lfs+json",
 			body:        `{"path":"file.bin"}`,
+			blocked:     true,
 		},
 		{
 			name:        "lfs unlock",
@@ -225,6 +231,7 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 			url:         "https://github.com/account/repo.git/info/lfs/locks/123/unlock",
 			contentType: "application/vnd.git-lfs+json",
 			body:        `{}`,
+			blocked:     true,
 		},
 		{
 			name:        "arbitrary post",
@@ -232,11 +239,13 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 			url:         "https://github.com/account/repo/hooks",
 			contentType: "application/json",
 			body:        `{}`,
+			blocked:     true,
 		},
 		{
-			name:   "delete",
-			method: http.MethodDelete,
-			url:    "https://github.com/account/repo",
+			name:    "delete",
+			method:  http.MethodDelete,
+			url:     "https://github.com/account/repo",
+			blocked: true,
 		},
 	}
 
@@ -244,12 +253,23 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.url, strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", tt.contentType)
-			req = handleRequestAndClose(handler, req, nil)
+			req, resp := handler.HandleRequest(req, nil)
 
 			if tt.authenticated {
 				assertHasBasicAuth(t, req, credential.GetString("username"), credential.GetString("password"), "authenticated")
 			} else {
 				assertUnauthenticated(t, req, "unauthenticated")
+			}
+			if tt.blocked {
+				require.NotNil(t, resp)
+				assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+				assert.Equal(t, goproxy.ContentTypeText, resp.Header.Get("Content-Type"))
+				responseBody, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+				assert.Equal(t, "Dependabot proxy blocked authentication for a non-read-only Git request\n", string(responseBody))
+			} else {
+				assert.Nil(t, resp)
 			}
 
 			body, err := io.ReadAll(req.Body)
@@ -258,6 +278,29 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 			assert.Equal(t, tt.body, string(body))
 		})
 	}
+}
+
+func TestGitServerHandler_DoesNotBlockIndependentlyAuthenticatedRequests(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "https://github.com/account/repo/git-receive-pack", nil)
+	req.SetBasicAuth("caller", "caller-token")
+
+	req, resp := handler.HandleRequest(req, nil)
+
+	assert.Nil(t, resp)
+	assertHasBasicAuth(t, req, "caller", "caller-token", "caller authentication")
+}
+
+func TestGitServerHandler_DoesNotBlockRequestsWithoutMatchingCredentials(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "https://gitlab.com/account/repo/git-receive-pack", nil)
+
+	req, resp := handler.HandleRequest(req, nil)
+
+	assert.Nil(t, resp)
+	assertUnauthenticated(t, req, "unmatched host")
 }
 
 func TestGitServerHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
