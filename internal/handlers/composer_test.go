@@ -64,7 +64,7 @@ func TestComposerHandler(t *testing.T) {
 			"token":    "",
 		},
 	}
-	handler := NewComposerHandler(credentials)
+	handler := NewComposerHandler(credentials, testOIDCClient)
 
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://phpreg.bigco.com/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)

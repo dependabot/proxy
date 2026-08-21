@@ -41,7 +41,7 @@ func TestNPMRegistryHandler(t *testing.T) {
 			"token": privateRegToken,
 		},
 	}
-	handler := NewNPMRegistryHandler(credentials)
+	handler := NewNPMRegistryHandler(credentials, testOIDCClient)
 
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.npmjs.org/private-package", nil)
 	req = handleRequestAndClose(handler, req, nil)
@@ -104,7 +104,7 @@ func TestNPMRegistryHandler_SameHostDifferentPaths(t *testing.T) {
 			"token":    teamBToken,
 		},
 	}
-	handler := NewNPMRegistryHandler(credentials)
+	handler := NewNPMRegistryHandler(credentials, testOIDCClient)
 
 	// Request to team-a path should use team-a token
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://artifactory.example.com/api/npm/team-a-npm/@scope/pkg", nil)

@@ -6,12 +6,24 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/elazarl/goproxy"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/dependabot/proxy/internal/config"
 )
+
+var testOIDCClient = &http.Client{
+	Transport: currentDefaultTransport{},
+	Timeout:   10 * time.Second,
+}
+
+type currentDefaultTransport struct{}
+
+func (currentDefaultTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return http.DefaultTransport.RoundTrip(req)
+}
 
 // handleRequestAndClose calls handler.HandleRequest and closes any response body.
 // Most handlers return nil responses, but the linter can't prove that.

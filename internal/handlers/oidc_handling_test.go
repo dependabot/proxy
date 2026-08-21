@@ -43,7 +43,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Cargo",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewCargoRegistryHandler(creds)
+				return NewCargoRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -67,7 +67,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Cargo",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewCargoRegistryHandler(creds)
+				return NewCargoRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -88,7 +88,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Cargo",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewCargoRegistryHandler(creds)
+				return NewCargoRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -108,7 +108,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Cargo",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewCargoRegistryHandler(creds)
+				return NewCargoRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -130,7 +130,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Cargo",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewCargoRegistryHandler(creds)
+				return NewCargoRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -153,7 +153,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Composer",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewComposerHandler(creds)
+				return NewComposerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -177,7 +177,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Composer",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewComposerHandler(creds)
+				return NewComposerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -198,7 +198,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Composer",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewComposerHandler(creds)
+				return NewComposerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -219,7 +219,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Composer",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewComposerHandler(creds)
+				return NewComposerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -241,7 +241,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Composer",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewComposerHandler(creds)
+				return NewComposerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -265,7 +265,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Docker",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
+				return NewDockerRegistryHandler(creds, testOIDCClient, nil)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -289,7 +289,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Docker",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
+				return NewDockerRegistryHandler(creds, testOIDCClient, nil)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -310,7 +310,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Docker with URL",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
+				return NewDockerRegistryHandler(creds, testOIDCClient, nil)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -330,7 +330,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Docker",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
+				return NewDockerRegistryHandler(creds, testOIDCClient, nil)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -352,7 +352,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Docker",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewDockerRegistryHandler(creds, &http.Transport{}, nil)
+				return NewDockerRegistryHandler(creds, testOIDCClient, nil)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -375,7 +375,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Go proxy",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewGoProxyServerHandler(creds)
+				return NewGoProxyServerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -399,7 +399,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Go proxy with host",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewGoProxyServerHandler(creds)
+				return NewGoProxyServerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -420,7 +420,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Go proxy",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewGoProxyServerHandler(creds)
+				return NewGoProxyServerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -440,7 +440,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Go proxy",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewGoProxyServerHandler(creds)
+				return NewGoProxyServerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -462,7 +462,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Go proxy",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewGoProxyServerHandler(creds)
+				return NewGoProxyServerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -485,7 +485,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Helm registry",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHelmRegistryHandler(creds)
+				return NewHelmRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -509,7 +509,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Helm registry",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHelmRegistryHandler(creds)
+				return NewHelmRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -530,7 +530,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Helm registry with url",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHelmRegistryHandler(creds)
+				return NewHelmRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -550,7 +550,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Helm registry",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHelmRegistryHandler(creds)
+				return NewHelmRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -572,7 +572,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Helm registry",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHelmRegistryHandler(creds)
+				return NewHelmRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -595,7 +595,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Hex",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHexRepositoryHandler(creds)
+				return NewHexRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -619,7 +619,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Hex",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHexRepositoryHandler(creds)
+				return NewHexRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -640,7 +640,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Hex",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHexRepositoryHandler(creds)
+				return NewHexRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -660,7 +660,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Hex",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHexRepositoryHandler(creds)
+				return NewHexRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -682,7 +682,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Hex",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewHexRepositoryHandler(creds)
+				return NewHexRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -705,7 +705,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Maven",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewMavenRepositoryHandler(creds)
+				return NewMavenRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -729,7 +729,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Maven",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewMavenRepositoryHandler(creds)
+				return NewMavenRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -750,7 +750,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Maven",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewMavenRepositoryHandler(creds)
+				return NewMavenRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -770,7 +770,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Maven",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewMavenRepositoryHandler(creds)
+				return NewMavenRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -792,7 +792,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Maven",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewMavenRepositoryHandler(creds)
+				return NewMavenRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -815,7 +815,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NPM",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNPMRegistryHandler(creds)
+				return NewNPMRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -839,7 +839,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NPM",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNPMRegistryHandler(creds)
+				return NewNPMRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -860,7 +860,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NPM",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNPMRegistryHandler(creds)
+				return NewNPMRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -880,7 +880,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NPM",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNPMRegistryHandler(creds)
+				return NewNPMRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -902,7 +902,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NPM",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNPMRegistryHandler(creds)
+				return NewNPMRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -925,7 +925,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NuGet",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
+				return NewNugetFeedHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -952,7 +952,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NuGet",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
+				return NewNugetFeedHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -976,7 +976,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NuGet",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
+				return NewNugetFeedHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -999,7 +999,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NuGet",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
+				return NewNugetFeedHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1024,7 +1024,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "NuGet",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewNugetFeedHandler(creds)
+				return NewNugetFeedHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1050,7 +1050,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Pub",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPubRepositoryHandler(creds)
+				return NewPubRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1074,7 +1074,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Pub",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPubRepositoryHandler(creds)
+				return NewPubRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1095,7 +1095,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Pub",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPubRepositoryHandler(creds)
+				return NewPubRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1115,7 +1115,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Pub",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPubRepositoryHandler(creds)
+				return NewPubRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1137,7 +1137,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Pub",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPubRepositoryHandler(creds)
+				return NewPubRepositoryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1160,7 +1160,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Python",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPythonIndexHandler(creds)
+				return NewPythonIndexHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1184,7 +1184,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Python",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPythonIndexHandler(creds)
+				return NewPythonIndexHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1205,7 +1205,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Python",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPythonIndexHandler(creds)
+				return NewPythonIndexHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1225,7 +1225,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Python",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPythonIndexHandler(creds)
+				return NewPythonIndexHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1247,7 +1247,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Python",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewPythonIndexHandler(creds)
+				return NewPythonIndexHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1270,7 +1270,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "RubyGems",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewRubyGemsServerHandler(creds)
+				return NewRubyGemsServerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1294,7 +1294,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "RubyGems",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewRubyGemsServerHandler(creds)
+				return NewRubyGemsServerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1315,7 +1315,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "RubyGems",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewRubyGemsServerHandler(creds)
+				return NewRubyGemsServerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1336,7 +1336,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "RubyGems",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewRubyGemsServerHandler(creds)
+				return NewRubyGemsServerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1359,7 +1359,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "RubyGems",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewRubyGemsServerHandler(creds)
+				return NewRubyGemsServerHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1383,7 +1383,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Terraform",
 			provider: "aws",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewTerraformRegistryHandler(creds)
+				return NewTerraformRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1407,7 +1407,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Terraform with host",
 			provider: "azure",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewTerraformRegistryHandler(creds)
+				return NewTerraformRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1428,7 +1428,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Terraform",
 			provider: "jfrog",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewTerraformRegistryHandler(creds)
+				return NewTerraformRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1448,7 +1448,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Terraform",
 			provider: "cloudsmith",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewTerraformRegistryHandler(creds)
+				return NewTerraformRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1470,7 +1470,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			name:     "Terraform",
 			provider: "gcp",
 			handlerFactory: func(creds config.Credentials) oidcHandler {
-				return NewTerraformRegistryHandler(creds)
+				return NewTerraformRegistryHandler(creds, testOIDCClient)
 			},
 			credentials: config.Credentials{
 				config.Credential{
@@ -1636,7 +1636,7 @@ func TestPythonOIDCSimpleSuffixStripping(t *testing.T) {
 		},
 	}
 
-	handler := NewPythonIndexHandler(creds)
+	handler := NewPythonIndexHandler(creds, testOIDCClient)
 
 	// /+simple/ should be stripped → registered as /org/feed-A/
 	reqA := httptest.NewRequestWithContext(t.Context(), "GET", "https://pkgs.example.com/org/feed-A/pkg/a", nil)
@@ -1672,7 +1672,7 @@ func TestPythonOIDCAuthenticatesDiscoveredDownloadPrefix(t *testing.T) {
 			"tenant-id": tenantID,
 			"client-id": clientID,
 		},
-	})
+	}, testOIDCClient)
 
 	proxyCtx := &goproxy.ProxyCtx{}
 	indexReq := httptest.NewRequestWithContext(t.Context(),
@@ -1746,7 +1746,7 @@ func TestNPMOIDCSameHostDifferentPaths(t *testing.T) {
 		},
 	}
 
-	handler := NewNPMRegistryHandler(creds)
+	handler := NewNPMRegistryHandler(creds, testOIDCClient)
 
 	// Request to feed-A path should get token A
 	reqA := httptest.NewRequestWithContext(t.Context(), "GET", "https://pkgs.example.com/org/feed-A/some-package", nil)
@@ -1799,7 +1799,7 @@ func TestTerraformOIDCSameHostDifferentPaths(t *testing.T) {
 		},
 	}
 
-	handler := NewTerraformRegistryHandler(creds)
+	handler := NewTerraformRegistryHandler(creds, testOIDCClient)
 
 	// Request to feed-A path should get token A
 	reqA := httptest.NewRequestWithContext(t.Context(), "GET", "https://terraform.example.com/org/feed-A/v1/providers/org/name", nil)

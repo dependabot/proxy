@@ -25,10 +25,10 @@ type rubyGemsServerCredentials struct {
 }
 
 // NewRubyGemsServerHandler returns a new RubyGemsServerHandler.
-func NewRubyGemsServerHandler(creds config.Credentials) *RubyGemsServerHandler {
+func NewRubyGemsServerHandler(creds config.Credentials, client *http.Client) *RubyGemsServerHandler {
 	handler := RubyGemsServerHandler{
 		credentials:  []rubyGemsServerCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(client),
 	}
 
 	for _, cred := range creds {

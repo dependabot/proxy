@@ -31,7 +31,7 @@ func TestHelmRegistryHandler(t *testing.T) {
 			"password": bigCoPassword,
 		},
 	}
-	handler := NewHelmRegistryHandler(credentials)
+	handler := NewHelmRegistryHandler(credentials, testOIDCClient)
 
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://helmreg.bigco.com/some_chart", nil)
 	req = handleRequestAndClose(handler, req, nil)

@@ -114,7 +114,7 @@ func TestNugetFeedHandler(t *testing.T) {
 
 	var buf bytes.Buffer
 	testhelpers.CaptureStandardLog(t, &buf)
-	handler := NewNugetFeedHandler(credentials)
+	handler := newTestNugetFeedHandler(credentials)
 
 	discoverNugetFeed(t, handler, "https://corp.dependabot.com/nuget/", http.StatusOK, mustMarshalJSON(t, rsp))
 	discoverNugetFeed(t, handler, "https://nuget.example.com/v2", http.StatusOK, xmlResponse)
@@ -314,7 +314,7 @@ func TestExtraAuthenticatedURLsAreReportedInTheLog(t *testing.T) {
 
 	var buf bytes.Buffer
 	testhelpers.CaptureStandardLog(t, &buf)
-	handler := NewNugetFeedHandler(credentials)
+	handler := newTestNugetFeedHandler(credentials)
 	discoverNugetFeed(t, handler, "https://nuget.example.com/index.json", http.StatusOK, jsonResponse)
 	logContents := buf.String()
 
@@ -327,7 +327,7 @@ func TestNewNugetFeedHandlerDoesNotMakeHTTPRequests(t *testing.T) {
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 
-	NewNugetFeedHandler(config.Credentials{
+	newTestNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://unreachable.example.com/index.json", "some-token"),
 	})
 
@@ -335,7 +335,7 @@ func TestNewNugetFeedHandlerDoesNotMakeHTTPRequests(t *testing.T) {
 }
 
 func TestNugetFeedHandlerDiscoversFromPreparedResponse(t *testing.T) {
-	handler := NewNugetFeedHandler(config.Credentials{
+	handler := newTestNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://nuget.example.com/index.json", "some-token"),
 	})
 	discoverNugetFeed(t, handler, "https://nuget.example.com/index.json", http.StatusOK,
@@ -347,7 +347,7 @@ func TestNugetFeedHandlerDiscoversFromPreparedResponse(t *testing.T) {
 }
 
 func TestNugetFeedHandlerSkipsDiscoveryFromUnsuccessfulResponse(t *testing.T) {
-	handler := NewNugetFeedHandler(config.Credentials{
+	handler := newTestNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://nuget.example.com/index.json", "some-token"),
 	})
 	discoverNugetFeed(t, handler, "https://nuget.example.com/index.json", http.StatusUnauthorized,
@@ -359,7 +359,7 @@ func TestNugetFeedHandlerSkipsDiscoveryFromUnsuccessfulResponse(t *testing.T) {
 }
 
 func TestNugetFeedHandlerLeavesBodylessResponseUnchanged(t *testing.T) {
-	handler := NewNugetFeedHandler(config.Credentials{
+	handler := newTestNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://nuget.example.com/index.json", "some-token"),
 	})
 
@@ -377,7 +377,7 @@ func TestNugetFeedHandlerLeavesBodylessResponseUnchanged(t *testing.T) {
 }
 
 func TestNugetFeedHandlerReplaysBodyAfterReadError(t *testing.T) {
-	handler := NewNugetFeedHandler(config.Credentials{
+	handler := newTestNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://nuget.example.com/index.json", "some-token"),
 	})
 	proxyCtx := &goproxy.ProxyCtx{}
@@ -397,7 +397,7 @@ func TestNugetFeedHandlerReplaysBodyAfterReadError(t *testing.T) {
 }
 
 func TestNugetFeedHandlerOnlyDiscoversFromConfiguredServiceIndex(t *testing.T) {
-	handler := NewNugetFeedHandler(config.Credentials{
+	handler := newTestNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://nuget.example.com/v3/", "some-token"),
 	})
 	proxyCtx := &goproxy.ProxyCtx{}
@@ -450,7 +450,7 @@ func TestNugetFeedHandlerRequiresConfiguredServiceIndexSchemeForDiscovery(t *tes
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			handler := NewNugetFeedHandler(config.Credentials{
+			handler := newTestNugetFeedHandler(config.Credentials{
 				testNugetFeedCredential(testCase.configuredURL, "some-token"),
 			})
 			proxyCtx := &goproxy.ProxyCtx{}
@@ -480,7 +480,7 @@ func TestNugetFeedHandlerKeepsHTTPAndHTTPSDiscoverySourcesDistinct(t *testing.T)
 		{httpCredential, httpsCredential},
 		{httpsCredential, httpCredential},
 	} {
-		handler := NewNugetFeedHandler(credentials)
+		handler := newTestNugetFeedHandler(credentials)
 		discoverNugetFeed(t, handler, "http://nuget.example.com/v3/index.json", http.StatusOK,
 			nugetV3Response("https://http-resource.example.com/packages"))
 		discoverNugetFeed(t, handler, "https://nuget.example.com/v3/index.json", http.StatusOK,
@@ -497,7 +497,7 @@ func TestNugetFeedHandlerKeepsHTTPAndHTTPSDiscoverySourcesDistinct(t *testing.T)
 }
 
 func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
-	handler := NewNugetFeedHandler(config.Credentials{
+	handler := newTestNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://nuget.example.com/index.json", "some-token"),
 	})
 	const workers = 50
@@ -546,7 +546,7 @@ func TestNugetFeedHandlerIgnoresUnusableStaticCredentials(t *testing.T) {
 		{unusableCredential, usableCredential},
 		{usableCredential, unusableCredential},
 	} {
-		handler := NewNugetFeedHandler(credentials)
+		handler := newTestNugetFeedHandler(credentials)
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/v3/index.json", nil)
 		req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
 		assertHasTokenAuth(t, req, "Bearer", "some-token", "usable duplicate credential")
@@ -556,7 +556,7 @@ func TestNugetFeedHandlerIgnoresUnusableStaticCredentials(t *testing.T) {
 func TestNugetFeedHandlerLogsIgnoredDuplicateResourceURL(t *testing.T) {
 	var buf bytes.Buffer
 	testhelpers.CaptureStandardLog(t, &buf)
-	handler := NewNugetFeedHandler(config.Credentials{
+	handler := newTestNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://first.example.com/index.json", "first-token"),
 		testNugetFeedCredential("https://second.example.com/index.json", "second-token"),
 	})
@@ -572,7 +572,7 @@ func TestNugetFeedHandlerLogsIgnoredDuplicateResourceURL(t *testing.T) {
 }
 
 func TestNugetFeedHandlerUnusableCredentialDoesNotBlockDiscoveredCredential(t *testing.T) {
-	handler := NewNugetFeedHandler(config.Credentials{
+	handler := newTestNugetFeedHandler(config.Credentials{
 		config.Credential{
 			"type": "nuget_feed",
 			"url":  "https://cdn.example.com/packages",
@@ -588,7 +588,7 @@ func TestNugetFeedHandlerUnusableCredentialDoesNotBlockDiscoveredCredential(t *t
 }
 
 func TestNugetFeedHandlerPrefersMostSpecificURLCredential(t *testing.T) {
-	handler := NewNugetFeedHandler(config.Credentials{
+	handler := newTestNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://nuget.example.com/feed", "broad-token"),
 		testNugetFeedCredential("https://nuget.example.com/feed/specific", "specific-token"),
 		config.Credential{
@@ -605,7 +605,7 @@ func TestNugetFeedHandlerPrefersMostSpecificURLCredential(t *testing.T) {
 }
 
 func TestNugetFeedHandlerDiscoversThroughCrossOriginRedirectWithoutLeakingCredentials(t *testing.T) {
-	handler := NewNugetFeedHandler(config.Credentials{
+	handler := newTestNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://nuget.example.com/index.json", "some-token"),
 	})
 
@@ -646,7 +646,7 @@ func TestNugetFeedHandlerDiscoversThroughCrossOriginRedirectWithoutLeakingCreden
 }
 
 func TestNugetFeedHandlerAuthenticatesSameOriginServiceIndexRedirect(t *testing.T) {
-	handler := NewNugetFeedHandler(config.Credentials{
+	handler := newTestNugetFeedHandler(config.Credentials{
 		testNugetFeedCredential("https://nuget.example.com/index.json", "some-token"),
 	})
 
@@ -687,7 +687,7 @@ func TestNugetFeedHandlerResolvesRelativeRedirectAgainstRequestedServiceIndexURL
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			handler := NewNugetFeedHandler(config.Credentials{
+			handler := newTestNugetFeedHandler(config.Credentials{
 				testNugetFeedCredential(testCase.configuredURL, "some-token"),
 			})
 
@@ -777,3 +777,7 @@ func (r *readErrorThenData) Read(p []byte) (int, error) {
 }
 
 func (r *readErrorThenData) Close() error { return nil }
+
+func newTestNugetFeedHandler(credentials config.Credentials) *NugetFeedHandler {
+	return NewNugetFeedHandler(credentials, testOIDCClient)
+}

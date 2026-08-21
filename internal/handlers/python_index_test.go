@@ -55,7 +55,7 @@ func TestPythonIndexHandler(t *testing.T) {
 			"token": fmt.Sprintf("%s:%s", deltaForceUser, deltaForcePassword),
 		},
 	}
-	handler := NewPythonIndexHandler(credentials)
+	handler := newTestPythonIndexHandler(credentials)
 
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://corp.dependabot.com/pyreg", nil)
 	req = handleRequestAndClose(handler, req, nil)
@@ -115,7 +115,7 @@ func TestPythonIndexHandler(t *testing.T) {
 }
 
 func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromHTML(t *testing.T) {
-	handler := NewPythonIndexHandler(config.Credentials{
+	handler := newTestPythonIndexHandler(config.Credentials{
 		config.Credential{
 			"type":      "python_index",
 			"index-url": "https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/",
@@ -177,7 +177,7 @@ func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromHTML(t *test
 }
 
 func TestPythonIndexHandlerAuthenticatesDiscoveredDownloadPrefixFromJSON(t *testing.T) {
-	handler := NewPythonIndexHandler(config.Credentials{
+	handler := newTestPythonIndexHandler(config.Credentials{
 		config.Credential{
 			"type":      "python_index",
 			"index-url": "https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/",
@@ -255,7 +255,7 @@ func TestPythonDownloadPrefixFromSimpleLinkRejectsUnscopedLinks(t *testing.T) {
 }
 
 func TestPythonIndexHandlerSkipsDiscoveryForAuthenticatedNonSimpleResponse(t *testing.T) {
-	handler := NewPythonIndexHandler(config.Credentials{
+	handler := newTestPythonIndexHandler(config.Credentials{
 		config.Credential{
 			"type":      "python_index",
 			"index-url": "https://pkgs.example.com/org/project/",
@@ -292,7 +292,7 @@ func TestPythonIndexHandlerSkipsDiscoveryForAuthenticatedNonSimpleResponse(t *te
 }
 
 func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixPort(t *testing.T) {
-	handler := NewPythonIndexHandler(config.Credentials{
+	handler := newTestPythonIndexHandler(config.Credentials{
 		config.Credential{
 			"type":      "python_index",
 			"index-url": "https://pkgs.example.com:8443/my-org/my-project/_packaging/my-feed/pypi/simple/",
@@ -341,7 +341,7 @@ func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixPort(t *testing.T) {
 }
 
 func TestPythonIndexHandlerPreservesDiscoveredDownloadPrefixIPv6Host(t *testing.T) {
-	handler := NewPythonIndexHandler(config.Credentials{
+	handler := newTestPythonIndexHandler(config.Credentials{
 		config.Credential{
 			"type":      "python_index",
 			"index-url": "https://[2001:db8::1]/my-org/my-project/_packaging/my-feed/pypi/simple/",
@@ -424,7 +424,7 @@ func TestPythonIndexDownloadAuthStoreEvictsOldestEntryAtLimit(t *testing.T) {
 }
 
 func TestPythonIndexHandlerSkipsDiscoveryForLargeSimpleResponse(t *testing.T) {
-	handler := NewPythonIndexHandler(config.Credentials{
+	handler := newTestPythonIndexHandler(config.Credentials{
 		config.Credential{
 			"type":      "python_index",
 			"index-url": "https://pkgs.example.com/my-org/my-project/_packaging/my-feed/pypi/simple/",
@@ -460,4 +460,8 @@ func TestPythonIndexHandlerSkipsDiscoveryForLargeSimpleResponse(t *testing.T) {
 	downloadReq := httptest.NewRequestWithContext(t.Context(), "GET", downloadURL, nil)
 	downloadReq = handleRequestAndClose(handler, downloadReq, &goproxy.ProxyCtx{})
 	assertUnauthenticated(t, downloadReq, "large Simple API response should not be used for discovery")
+}
+
+func newTestPythonIndexHandler(credentials config.Credentials) *PythonIndexHandler {
+	return NewPythonIndexHandler(credentials, testOIDCClient)
 }

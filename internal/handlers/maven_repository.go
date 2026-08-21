@@ -25,10 +25,10 @@ type mavenRepositoryCredentials struct {
 }
 
 // NewMavenRepositoryHandler returns a new MavenRepositoryHandler.
-func NewMavenRepositoryHandler(creds config.Credentials) *MavenRepositoryHandler {
+func NewMavenRepositoryHandler(creds config.Credentials, client *http.Client) *MavenRepositoryHandler {
 	handler := MavenRepositoryHandler{
 		credentials:  []mavenRepositoryCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(client),
 	}
 
 	for _, cred := range creds {
