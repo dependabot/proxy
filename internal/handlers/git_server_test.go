@@ -292,6 +292,29 @@ func TestGitServerHandler_DoesNotBlockIndependentlyAuthenticatedRequests(t *test
 	assertHasBasicAuth(t, req, "caller", "caller-token", "caller authentication")
 }
 
+func TestGitServerHandler_DoesNotRetryBlockedRequests(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://github.com/account/repo/info/refs?service=git-receive-pack", nil)
+	roundTrips := 0
+	roundTripper := goproxy.RoundTripperFunc(func(*http.Request, *goproxy.ProxyCtx) (*http.Response, error) {
+		roundTrips++
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(""))}, nil
+	})
+	proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+
+	req, blockedResponse := handler.HandleRequest(req, proxyCtx)
+	proxyCtx.Req = req
+	response := handler.HandleResponse(blockedResponse, proxyCtx)
+	defer func() {
+		require.NoError(t, response.Body.Close())
+	}()
+
+	assert.Same(t, blockedResponse, response)
+	assert.Equal(t, http.StatusForbidden, response.StatusCode)
+	assert.Zero(t, roundTrips)
+}
+
 func TestGitServerHandler_DoesNotBlockRequestsWithoutMatchingCredentials(t *testing.T) {
 	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
 	handler := NewGitServerHandler(config.Credentials{credential}, nil)

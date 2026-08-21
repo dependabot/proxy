@@ -219,6 +219,7 @@ type gitCredentials struct {
 
 const (
 	addedAuthCtxKey         = "git-server.added-auth"
+	blockedAuthCtxKey       = "git-server.blocked-auth"
 	reqBodyCtxKey           = "git-server.req-body"
 	allReposScopeIdentifier = ""
 )
@@ -287,6 +288,9 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 
 	if !isReadOnlyGitRequest(req) {
 		logging.RequestLogf(proxyCtx, "* blocked authentication for non-read-only git request (method: %s, host: %s, path: %s)", req.Method, helpers.GetHost(req), req.URL.Path)
+		if proxyCtx != nil {
+			proxyctx.SetValue(proxyCtx, blockedAuthCtxKey, true)
+		}
 		return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, blockedGitRequestMessage)
 	}
 
@@ -418,6 +422,10 @@ func getCredentialsForRequest(r *http.Request, credentials *gitCredentialsMap, e
 // original.
 func (h *GitServerHandler) HandleResponse(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if rsp == nil {
+		return rsp
+	}
+
+	if blocked, ok := proxyctx.GetBool(proxyCtx, blockedAuthCtxKey); ok && blocked {
 		return rsp
 	}
 
