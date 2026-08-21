@@ -1,0 +1,150 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"net"
+	"os"
+	"os/exec"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/dependabot/proxy/internal/config"
+)
+
+// helperProcessEnv, when set to "1" in the environment, tells TestMain to run
+// the real main() instead of the test suite. This lets tests re-exec the
+// already-compiled test binary as a standalone proxy process and observe its
+// real exit code - something that can't be done in-process once main() calls
+// log.Fatal/os.Exit. This is the same "helper process" technique the Go
+// standard library uses to test os.Exit/signal behavior (see os/exec and
+// os/signal tests).
+const helperProcessEnv = "PROXY_HELPER_PROCESS"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(helperProcessEnv) == "1" {
+		main()
+		return
+	}
+	os.Exit(m.Run())
+}
+
+// runHelperProcess builds an *exec.Cmd that re-executes this test binary as a
+// standalone proxy process (via the TestMain hook above), passing args as
+// command-line flags and stdin as its stdin.
+func runHelperProcess(t *testing.T, args []string, stdin string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], args...) //nolint:gosec // args are test-controlled, not user input
+	cmd.Env = append(os.Environ(), helperProcessEnv+"=1")
+	cmd.Stdin = strings.NewReader(stdin)
+	return cmd
+}
+
+// minimalConfigJSON returns a valid proxy config (with a working MITM CA)
+// serialized as JSON, suitable for feeding via stdin so the helper process
+// can get all the way to server.ListenAndServe().
+func minimalConfigJSON(t *testing.T) string {
+	t.Helper()
+	cfg := config.Config{CA: testCA()}
+	b, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	return string(b)
+}
+
+// freeAddr returns a "host:port" address that is free at the time of the
+// call by briefly binding to port 0 and releasing it.
+func freeAddr(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := l.Addr().String()
+	require.NoError(t, l.Close())
+	return addr
+}
+
+// exitCodeFromWaitErr extracts the process exit code from the error returned
+// by exec.Cmd.Wait()/Run(). A nil error means exit code 0.
+func exitCodeFromWaitErr(t *testing.T, err error) int {
+	t.Helper()
+	if err == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	t.Fatalf("helper process did not exit normally: %v", err)
+	return -1
+}
+
+// TestListenAndServe_AddressInUse_ExitsNonZero reproduces the reported
+// defect: the proxy previously logged the bind error and exited 0, causing
+// integrations that gate on exit code (e.g. github/codeql-action) to
+// silently proceed as if the proxy were listening.
+func TestListenAndServe_AddressInUse_ExitsNonZero(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, l.Close())
+	}()
+	addr := l.Addr().String()
+
+	cmd := runHelperProcess(t, []string{"-addr=" + addr, "-config=-"}, minimalConfigJSON(t))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+
+	code := exitCodeFromWaitErr(t, runErr)
+	assert.NotEqual(t, 0, code, "expected non-zero exit code when the listen address is already in use, got 0 (output: %s)", stderr.String())
+	assert.Contains(t, stderr.String(), "address already in use")
+}
+
+// TestGracefulShutdown_ExitsZero is a regression guard: a clean shutdown via
+// SIGTERM (the normal operational path) must still exit 0 after the fix.
+func TestGracefulShutdown_ExitsZero(t *testing.T) {
+	addr := freeAddr(t)
+
+	cmd := runHelperProcess(t, []string{"-addr=" + addr, "-config=-"}, minimalConfigJSON(t))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	require.NoError(t, cmd.Start())
+
+	// Note: stderr is not safe to read here - it's being written to
+	// concurrently by the still-running subprocess, so the failure message
+	// below intentionally omits its contents (only safe to read after
+	// cmd.Wait() below).
+	require.Eventually(t, func() bool {
+		conn, dialErr := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if dialErr != nil {
+			return false
+		}
+		_ = conn.Close()
+		return true
+	}, 5*time.Second, 50*time.Millisecond, "proxy did not start listening in time")
+
+	require.NoError(t, cmd.Process.Signal(syscall.SIGTERM))
+
+	waitErr := cmd.Wait()
+	code := exitCodeFromWaitErr(t, waitErr)
+	assert.Equal(t, 0, code, "expected graceful shutdown to exit 0 (output: %s)", stderr.String())
+}
+
+// TestInvalidConfigPath_ExitsNonZero covers the config.Parse error branch
+// using the same helper-process harness.
+func TestInvalidConfigPath_ExitsNonZero(t *testing.T) {
+	cmd := runHelperProcess(t, []string{"-config=/nonexistent/path/definitely-missing.json"}, "")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+
+	code := exitCodeFromWaitErr(t, runErr)
+	assert.NotEqual(t, 0, code, "expected non-zero exit code for an invalid config path, got 0 (output: %s)", stderr.String())
+}
