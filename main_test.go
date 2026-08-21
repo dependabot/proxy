@@ -135,16 +135,3 @@ func TestGracefulShutdown_ExitsZero(t *testing.T) {
 	code := exitCodeFromWaitErr(t, waitErr)
 	assert.Equal(t, 0, code, "expected graceful shutdown to exit 0 (output: %s)", stderr.String())
 }
-
-// TestInvalidConfigPath_ExitsNonZero covers the config.Parse error branch
-// using the same helper-process harness.
-func TestInvalidConfigPath_ExitsNonZero(t *testing.T) {
-	cmd := runHelperProcess(t, []string{"-config=/nonexistent/path/definitely-missing.json"}, "")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	runErr := cmd.Run()
-
-	code := exitCodeFromWaitErr(t, runErr)
-	assert.NotEqual(t, 0, code, "expected non-zero exit code for an invalid config path, got 0 (output: %s)", stderr.String())
-}

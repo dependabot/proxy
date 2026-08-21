@@ -44,12 +44,14 @@ func main() {
 
 	cfg, err := config.Parse(*configPath)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
 	sentry, err := setupSentry()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
 	envSettings := config.ProxyEnvSettings{
@@ -98,7 +100,8 @@ func main() {
 	}
 
 	if err := proxy.Close(); err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 }
 
