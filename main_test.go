@@ -41,7 +41,7 @@ func TestMain(m *testing.M) {
 // command-line flags and stdin as its stdin.
 func runHelperProcess(t *testing.T, args []string, stdin string) *exec.Cmd {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], args...) //nolint:gosec // args are test-controlled, not user input
+	cmd := exec.CommandContext(t.Context(), os.Args[0], args...) //nolint:gosec // args are test-controlled, not user input
 	cmd.Env = append(os.Environ(), helperProcessEnv+"=1")
 	cmd.Stdin = strings.NewReader(stdin)
 	return cmd
@@ -62,7 +62,8 @@ func minimalConfigJSON(t *testing.T) string {
 // call by briefly binding to port 0 and releasing it.
 func freeAddr(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	var listenConfig net.ListenConfig
+	l, err := listenConfig.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := l.Addr().String()
 	require.NoError(t, l.Close())
@@ -89,7 +90,8 @@ func exitCodeFromWaitErr(t *testing.T, err error) int {
 // integrations that gate on exit code (e.g. github/codeql-action) to
 // silently proceed as if the proxy were listening.
 func TestListenAndServe_AddressInUse_ExitsNonZero(t *testing.T) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	var listenConfig net.ListenConfig
+	l, err := listenConfig.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, l.Close())
@@ -125,8 +127,9 @@ func TestGracefulShutdown_ExitsZero(t *testing.T) {
 	// concurrently by the still-running subprocess, so the failure message
 	// below intentionally omits its contents (only safe to read after
 	// cmd.Wait() below).
+	dialer := net.Dialer{Timeout: 100 * time.Millisecond}
 	require.Eventually(t, func() bool {
-		conn, dialErr := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		conn, dialErr := dialer.DialContext(t.Context(), "tcp", addr)
 		if dialErr != nil {
 			return false
 		}
@@ -142,7 +145,7 @@ func TestGracefulShutdown_ExitsZero(t *testing.T) {
 		// process directly instead of leaking it, and skip the
 		// signal-based assertion on this platform.
 		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
+		_ = cmd.Wait()
 		t.Skip("SIGTERM cannot be delivered via os.Process.Signal on Windows; skipping graceful-shutdown assertion")
 	}
 
@@ -151,4 +154,15 @@ func TestGracefulShutdown_ExitsZero(t *testing.T) {
 	waitErr := cmd.Wait()
 	code := exitCodeFromWaitErr(t, waitErr)
 	assert.Equal(t, 0, code, "expected graceful shutdown to exit 0 (output: %s)", stderr.String())
+}
+
+func TestInvalidConfigPath_ExitsNonZero(t *testing.T) {
+	cmd := runHelperProcess(t, []string{"-config=/nonexistent/path/definitely-missing.json"}, "")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+
+	code := exitCodeFromWaitErr(t, runErr)
+	assert.NotEqual(t, 0, code, "expected non-zero exit code for an invalid config path, got 0 (output: %s)", stderr.String())
 }
