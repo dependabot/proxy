@@ -29,7 +29,7 @@ type ecrClient interface {
 	GetAuthorizationToken(ctx context.Context, input *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error)
 }
 
-type getECRClient func(ctx context.Context, region, keyID, secretKey string) (ecrClient, error)
+type getECRClient func(ctx context.Context, region, keyID, secretKey string, client *http.Client) (ecrClient, error)
 
 // DockerRegistryHandler handles requests to Docker registries, adding auth.
 type DockerRegistryHandler struct {
@@ -39,11 +39,12 @@ type DockerRegistryHandler struct {
 }
 
 // NewDockerRegistryHandler returns a new DockerRegistryHandler.
-func NewDockerRegistryHandler(creds config.Credentials, transport http.RoundTripper, getECRClient getECRClient) *DockerRegistryHandler {
+func NewDockerRegistryHandler(creds config.Credentials, client *http.Client, getECRClient getECRClient) *DockerRegistryHandler {
+	oidcRegistry := oidc.NewOIDCRegistry(client)
 	handler := DockerRegistryHandler{
 		credentials:  []*dockerRegistryCredentials{},
-		transport:    transport,
-		oidcRegistry: oidc.NewOIDCRegistry(transport),
+		transport:    client.Transport,
+		oidcRegistry: oidcRegistry,
 	}
 
 	if getECRClient == nil {
@@ -69,6 +70,7 @@ func NewDockerRegistryHandler(creds config.Credentials, transport http.RoundTrip
 			registry:     registry,
 			username:     cred.GetString("username"),
 			password:     cred.GetString("password"),
+			httpClient:   client,
 			getECRClient: getECRClient,
 		}
 		handler.credentials = append(handler.credentials, registryCred)
@@ -147,11 +149,12 @@ func (h *DockerRegistryHandler) HandleRequest(req *http.Request, proxyCtx *gopro
 	return req, nil
 }
 
-func defaultGetECRClient(ctx context.Context, region, keyID, secretKey string) (ecrClient, error) {
+func defaultGetECRClient(ctx context.Context, region, keyID, secretKey string, client *http.Client) (ecrClient, error) {
 	cfg, err := awsconfig.LoadDefaultConfig(
 		ctx,
 		awsconfig.WithRegion(region),
 		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(keyID, secretKey, "")),
+		awsconfig.WithHTTPClient(client),
 	)
 	if err != nil {
 		return nil, err
@@ -166,6 +169,7 @@ type dockerRegistryCredentials struct {
 	password     string
 	ecrUsername  string
 	ecrPassword  string
+	httpClient   *http.Client
 	getECRClient getECRClient
 }
 
@@ -185,7 +189,7 @@ func (c *dockerRegistryCredentials) getECRCredentials(requestCtx context.Context
 	}
 
 	region := match[1]
-	ecrSvc, err := c.getECRClient(requestCtx, region, c.username, c.password)
+	ecrSvc, err := c.getECRClient(requestCtx, region, c.username, c.password, c.httpClient)
 	if err != nil {
 		logging.RequestLogf(proxyCtx, "! failed to initialize aws ecr client (key_id=%s)", c.username)
 		return false

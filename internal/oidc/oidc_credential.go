@@ -82,7 +82,10 @@ func (c *OIDCCredential) Provider() string {
 	return c.parameters.Name()
 }
 
-func CreateOIDCCredential(cred config.Credential, transport http.RoundTripper) (*OIDCCredential, error) {
+func CreateOIDCCredential(cred config.Credential, client *http.Client) (*OIDCCredential, error) {
+	if err := validateHTTPClient(client); err != nil {
+		return nil, err
+	}
 	if !IsOIDCConfigured() {
 		return nil, fmt.Errorf("OIDC is not configured")
 	}
@@ -175,10 +178,7 @@ func CreateOIDCCredential(cred config.Credential, transport http.RoundTripper) (
 
 	return &OIDCCredential{
 		parameters: parameters,
-		httpClient: &http.Client{
-			Timeout:   10 * time.Second,
-			Transport: transport,
-		},
+		httpClient: client,
 	}, nil
 }
 

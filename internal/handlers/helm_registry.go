@@ -24,10 +24,10 @@ type helmRegistryCredentials struct {
 }
 
 // NewHelmRegistryHandler returns a new HelmRegistryHandler.
-func NewHelmRegistryHandler(creds config.Credentials, transport http.RoundTripper) *HelmRegistryHandler {
+func NewHelmRegistryHandler(creds config.Credentials, client *http.Client) *HelmRegistryHandler {
 	handler := HelmRegistryHandler{
 		credentials:  []helmRegistryCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(transport),
+		oidcRegistry: oidc.NewOIDCRegistry(client),
 	}
 
 	for _, cred := range creds {

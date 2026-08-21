@@ -27,7 +27,7 @@ func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {
 	creds, err := CreateOIDCCredential(config.Credential{
 		"tenant-id": "test-tenant-id",
 		"client-id": "test-client-id",
-	}, nil)
+	}, testHTTPClient)
 	require.NoError(t, err)
 
 	// ensure of type azure
@@ -88,7 +88,7 @@ func TestFailedAuthenticationIsNotRetried(t *testing.T) {
 	creds, err := CreateOIDCCredential(config.Credential{
 		"tenant-id": "test-tenant-id",
 		"client-id": "test-client-id",
-	}, nil)
+	}, testHTTPClient)
 	require.NoError(t, err)
 
 	// ensure of type azure
@@ -334,7 +334,7 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			t.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
 			t.Setenv(envActionsIDTokenRequestToken, "test-token")
 
-			actual, _ := CreateOIDCCredential(tc.cred, nil)
+			actual, _ := CreateOIDCCredential(tc.cred, testHTTPClient)
 			if tc.expectedParameters == nil {
 				assert.Nil(t, actual)
 				return
@@ -349,4 +349,51 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 			assert.Equal(t, tc.expectedParameters, actual.parameters)
 		})
 	}
+}
+
+func TestOIDCCredentialUsesOneClientForAssertionAndExchange(t *testing.T) {
+	t.Setenv(envActionsIDTokenRequestURL, "https://actions.example.test/token")
+	t.Setenv(envActionsIDTokenRequestToken, "request-token")
+
+	recorder := &recordingOIDCTransport{}
+	client := &http.Client{Transport: recorder, Timeout: testHTTPClient.Timeout}
+	credential, err := CreateOIDCCredential(config.Credential{
+		"tenant-id": "test-tenant-id",
+		"client-id": "test-client-id",
+	}, client)
+	require.NoError(t, err)
+	require.Same(t, client, credential.httpClient)
+
+	token, err := GetOrRefreshOIDCToken(credential, t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "access-token", token)
+	assert.Equal(t, []string{
+		"GET https://actions.example.test/token?audience=api%3A%2F%2FAzureADTokenExchange",
+		"POST https://login.microsoftonline.com/test-tenant-id/oauth2/v2.0/token",
+	}, recorder.requests)
+}
+
+type recordingOIDCTransport struct {
+	requests []string
+}
+
+func (r *recordingOIDCTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.requests = append(r.requests, req.Method+" "+req.URL.String())
+
+	var body string
+	switch req.URL.Host {
+	case "actions.example.test":
+		body = `{"count":1,"value":"assertion"}`
+	case "login.microsoftonline.com":
+		body = `{"access_token":"access-token","expires_in":3600,"token_type":"Bearer"}`
+	default:
+		return nil, fmt.Errorf("unexpected OIDC request: %s", req.URL)
+	}
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+		Request:    req,
+	}, nil
 }

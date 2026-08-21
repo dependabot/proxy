@@ -3,8 +3,10 @@ package handlers
 import (
 	"context"
 	"encoding/base64"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
@@ -12,6 +14,7 @@ import (
 	"github.com/elazarl/goproxy"
 	"github.com/stackrox/docker-registry-client/registry"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
 )
@@ -60,15 +63,17 @@ func TestDockerRegistryHandler(t *testing.T) {
 		},
 	}
 	mockECR := &mockECRClient{user: ecrDockerUser, token: ecrDockerPassword}
+	httpClient := &http.Client{Transport: &http.Transport{}, Timeout: testOIDCClient.Timeout}
 	var factoryContext context.Context
-	getECRClient := func(ctx context.Context, region, keyID, secretKey string) (ecrClient, error) {
+	getECRClient := func(ctx context.Context, region, keyID, secretKey string, client *http.Client) (ecrClient, error) {
 		factoryContext = ctx
+		assert.Same(t, httpClient, client, "ECR uses the bounded handler client")
 		assert.Equal(t, "us-east-2", region, "ecr region is parsed from the registry host")
 		assert.Equal(t, ecrKeyID, keyID, "docker username is used as the aws access key id")
 		assert.Equal(t, ecrSecretKey, secretKey, "docker password is used as the aws secret access key")
 		return mockECR, nil
 	}
-	handler := NewDockerRegistryHandler(credentials, &http.Transport{}, getECRClient)
+	handler := NewDockerRegistryHandler(credentials, httpClient, getECRClient)
 
 	// Regular private registry
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.hub.docker.com/my-repo", nil)
@@ -162,6 +167,35 @@ func TestDockerRegistryHandler(t *testing.T) {
 	assert.Equal(t, hubUser, trans.Username, "correct username is set")
 	assert.Equal(t, hubPassword, trans.Password, "correct password is set")
 	assert.Equal(t, "https://nexus.someco.com", trans.URL, "correct URL is set")
+}
+
+//nolint:gosec // The test credentials are intentionally fake fixtures.
+func TestDefaultGetECRClientUsesInjectedHTTPClient(t *testing.T) {
+	transport := &recordingECRTransport{}
+	client := &http.Client{Transport: transport, Timeout: testOIDCClient.Timeout}
+
+	ecrClient, err := defaultGetECRClient(t.Context(), "us-east-2", "access-key", "secret-key", client)
+	require.NoError(t, err)
+	_, err = ecrClient.GetAuthorizationToken(t.Context(), &ecr.GetAuthorizationTokenInput{})
+	require.NoError(t, err)
+
+	require.NotNil(t, transport.request)
+	assert.Equal(t, http.MethodPost, transport.request.Method)
+	assert.Equal(t, "api.ecr.us-east-2.amazonaws.com", transport.request.URL.Host)
+}
+
+type recordingECRTransport struct {
+	request *http.Request
+}
+
+func (t *recordingECRTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.request = req
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"authorizationData":[]}`)),
+		Header:     make(http.Header),
+		Request:    req,
+	}, nil
 }
 
 type mockECRClient struct {

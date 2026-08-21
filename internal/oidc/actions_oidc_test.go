@@ -6,16 +6,32 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jarcoal/httpmock"
+	"github.com/rs/dnscache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dependabot/proxy/internal/dialer"
 )
+
+var testHTTPClient = &http.Client{
+	Transport: currentDefaultTransport{},
+	Timeout:   10 * time.Second,
+}
+
+type currentDefaultTransport struct{}
+
+func (currentDefaultTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return http.DefaultTransport.RoundTrip(req)
+}
 
 func unsetEnv(t *testing.T, key string) {
 	t.Helper()
@@ -193,7 +209,7 @@ func TestGetToken(t *testing.T) {
 
 			ctx := context.Background()
 
-			token, err := GetToken(ctx, tt.audience)
+			token, err := GetToken(ctx, tt.audience, testHTTPClient)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -201,6 +217,38 @@ func TestGetToken(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, tt.expectedToken, token)
 			}
+		})
+	}
+}
+
+func TestGetTokenRejectsBlockedDestination(t *testing.T) {
+	const metadataIP = "169.254.169.254"
+	t.Setenv(envActionsIDTokenRequestURL, "http://"+metadataIP+"/token")
+	t.Setenv(envActionsIDTokenRequestToken, "request-token")
+
+	resolver := &dnscache.Resolver{}
+	safeDialer := dialer.New(resolver, []net.IP{net.ParseIP(metadataIP)})
+	client := &http.Client{
+		Transport: &http.Transport{DialContext: safeDialer.DialContext},
+		Timeout:   testHTTPClient.Timeout,
+	}
+
+	_, err := GetToken(t.Context(), "audience", client)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, dialer.ErrForbiddenRequest)
+}
+
+func TestGetTokenRequiresExplicitTransport(t *testing.T) {
+	for name, client := range map[string]*http.Client{
+		"nil client":    nil,
+		"nil transport": {Timeout: testHTTPClient.Timeout},
+		"zero timeout":  {Transport: http.DefaultTransport},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.NotPanics(t, func() {
+				_, err := GetToken(t.Context(), "", client)
+				assert.Error(t, err)
+			})
 		})
 	}
 }
@@ -221,7 +269,7 @@ func TestGetTokenForAzureADExchange(t *testing.T) {
 
 	ctx := context.Background()
 
-	token, err := GetTokenForAzureADExchange(ctx)
+	token, err := GetTokenForAzureADExchange(ctx, testHTTPClient)
 
 	require.NoError(t, err)
 	assert.Equal(t, "azure-exchange-token", token)
@@ -309,7 +357,7 @@ func TestGetToken_URLParsing(t *testing.T) {
 			t.Setenv(envActionsIDTokenRequestToken, "test-token")
 
 			ctx := context.Background()
-			_, err := GetToken(ctx, tt.audience)
+			_, err := GetToken(ctx, tt.audience, testHTTPClient)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -458,7 +506,7 @@ func TestGetAzureAccessToken(t *testing.T) {
 				TenantID: tt.tenantID,
 				ClientID: tt.clientID,
 			}
-			azureToken, err = GetAzureAccessToken(ctx, params, tt.githubToken, http.DefaultClient)
+			azureToken, err = GetAzureAccessToken(ctx, params, tt.githubToken, testHTTPClient)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -638,7 +686,7 @@ func TestGetJFrogAccessToken(t *testing.T) {
 				Audience:            tt.audience,
 				IdentityMappingName: tt.identityMappingName,
 			}
-			jfrogToken, err = GetJFrogAccessToken(ctx, params, tt.githubToken, http.DefaultClient)
+			jfrogToken, err = GetJFrogAccessToken(ctx, params, tt.githubToken, testHTTPClient)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -828,7 +876,7 @@ func TestGetAWSAccessToken(t *testing.T) {
 				Domain:      tt.domain,
 				DomainOwner: tt.domainOwner,
 			}
-			awsToken, err = GetAWSAccessToken(ctx, params, tt.githubToken, http.DefaultClient)
+			awsToken, err = GetAWSAccessToken(ctx, params, tt.githubToken, testHTTPClient)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -1010,7 +1058,7 @@ func TestGetCloudsmithAccessToken(t *testing.T) {
 				}))
 			}
 
-			cloudsmithToken, err = GetCloudsmithAccessToken(ctx, tt.params, tt.githubToken, http.DefaultClient)
+			cloudsmithToken, err = GetCloudsmithAccessToken(ctx, tt.params, tt.githubToken, testHTTPClient)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -1333,7 +1381,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 					}))
 			}
 
-			gcpToken, err := GetGCPAccessToken(ctx, tt.params, tt.githubToken, http.DefaultClient)
+			gcpToken, err := GetGCPAccessToken(ctx, tt.params, tt.githubToken, testHTTPClient)
 
 			if tt.expectError {
 				require.Error(t, err)

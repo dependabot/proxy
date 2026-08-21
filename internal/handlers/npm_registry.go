@@ -28,10 +28,10 @@ type npmRegistryCredentials struct {
 }
 
 // NewNPMRegistryHandler returns a new NPMRegistryHandler,
-func NewNPMRegistryHandler(creds config.Credentials, transport http.RoundTripper) *NPMRegistryHandler {
+func NewNPMRegistryHandler(creds config.Credentials, client *http.Client) *NPMRegistryHandler {
 	handler := NPMRegistryHandler{
 		credentials:  []npmRegistryCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(transport),
+		oidcRegistry: oidc.NewOIDCRegistry(client),
 	}
 
 	for _, cred := range creds {

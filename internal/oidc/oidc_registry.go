@@ -17,9 +17,9 @@ import (
 // and avoids key collisions when multiple registries share a host with
 // different paths.
 type OIDCRegistry struct {
-	byHost    map[string][]oidcEntry
-	mutex     sync.RWMutex
-	transport http.RoundTripper
+	byHost map[string][]oidcEntry
+	mutex  sync.RWMutex
+	client *http.Client
 }
 
 type oidcEntry struct {
@@ -28,12 +28,15 @@ type oidcEntry struct {
 	credential *OIDCCredential
 }
 
-// NewOIDCRegistry creates an empty registry. transport is used for outbound OIDC token requests
-// and should be the same secure transport used by the rest of the proxy.
-func NewOIDCRegistry(transport http.RoundTripper) *OIDCRegistry {
+// NewOIDCRegistry creates an empty registry. client is used for every outbound
+// OIDC request and must use the same restricted transport as the proxy.
+func NewOIDCRegistry(client *http.Client) *OIDCRegistry {
+	if err := validateHTTPClient(client); err != nil {
+		panic(err)
+	}
 	return &OIDCRegistry{
-		byHost:    make(map[string][]oidcEntry),
-		transport: transport,
+		byHost: make(map[string][]oidcEntry),
+		client: client,
 	}
 }
 
@@ -50,7 +53,7 @@ func (r *OIDCRegistry) Register(
 	urlFields []string,
 	registryType string,
 ) (*OIDCCredential, string, bool) {
-	oidcCredential, _ := CreateOIDCCredential(cred, r.transport)
+	oidcCredential, _ := CreateOIDCCredential(cred, r.client)
 	if oidcCredential == nil {
 		return nil, "", false
 	}

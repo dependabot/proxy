@@ -57,7 +57,7 @@ func azureCredWithRegistry(tenantID, clientID, registry string) config.Credentia
 
 func TestOIDCRegistry_Register_SingleCredential(t *testing.T) {
 	setupOIDCEnv(t)
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := azureCredWithURL("tenant-1", "client-1", "https://registry.example.com/packages")
 	oidcCred, key, ok := r.Register(cred, []string{"url"}, "test registry")
@@ -69,7 +69,7 @@ func TestOIDCRegistry_Register_SingleCredential(t *testing.T) {
 
 func TestOIDCRegistry_Register_URLFieldPriority(t *testing.T) {
 	setupOIDCEnv(t)
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := config.Credential{
 		"type":      "test_registry",
@@ -87,7 +87,7 @@ func TestOIDCRegistry_Register_URLFieldPriority(t *testing.T) {
 
 func TestOIDCRegistry_Register_FallsBackToHost(t *testing.T) {
 	setupOIDCEnv(t)
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := config.Credential{
 		"type":      "test_registry",
@@ -107,7 +107,7 @@ func TestOIDCRegistry_Register_NotOIDC(t *testing.T) {
 	t.Setenv(envActionsIDTokenRequestURL, "")
 	t.Setenv(envActionsIDTokenRequestToken, "")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 	cred := config.Credential{
 		"type": "test_registry",
 		"url":  "https://registry.example.com",
@@ -122,7 +122,7 @@ func TestOIDCRegistry_Register_NotOIDC(t *testing.T) {
 
 func TestOIDCRegistry_Register_NoKeyAvailable(t *testing.T) {
 	setupOIDCEnv(t)
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	// Credential with OIDC params but no URL or host
 	cred := config.Credential{
@@ -144,7 +144,7 @@ func TestOIDCRegistry_TryAuth_SingleCredential(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 	mockAzureOIDC(t, "tenant-1", "__test_token__")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 	cred := azureCredWithURL("tenant-1", "client-1", "https://registry.example.com/packages")
 	r.Register(cred, []string{"url"}, "test registry")
 
@@ -163,7 +163,7 @@ func TestOIDCRegistry_TryAuth_SameHostDifferentPaths_NoCollision(t *testing.T) {
 	mockAzureOIDC(t, "tenant-A", "token-feed-A")
 	mockAzureOIDC(t, "tenant-B", "token-feed-B")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	// Two registries on the same host with different paths
 	credA := azureCredWithURL("tenant-A", "client-A",
@@ -201,7 +201,7 @@ func TestOIDCRegistry_TryAuth_HostOnlyMatchesAnyPath(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 	mockAzureOIDC(t, "tenant-1", "__test_token__")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	// Register with host only (no path)
 	cred := config.Credential{
@@ -222,7 +222,7 @@ func TestOIDCRegistry_TryAuth_HostOnlyMatchesAnyPath(t *testing.T) {
 
 func TestOIDCRegistry_TryAuth_NoMatch(t *testing.T) {
 	setupOIDCEnv(t)
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := azureCredWithURL("tenant-1", "client-1", "https://registry.example.com/packages")
 	r.Register(cred, []string{"url"}, "test registry")
@@ -237,7 +237,7 @@ func TestOIDCRegistry_TryAuth_NoMatch(t *testing.T) {
 
 func TestOIDCRegistry_TryAuth_WrongPathNoMatch(t *testing.T) {
 	setupOIDCEnv(t)
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := azureCredWithURL("tenant-1", "client-1",
 		"https://pkgs.dev.azure.com/org/_packaging/feed-A/npm/registry/")
@@ -253,7 +253,7 @@ func TestOIDCRegistry_TryAuth_WrongPathNoMatch(t *testing.T) {
 }
 
 func TestOIDCRegistry_CredentialForRequestConcurrentRegistration(t *testing.T) {
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 	credential := &OIDCCredential{
 		parameters: &AzureOIDCParameters{
 			TenantID: "tenant-1",
@@ -293,7 +293,7 @@ func TestOIDCRegistry_RegisterURL(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 	mockAzureOIDC(t, "tenant-1", "__test_token__")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	// Register primary URL
 	cred := azureCredWithURL("tenant-1", "client-1", "https://nuget.example.com/v3/index.json")
@@ -314,7 +314,7 @@ func TestOIDCRegistry_RegisterURL(t *testing.T) {
 
 func TestOIDCRegistry_TryAuth_PortMismatch(t *testing.T) {
 	setupOIDCEnv(t)
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := azureCredWithURL("tenant-1", "client-1", "https://registry.example.com:8443/packages")
 	r.Register(cred, []string{"url"}, "test registry")
@@ -328,7 +328,7 @@ func TestOIDCRegistry_TryAuth_PortMismatch(t *testing.T) {
 
 func TestOIDCRegistry_Register_RegistryField(t *testing.T) {
 	setupOIDCEnv(t)
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := azureCredWithRegistry("tenant-1", "client-1", "ghcr.io")
 	_, key, ok := r.Register(cred, []string{"registry"}, "docker registry")
@@ -344,7 +344,7 @@ func TestOIDCRegistry_TryAuth_PathSpecificBeatsHostOnly(t *testing.T) {
 	mockAzureOIDC(t, "tenant-1", "__host_only_token__")
 	mockAzureOIDC(t, "tenant-2", "__path_specific_token__")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	hostOnlyCred := config.Credential{
 		"type":      "test_registry",
@@ -372,7 +372,7 @@ func TestOIDCRegistry_TryAuth_LongestPathPrefixWins(t *testing.T) {
 	mockAzureOIDC(t, "tenant-1", "__short_prefix_token__")
 	mockAzureOIDC(t, "tenant-2", "__long_prefix_token__")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	shortPrefixCred := azureCredWithURL("tenant-1", "client-1", "https://registry.example.com/packages")
 	longPrefixCred := azureCredWithURL("tenant-2", "client-2", "https://registry.example.com/packages/private")
@@ -394,7 +394,7 @@ func TestOIDCRegistry_TryAuth_CaseInsensitiveHost(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 	mockAzureOIDC(t, "tenant-1", "__test_token__")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := azureCredWithURL("tenant-1", "client-1", "https://Registry.Example.COM/packages")
 	r.Register(cred, []string{"url"}, "test registry")
@@ -432,7 +432,7 @@ func TestOIDCRegistry_TryAuth_Cloudsmith_UsesAPIKey(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 	mockCloudsmithOIDC(t, "my-org", "__cs_token__")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := cloudsmithCred("my-org", "my-service", "https://cloudsmith.io", "https://dl.cloudsmith.io/basic/my-org/my-repo")
 	r.Register(cred, []string{"url"}, "test registry")
@@ -467,7 +467,7 @@ func TestOIDCRegistry_TryAuth_GCP_UsesBearer(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 	mockGCPOIDC(t, "__gcp_token__")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := gcpCred("projects/123/locations/global/workloadIdentityPools/pool/providers/prov", "https://us-central1-python.pkg.dev/my-project/my-repo/simple")
 	r.Register(cred, []string{"url"}, "test registry")
@@ -486,7 +486,7 @@ func TestOIDCRegistry_TryAuth_GCP_DockerUsesBasicAuth(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 	mockGCPOIDC(t, "__gcp_token__")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := gcpCred("projects/123/locations/global/workloadIdentityPools/pool/providers/prov", "https://us-central1-docker.pkg.dev/my-project/my-repo")
 	r.Register(cred, []string{"url"}, "docker registry")
@@ -505,7 +505,7 @@ func TestOIDCRegistry_TryAuth_GCP_DockerUsesBasicAuth(t *testing.T) {
 
 func TestOIDCRegistry_Register_IndexURLField(t *testing.T) {
 	setupOIDCEnv(t)
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := azureCred("tenant-1", "client-1")
 	cred["index-url"] = "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple"
@@ -522,7 +522,7 @@ func TestOIDCRegistry_TryAuth_URLWithoutProtocol(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 	mockAzureOIDC(t, "tenant-1", "__test_token__")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := azureCred("tenant-1", "client-1")
 	cred["url"] = "registry.example.com/packages"
@@ -541,7 +541,7 @@ func TestOIDCRegistry_RegisterURL_MultipleOnSameHost(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 	mockAzureOIDC(t, "tenant-1", "__test_token__")
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred := azureCredWithURL("tenant-1", "client-1", "https://nuget.example.com/v3/index.json")
 	oidcCred, _, ok := r.Register(cred, []string{"url"}, "nuget feed")
@@ -563,7 +563,7 @@ func TestOIDCRegistry_RegisterURL_MultipleOnSameHost(t *testing.T) {
 func TestOIDCRegistry_Register_NoDuplicateEntries(t *testing.T) {
 	setupOIDCEnv(t)
 
-	r := NewOIDCRegistry(nil)
+	r := NewOIDCRegistry(testHTTPClient)
 
 	cred1 := azureCredWithURL("tenant-1", "client-1", "https://registry.example.com/packages")
 	cred2 := azureCredWithURL("tenant-2", "client-2", "https://registry.example.com/packages")

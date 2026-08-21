@@ -55,8 +55,11 @@ func GetRequestToken() string {
 	return os.Getenv(envActionsIDTokenRequestToken)
 }
 
-// GetToken retrieves a GitHub Actions OIDC token with an optional audience
-func GetToken(ctx context.Context, audience string) (_ string, err error) {
+// GetToken retrieves a GitHub Actions OIDC token with an optional audience.
+func GetToken(ctx context.Context, audience string, client *http.Client) (_ string, err error) {
+	if err := validateHTTPClient(client); err != nil {
+		return "", err
+	}
 	if !IsOIDCConfigured() {
 		return "", fmt.Errorf("GitHub Actions OIDC is not available: missing %s or %s environment variables",
 			envActionsIDTokenRequestURL, envActionsIDTokenRequestToken)
@@ -74,10 +77,6 @@ func GetToken(ctx context.Context, audience string) (_ string, err error) {
 		query := parsedURL.Query()
 		query.Set("audience", audience)
 		parsedURL.RawQuery = query.Encode()
-	}
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", parsedURL.String(), nil)
@@ -118,8 +117,21 @@ func GetToken(ctx context.Context, audience string) (_ string, err error) {
 
 // GetTokenForAzureADExchange retrieves a GitHub Actions OIDC token specifically
 // configured for Azure AD token exchange
-func GetTokenForAzureADExchange(ctx context.Context) (string, error) {
-	return GetToken(ctx, "api://AzureADTokenExchange")
+func GetTokenForAzureADExchange(ctx context.Context, client *http.Client) (string, error) {
+	return GetToken(ctx, "api://AzureADTokenExchange", client)
+}
+
+func validateHTTPClient(client *http.Client) error {
+	if client == nil {
+		return fmt.Errorf("OIDC HTTP client is required")
+	}
+	if client.Transport == nil {
+		return fmt.Errorf("OIDC HTTP client transport is required")
+	}
+	if client.Timeout <= 0 {
+		return fmt.Errorf("OIDC HTTP client timeout must be positive")
+	}
+	return nil
 }
 
 // azureTokenResponse represents the response from Azure AD OAuth2 token endpoint
@@ -229,6 +241,9 @@ type OIDCAccessToken struct {
 //
 // Returns an Azure AD access token scoped for Azure DevOps (499b84ac-1321-427f-aa17-267ca6975798/.default)
 func GetAzureAccessToken(ctx context.Context, params AzureOIDCParameters, githubToken string, client *http.Client) (_ *OIDCAccessToken, err error) {
+	if err := validateHTTPClient(client); err != nil {
+		return nil, err
+	}
 	if params.TenantID == "" {
 		return nil, fmt.Errorf("tenant ID is required")
 	}
@@ -298,7 +313,7 @@ func GetAzureAccessTokenForDevOps(ctx context.Context, params AzureOIDCParameter
 	}
 
 	// Get GitHub OIDC token
-	githubToken, err := GetTokenForAzureADExchange(ctx)
+	githubToken, err := GetTokenForAzureADExchange(ctx, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GitHub OIDC token: %w", err)
 	}
@@ -321,6 +336,9 @@ func GetAzureAccessTokenForDevOps(ctx context.Context, params AzureOIDCParameter
 //
 // Returns a JFrog access token
 func GetJFrogAccessToken(ctx context.Context, params JFrogOIDCParameters, githubToken string, client *http.Client) (_ *OIDCAccessToken, err error) {
+	if err := validateHTTPClient(client); err != nil {
+		return nil, err
+	}
 	if params.JFrogURL == "" {
 		return nil, fmt.Errorf("token URL base is required")
 	}
@@ -396,7 +414,7 @@ func GetJFrogAccessTokenForDevOps(ctx context.Context, params JFrogOIDCParameter
 	}
 
 	// Get GitHub OIDC token
-	githubToken, err := GetToken(ctx, params.Audience)
+	githubToken, err := GetToken(ctx, params.Audience, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GitHub OIDC token: %w", err)
 	}
@@ -419,6 +437,9 @@ func GetJFrogAccessTokenForDevOps(ctx context.Context, params JFrogOIDCParameter
 //
 // Returns temporary AWS credentials
 func GetAWSAccessToken(ctx context.Context, params AWSOIDCParameters, githubToken string, client *http.Client) (_ *OIDCAccessToken, err error) {
+	if err := validateHTTPClient(client); err != nil {
+		return nil, err
+	}
 	if params.Region == "" {
 		return nil, fmt.Errorf("AWS region is required")
 	}
@@ -568,7 +589,7 @@ func GetAWSAccessTokenForDevOps(ctx context.Context, params AWSOIDCParameters, c
 	}
 
 	// Get GitHub OIDC token
-	githubToken, err := GetToken(ctx, params.Audience)
+	githubToken, err := GetToken(ctx, params.Audience, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GitHub OIDC token: %w", err)
 	}
@@ -583,6 +604,9 @@ func GetAWSAccessTokenForDevOps(ctx context.Context, params AWSOIDCParameters, c
 }
 
 func GetCloudsmithAccessToken(ctx context.Context, params CloudsmithOIDCParameters, githubToken string, client *http.Client) (_ *OIDCAccessToken, err error) {
+	if err := validateHTTPClient(client); err != nil {
+		return nil, err
+	}
 	if params.ServiceSlug == "" {
 		return nil, fmt.Errorf("service slug is required")
 	}
@@ -656,7 +680,7 @@ func GetCloudsmithAccessTokenForDevOps(ctx context.Context, params CloudsmithOID
 	}
 
 	// Get GitHub OIDC token
-	githubToken, err := GetToken(ctx, params.Audience)
+	githubToken, err := GetToken(ctx, params.Audience, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GitHub OIDC token: %w", err)
 	}
@@ -670,6 +694,9 @@ func GetCloudsmithAccessTokenForDevOps(ctx context.Context, params CloudsmithOID
 }
 
 func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToken string, client *http.Client) (_ *OIDCAccessToken, err error) {
+	if err := validateHTTPClient(client); err != nil {
+		return nil, err
+	}
 	if params.WorkloadIdentityProvider == "" {
 		return nil, fmt.Errorf("workload-identity-provider is required")
 	}
@@ -807,7 +834,7 @@ func GetGCPAccessTokenForDevOps(ctx context.Context, params GCPOIDCParameters, c
 	}
 
 	// Get GitHub OIDC token
-	githubToken, err := GetToken(ctx, params.Audience)
+	githubToken, err := GetToken(ctx, params.Audience, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GitHub OIDC token: %w", err)
 	}

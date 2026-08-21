@@ -29,11 +29,11 @@ type pythonIndexCredentials struct {
 }
 
 // NewPythonIndexHandler returns a new PythonIndexHandler.
-func NewPythonIndexHandler(creds config.Credentials, transport http.RoundTripper) *PythonIndexHandler {
+func NewPythonIndexHandler(creds config.Credentials, client *http.Client) *PythonIndexHandler {
 	handler := PythonIndexHandler{
 		credentials:  []pythonIndexCredentials{},
 		downloadAuth: newPythonIndexDownloadAuthStore(),
-		oidcRegistry: oidc.NewOIDCRegistry(transport),
+		oidcRegistry: oidc.NewOIDCRegistry(client),
 	}
 
 	for _, cred := range creds {
@@ -43,7 +43,7 @@ func NewPythonIndexHandler(creds config.Credentials, transport http.RoundTripper
 
 		indexURL := cred.GetString("index-url")
 
-		oidcCredential, _ := oidc.CreateOIDCCredential(cred, transport)
+		oidcCredential, _ := oidc.CreateOIDCCredential(cred, client)
 		if oidcCredential != nil {
 			// Normalize the registration URL by stripping the /simple or /+simple
 			// suffix, matching how static credentials are matched at request time.
