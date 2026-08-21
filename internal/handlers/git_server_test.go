@@ -280,6 +280,51 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 	}
 }
 
+func TestGitServerHandler_RejectsAmbiguousLFSOperations(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil)
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "case variant",
+			body: `{"Operation":"download","objects":[{"oid":"abc","size":3}]}`,
+		},
+		{
+			name: "upload followed by case variant download",
+			body: `{"operation":"upload","Operation":"download","objects":[{"oid":"abc","size":3}]}`,
+		},
+		{
+			name: "duplicate operation",
+			body: `{"operation":"upload","operation":"download","objects":[{"oid":"abc","size":3}]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(
+				t.Context(),
+				http.MethodPost,
+				"https://github.com/account/repo.git/info/lfs/objects/batch",
+				strings.NewReader(tt.body),
+			)
+			req.Header.Set("Content-Type", "application/vnd.git-lfs+json")
+
+			req, response := handler.HandleRequest(req, nil)
+
+			assertUnauthenticated(t, req, "ambiguous LFS operation")
+			require.NotNil(t, response)
+			assert.Equal(t, http.StatusForbidden, response.StatusCode)
+			require.NoError(t, response.Body.Close())
+			body, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.NoError(t, req.Body.Close())
+			assert.Equal(t, tt.body, string(body))
+		})
+	}
+}
+
 func TestGitServerHandler_DoesNotBlockIndependentlyAuthenticatedRequests(t *testing.T) {
 	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
 	handler := NewGitServerHandler(config.Credentials{credential}, nil)
@@ -312,6 +357,35 @@ func TestGitServerHandler_DoesNotRetryBlockedRequests(t *testing.T) {
 
 	assert.Same(t, blockedResponse, response)
 	assert.Equal(t, http.StatusForbidden, response.StatusCode)
+	assert.Zero(t, roundTrips)
+}
+
+func TestGitServerHandler_DoesNotRetryNonReadOnlyRequestsWithCallerAuth(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://github.com/account/repo/info/refs?service=git-receive-pack", nil)
+	req.SetBasicAuth("caller", "caller-token")
+	roundTrips := 0
+	roundTripper := goproxy.RoundTripperFunc(func(*http.Request, *goproxy.ProxyCtx) (*http.Response, error) {
+		roundTrips++
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(""))}, nil
+	})
+	proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+
+	req, blockedResponse := handler.HandleRequest(req, proxyCtx)
+	require.Nil(t, blockedResponse)
+	proxyCtx.Req = req
+	upstreamResponse := &http.Response{
+		StatusCode: http.StatusUnauthorized,
+		Body:       io.NopCloser(strings.NewReader("unauthorized")),
+	}
+	response := handler.HandleResponse(upstreamResponse, proxyCtx)
+	defer func() {
+		require.NoError(t, response.Body.Close())
+	}()
+
+	assert.Same(t, upstreamResponse, response)
+	assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
 	assert.Zero(t, roundTrips)
 }
 

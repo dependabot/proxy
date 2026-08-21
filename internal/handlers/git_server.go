@@ -218,10 +218,10 @@ type gitCredentials struct {
 }
 
 const (
-	addedAuthCtxKey         = "git-server.added-auth"
-	blockedAuthCtxKey       = "git-server.blocked-auth"
-	reqBodyCtxKey           = "git-server.req-body"
-	allReposScopeIdentifier = ""
+	addedAuthCtxKey          = "git-server.added-auth"
+	nonReadOnlyRequestCtxKey = "git-server.non-read-only-request"
+	reqBodyCtxKey            = "git-server.req-body"
+	allReposScopeIdentifier  = ""
 )
 
 type ScopeRequester interface {
@@ -277,20 +277,22 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 		return req, nil
 	}
 
-	if _, pw, ok := req.BasicAuth(); ok && pw != "" {
-		return req, nil
-	}
-
 	creds := getCredentialsForRequest(req, h.credentials, gitExtractOrgAndRepo)
 	if len(creds) == 0 {
 		return req, nil
 	}
 
-	if !isReadOnlyGitRequest(req) {
+	readOnly := isReadOnlyGitRequest(req)
+	if !readOnly && proxyCtx != nil {
+		proxyctx.SetValue(proxyCtx, nonReadOnlyRequestCtxKey, true)
+	}
+
+	if _, pw, ok := req.BasicAuth(); ok && pw != "" {
+		return req, nil
+	}
+
+	if !readOnly {
 		logging.RequestLogf(proxyCtx, "* blocked authentication for non-read-only git request (method: %s, host: %s, path: %s)", req.Method, helpers.GetHost(req), req.URL.Path)
-		if proxyCtx != nil {
-			proxyctx.SetValue(proxyCtx, blockedAuthCtxKey, true)
-		}
 		return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, blockedGitRequestMessage)
 	}
 
@@ -342,10 +344,7 @@ func isLFSDownloadRequest(req *http.Request) bool {
 
 	var body bytes.Buffer
 	originalBody := req.Body
-	var batch struct {
-		Operation string `json:"operation"`
-	}
-	err = json.NewDecoder(io.TeeReader(originalBody, &body)).Decode(&batch)
+	isDownload := isLFSDownloadBatch(io.TeeReader(originalBody, &body))
 	req.Body = struct {
 		io.Reader
 		io.Closer
@@ -353,7 +352,85 @@ func isLFSDownloadRequest(req *http.Request) bool {
 		Reader: io.MultiReader(&body, originalBody),
 		Closer: originalBody,
 	}
-	return err == nil && batch.Operation == "download"
+	return isDownload
+}
+
+func isLFSDownloadBatch(reader io.Reader) bool {
+	decoder := json.NewDecoder(reader)
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return false
+	}
+
+	var operation string
+	operationSeen := false
+	for decoder.More() {
+		token, err = decoder.Token()
+		key, ok := token.(string)
+		if err != nil || !ok {
+			return false
+		}
+
+		if strings.EqualFold(key, "operation") {
+			if key != "operation" || operationSeen {
+				return false
+			}
+			token, err = decoder.Token()
+			operation, ok = token.(string)
+			if err != nil || !ok {
+				return false
+			}
+			operationSeen = true
+			continue
+		}
+
+		if !skipJSONValue(decoder) {
+			return false
+		}
+	}
+
+	token, err = decoder.Token()
+	if err != nil || token != json.Delim('}') {
+		return false
+	}
+	if _, err = decoder.Token(); err != io.EOF {
+		return false
+	}
+	return operationSeen && operation == "download"
+}
+
+func skipJSONValue(decoder *json.Decoder) bool {
+	token, err := decoder.Token()
+	if err != nil {
+		return false
+	}
+
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return true
+	}
+
+	switch delim {
+	case '{':
+		for decoder.More() {
+			token, err = decoder.Token()
+			if _, ok = token.(string); err != nil || !ok || !skipJSONValue(decoder) {
+				return false
+			}
+		}
+		token, err = decoder.Token()
+		return err == nil && token == json.Delim('}')
+	case '[':
+		for decoder.More() {
+			if !skipJSONValue(decoder) {
+				return false
+			}
+		}
+		token, err = decoder.Token()
+		return err == nil && token == json.Delim(']')
+	default:
+		return false
+	}
 }
 
 // extracts the org and repo from the expected path
@@ -425,7 +502,7 @@ func (h *GitServerHandler) HandleResponse(rsp *http.Response, proxyCtx *goproxy.
 		return rsp
 	}
 
-	if blocked, ok := proxyctx.GetBool(proxyCtx, blockedAuthCtxKey); ok && blocked {
+	if nonReadOnly, ok := proxyctx.GetBool(proxyCtx, nonReadOnlyRequestCtxKey); ok && nonReadOnly {
 		return rsp
 	}
 
