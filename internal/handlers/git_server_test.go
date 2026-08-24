@@ -29,7 +29,7 @@ func TestGitServerHandler_url(t *testing.T) {
 		"password": "token",
 	}
 
-	handler := NewGitServerHandler(config.Credentials{cred}, nil)
+	handler := NewGitServerHandler(config.Credentials{cred}, nil, true)
 
 	// Valid github git request, prioritises non-installation token
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://github.com/account/repo", nil)
@@ -62,7 +62,7 @@ func TestGitServerHandler(t *testing.T) {
 		rubygemsCred,
 		proximaCred,
 	}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 
 	// Valid github git request, prioritises non-installation token
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://github.com/account/repo", nil)
@@ -120,7 +120,7 @@ func TestGitServerHandler(t *testing.T) {
 		bitBucketCred,
 		rubygemsCred,
 	}
-	handler = NewGitServerHandler(credentials, nil)
+	handler = NewGitServerHandler(credentials, nil, true)
 
 	// Valid github git request, uses installation token
 	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://github.com/account/repo", nil)
@@ -133,7 +133,7 @@ func TestGitServerHandler(t *testing.T) {
 
 func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 	credential := testGitSourceCred("github.com", "x-access-token", "github_pat_fakefakefakesuperfake")
-	handler := NewGitServerHandler(config.Credentials{credential}, nil)
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
 
 	tests := []struct {
 		name          string
@@ -282,11 +282,7 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 
 func TestGitServerHandler_AuthenticatesWriteRequestsWhenReadOnlyCredentialsAreDisabled(t *testing.T) {
 	credential := testGitSourceCred("github.com", "x-access-token", "secret")
-	handler := NewGitServerHandlerWithOptions(
-		config.Credentials{credential},
-		nil,
-		GitServerHandlerOptions{ReadOnlyGitCredentials: false},
-	)
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, false)
 	request := httptest.NewRequestWithContext(
 		t.Context(),
 		http.MethodPost,
@@ -302,7 +298,7 @@ func TestGitServerHandler_AuthenticatesWriteRequestsWhenReadOnlyCredentialsAreDi
 
 func TestGitServerHandler_RejectsAmbiguousLFSOperations(t *testing.T) {
 	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
-	handler := NewGitServerHandler(config.Credentials{credential}, nil)
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
 	tests := []struct {
 		name string
 		body string
@@ -347,7 +343,7 @@ func TestGitServerHandler_RejectsAmbiguousLFSOperations(t *testing.T) {
 
 func TestGitServerHandler_DoesNotBlockIndependentlyAuthenticatedRequests(t *testing.T) {
 	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
-	handler := NewGitServerHandler(config.Credentials{credential}, nil)
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "https://github.com/account/repo/git-receive-pack", nil)
 	req.SetBasicAuth("caller", "caller-token")
 
@@ -359,7 +355,7 @@ func TestGitServerHandler_DoesNotBlockIndependentlyAuthenticatedRequests(t *test
 
 func TestGitServerHandler_DoesNotRetryBlockedRequests(t *testing.T) {
 	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
-	handler := NewGitServerHandler(config.Credentials{credential}, nil)
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://github.com/account/repo/info/refs?service=git-receive-pack", nil)
 	roundTrips := 0
 	roundTripper := goproxy.RoundTripperFunc(func(*http.Request, *goproxy.ProxyCtx) (*http.Response, error) {
@@ -382,7 +378,7 @@ func TestGitServerHandler_DoesNotRetryBlockedRequests(t *testing.T) {
 
 func TestGitServerHandler_DoesNotRetryNonReadOnlyRequestsWithCallerAuth(t *testing.T) {
 	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
-	handler := NewGitServerHandler(config.Credentials{credential}, nil)
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://github.com/account/repo/info/refs?service=git-receive-pack", nil)
 	req.SetBasicAuth("caller", "caller-token")
 	roundTrips := 0
@@ -411,7 +407,7 @@ func TestGitServerHandler_DoesNotRetryNonReadOnlyRequestsWithCallerAuth(t *testi
 
 func TestGitServerHandler_DoesNotBlockRequestsWithoutMatchingCredentials(t *testing.T) {
 	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
-	handler := NewGitServerHandler(config.Credentials{credential}, nil)
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "https://gitlab.com/account/repo/git-receive-pack", nil)
 
 	req, resp := handler.HandleRequest(req, nil)
@@ -470,7 +466,7 @@ func TestGitServerHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewGitServerHandler(tt.credentials, nil)
+			handler := NewGitServerHandler(tt.credentials, nil, true)
 
 			// Valid github git request, prioritises non-installation token
 			req := httptest.NewRequestWithContext(t.Context(), "GET", fmt.Sprintf("https://github.com/%s", tt.repoNWO), nil)
@@ -494,7 +490,7 @@ func TestGitServerHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 func TestGitServerHandler404Retry(t *testing.T) {
 	installationCred := testGitSourceCred("github.com", "x-access-token", "v1.token")
 	credentials := config.Credentials{installationCred}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 	rsp := &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader(""))}
 	url, err := url.Parse("https://example.com")
 	require.NoError(t, err)
@@ -526,7 +522,7 @@ func TestGitServerHandler404Retry(t *testing.T) {
 func TestGitServerHandlerNoRetry(t *testing.T) {
 	installationCred := testGitSourceCred("ghes.com", "x-access-token", "v1.token")
 	credentials := config.Credentials{installationCred}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 	rsp := &http.Response{StatusCode: 404}
 	url := "https://ghes.com/api/v3"
 
@@ -617,7 +613,7 @@ func TestGitServerHandler_TokenFallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewGitServerHandler(credentials, nil)
+			handler := NewGitServerHandler(credentials, nil, true)
 
 			var capturedTokens []string
 			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
@@ -665,7 +661,7 @@ func TestGitServerHandler_TokenFallbackWithPost(t *testing.T) {
 		testGitSourceCred("github.com", "x-access-token", installationToken),
 		testGitSourceCred("github.com", "x-access-token", userToken),
 	}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 
 	tests := []struct {
 		name           string
@@ -748,7 +744,7 @@ func TestGitServerHandler_NoCloneWithSingleCredPost(t *testing.T) {
 	credentials := config.Credentials{
 		testGitSourceCred("github.com", "x-access-token", installationToken),
 	}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 
 	req, err := http.NewRequestWithContext(context.Background(), "POST", "https://github.com/github/dependabot-action/git-upload-pack", io.NopCloser(strings.NewReader("test body")))
 	require.NoError(t, err, "failed to create request")
@@ -777,7 +773,7 @@ func TestGitServerHandler_RepositoryScopedCredentials(t *testing.T) {
 		otherGitHubCred,
 		bitBucketCred,
 	}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 
 	tests := map[string]string{
 		"valid github git request":         "https://github.com/account1/repo1",
@@ -844,7 +840,7 @@ func TestGitServerHandler_RequestJITAccess(t *testing.T) {
 			credentials := config.Credentials{jitCred}
 
 			testClient := &TestScopeRequester{}
-			handler := NewGitServerHandler(credentials, testClient)
+			handler := NewGitServerHandler(credentials, testClient, true)
 			rsp := &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader(""))}
 			url, err := url.Parse(test.url)
 			require.NoError(t, err)
@@ -946,7 +942,7 @@ func TestJITEndpointUsesExplicitAuthWhenProvided(t *testing.T) {
 	})
 
 	apiClient := apiclient.New("", "job-token-is-wrong-token", "") // other token given for the API client
-	handler := NewGitServerHandler(creds, apiClient)
+	handler := NewGitServerHandler(creds, apiClient, true)
 
 	// this is the actual network request
 	req, err := http.NewRequestWithContext(context.Background(), "GET", "https://github.com/account/repo/info/refs?service=git-upload-pack", nil)

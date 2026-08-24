@@ -31,11 +31,6 @@ type GitServerHandler struct {
 	reposAlreadyTried *threadsafe.Map[string, struct{}]
 }
 
-// GitServerHandlerOptions controls optional Git credential restrictions.
-type GitServerHandlerOptions struct {
-	ReadOnlyGitCredentials bool
-}
-
 type jitAccessConfig struct {
 	endpoint string
 	username string
@@ -236,23 +231,16 @@ type ScopeRequester interface {
 
 // NewGitServerHandler returns a new GitServerHandler, adding basic auth to
 // requests to hosts for which we have credentials
-func NewGitServerHandler(creds config.Credentials, client ScopeRequester) *GitServerHandler {
-	return NewGitServerHandlerWithOptions(creds, client, GitServerHandlerOptions{
-		ReadOnlyGitCredentials: true,
-	})
-}
-
-// NewGitServerHandlerWithOptions returns a configured Git server handler.
-func NewGitServerHandlerWithOptions(
+func NewGitServerHandler(
 	creds config.Credentials,
 	client ScopeRequester,
-	options GitServerHandlerOptions,
+	readOnlyGitCredentials bool,
 ) *GitServerHandler {
 	handler := GitServerHandler{
 		credentials:            newGitCredentialsMap(),
 		jitAccessByHost:        map[string]jitAccessConfig{},
 		client:                 client,
-		readOnlyGitCredentials: options.ReadOnlyGitCredentials,
+		readOnlyGitCredentials: readOnlyGitCredentials,
 		reposAlreadyTried:      threadsafe.NewMap[string, struct{}](),
 	}
 
