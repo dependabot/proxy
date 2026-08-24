@@ -29,7 +29,7 @@ func TestGitServerHandler_url(t *testing.T) {
 		"password": "token",
 	}
 
-	handler := NewGitServerHandler(config.Credentials{cred}, nil)
+	handler := NewGitServerHandler(config.Credentials{cred}, nil, true)
 
 	// Valid github git request, prioritises non-installation token
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://github.com/account/repo", nil)
@@ -62,7 +62,7 @@ func TestGitServerHandler(t *testing.T) {
 		rubygemsCred,
 		proximaCred,
 	}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 
 	// Valid github git request, prioritises non-installation token
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://github.com/account/repo", nil)
@@ -96,6 +96,10 @@ func TestGitServerHandler(t *testing.T) {
 		gheCred.GetString("password"),
 		"valid ghe request")
 
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodPost, "https://ghe.some-corp.com/api/v3/repos/account/repo/issues", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "ghe api mutation")
+
 	// Special GHE dependabot-api endpoint
 	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://ghe.some-corp.com/_dependabot/update_jobs/123/details", nil)
 	req = handleRequestAndClose(handler, req, nil)
@@ -116,7 +120,7 @@ func TestGitServerHandler(t *testing.T) {
 		bitBucketCred,
 		rubygemsCred,
 	}
-	handler = NewGitServerHandler(credentials, nil)
+	handler = NewGitServerHandler(credentials, nil, true)
 
 	// Valid github git request, uses installation token
 	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://github.com/account/repo", nil)
@@ -125,6 +129,291 @@ func TestGitServerHandler(t *testing.T) {
 		installationCred.GetString("username"),
 		installationCred.GetString("password"),
 		"valid github request")
+}
+
+func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "github_pat_fakefakefakesuperfake")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
+
+	tests := []struct {
+		name          string
+		method        string
+		url           string
+		contentType   string
+		body          string
+		authenticated bool
+		blocked       bool
+	}{
+		{
+			name:          "get",
+			method:        http.MethodGet,
+			url:           "https://github.com/account/repo/info/refs?service=git-upload-pack",
+			authenticated: true,
+		},
+		{
+			name:          "head",
+			method:        http.MethodHead,
+			url:           "https://github.com/account/repo",
+			authenticated: true,
+		},
+		{
+			name:          "git upload pack",
+			method:        http.MethodPost,
+			url:           "https://github.com/account/repo/git-upload-pack",
+			contentType:   "application/x-git-upload-pack-request",
+			body:          "upload-pack request",
+			authenticated: true,
+		},
+		{
+			name:          "submodule checkout",
+			method:        http.MethodPost,
+			url:           "https://github.com/account/submodule.git/git-upload-pack",
+			contentType:   "application/x-git-upload-pack-request",
+			body:          "upload-pack request",
+			authenticated: true,
+		},
+		{
+			name:    "git upload pack without content type",
+			method:  http.MethodPost,
+			url:     "https://github.com/account/repo/git-upload-pack",
+			body:    "upload-pack request",
+			blocked: true,
+		},
+		{
+			name:    "git receive pack discovery",
+			method:  http.MethodGet,
+			url:     "https://github.com/account/repo/info/refs?service=git-receive-pack",
+			blocked: true,
+		},
+		{
+			name:        "git receive pack",
+			method:      http.MethodPost,
+			url:         "https://github.com/account/repo/git-receive-pack",
+			contentType: "application/x-git-receive-pack-request",
+			body:        "receive-pack request",
+			blocked:     true,
+		},
+		{
+			name:          "lfs download",
+			method:        http.MethodPost,
+			url:           "https://github.com/account/repo.git/info/lfs/objects/batch",
+			contentType:   "application/vnd.git-lfs+json; charset=utf-8",
+			body:          `{"operation":"download","objects":[{"oid":"abc","size":3}]}`,
+			authenticated: true,
+		},
+		{
+			name:          "custom lfs download endpoint",
+			method:        http.MethodPost,
+			url:           "https://github.com/custom-lfs/objects/batch",
+			contentType:   "application/vnd.git-lfs+json",
+			body:          `{"operation":"download","objects":[{"oid":"abc","size":3}]}`,
+			authenticated: true,
+		},
+		{
+			name:        "lfs upload",
+			method:      http.MethodPost,
+			url:         "https://github.com/account/repo.git/info/lfs/objects/batch",
+			contentType: "application/vnd.git-lfs+json",
+			body:        `{"operation":"upload","objects":[{"oid":"abc","size":3}]}`,
+			blocked:     true,
+		},
+		{
+			name:        "lfs lock creation",
+			method:      http.MethodPost,
+			url:         "https://github.com/account/repo.git/info/lfs/locks",
+			contentType: "application/vnd.git-lfs+json",
+			body:        `{"path":"file.bin"}`,
+			blocked:     true,
+		},
+		{
+			name:        "lfs unlock",
+			method:      http.MethodPost,
+			url:         "https://github.com/account/repo.git/info/lfs/locks/123/unlock",
+			contentType: "application/vnd.git-lfs+json",
+			body:        `{}`,
+			blocked:     true,
+		},
+		{
+			name:        "arbitrary post",
+			method:      http.MethodPost,
+			url:         "https://github.com/account/repo/hooks",
+			contentType: "application/json",
+			body:        `{}`,
+			blocked:     true,
+		},
+		{
+			name:    "delete",
+			method:  http.MethodDelete,
+			url:     "https://github.com/account/repo",
+			blocked: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.url, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", tt.contentType)
+			req, resp := handler.HandleRequest(req, nil)
+
+			if tt.authenticated {
+				assertHasBasicAuth(t, req, credential.GetString("username"), credential.GetString("password"), "authenticated")
+			} else {
+				assertUnauthenticated(t, req, "unauthenticated")
+			}
+			if tt.blocked {
+				require.NotNil(t, resp)
+				assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+				assert.Equal(t, goproxy.ContentTypeText, resp.Header.Get("Content-Type"))
+				responseBody, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+				assert.Equal(t, "Dependabot proxy blocked authentication for a non-read-only Git request\n", string(responseBody))
+			} else {
+				assert.Nil(t, resp)
+			}
+
+			body, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.NoError(t, req.Body.Close())
+			assert.Equal(t, tt.body, string(body))
+		})
+	}
+}
+
+func TestGitServerHandler_AuthenticatesWriteRequestsWhenReadOnlyCredentialsAreDisabled(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "secret")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, false)
+	request := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"https://github.com/dependabot/proxy/git-receive-pack",
+		strings.NewReader("write request"),
+	)
+
+	request, response := handler.HandleRequest(request, nil)
+
+	require.Nil(t, response)
+	assertHasBasicAuth(t, request, "x-access-token", "secret", "write request")
+}
+
+func TestGitServerHandler_RejectsAmbiguousLFSOperations(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "case variant",
+			body: `{"Operation":"download","objects":[{"oid":"abc","size":3}]}`,
+		},
+		{
+			name: "upload followed by case variant download",
+			body: `{"operation":"upload","Operation":"download","objects":[{"oid":"abc","size":3}]}`,
+		},
+		{
+			name: "duplicate operation",
+			body: `{"operation":"upload","operation":"download","objects":[{"oid":"abc","size":3}]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(
+				t.Context(),
+				http.MethodPost,
+				"https://github.com/account/repo.git/info/lfs/objects/batch",
+				strings.NewReader(tt.body),
+			)
+			req.Header.Set("Content-Type", "application/vnd.git-lfs+json")
+
+			req, response := handler.HandleRequest(req, nil)
+
+			assertUnauthenticated(t, req, "ambiguous LFS operation")
+			require.NotNil(t, response)
+			assert.Equal(t, http.StatusForbidden, response.StatusCode)
+			require.NoError(t, response.Body.Close())
+			body, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.NoError(t, req.Body.Close())
+			assert.Equal(t, tt.body, string(body))
+		})
+	}
+}
+
+func TestGitServerHandler_DoesNotBlockIndependentlyAuthenticatedRequests(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "https://github.com/account/repo/git-receive-pack", nil)
+	req.SetBasicAuth("caller", "caller-token")
+
+	req, resp := handler.HandleRequest(req, nil)
+
+	assert.Nil(t, resp)
+	assertHasBasicAuth(t, req, "caller", "caller-token", "caller authentication")
+}
+
+func TestGitServerHandler_DoesNotRetryBlockedRequests(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://github.com/account/repo/info/refs?service=git-receive-pack", nil)
+	roundTrips := 0
+	roundTripper := goproxy.RoundTripperFunc(func(*http.Request, *goproxy.ProxyCtx) (*http.Response, error) {
+		roundTrips++
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(""))}, nil
+	})
+	proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+
+	req, blockedResponse := handler.HandleRequest(req, proxyCtx)
+	proxyCtx.Req = req
+	response := handler.HandleResponse(blockedResponse, proxyCtx)
+	defer func() {
+		require.NoError(t, response.Body.Close())
+	}()
+
+	assert.Same(t, blockedResponse, response)
+	assert.Equal(t, http.StatusForbidden, response.StatusCode)
+	assert.Zero(t, roundTrips)
+}
+
+func TestGitServerHandler_DoesNotRetryNonReadOnlyRequestsWithCallerAuth(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://github.com/account/repo/info/refs?service=git-receive-pack", nil)
+	req.SetBasicAuth("caller", "caller-token")
+	roundTrips := 0
+	roundTripper := goproxy.RoundTripperFunc(func(*http.Request, *goproxy.ProxyCtx) (*http.Response, error) {
+		roundTrips++
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(""))}, nil
+	})
+	proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
+
+	req, blockedResponse := handler.HandleRequest(req, proxyCtx)
+	require.Nil(t, blockedResponse)
+	proxyCtx.Req = req
+	upstreamResponse := &http.Response{
+		StatusCode: http.StatusUnauthorized,
+		Body:       io.NopCloser(strings.NewReader("unauthorized")),
+	}
+	response := handler.HandleResponse(upstreamResponse, proxyCtx)
+	defer func() {
+		require.NoError(t, response.Body.Close())
+	}()
+
+	assert.Same(t, upstreamResponse, response)
+	assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
+	assert.Zero(t, roundTrips)
+}
+
+func TestGitServerHandler_DoesNotBlockRequestsWithoutMatchingCredentials(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
+	handler := NewGitServerHandler(config.Credentials{credential}, nil, true)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "https://gitlab.com/account/repo/git-receive-pack", nil)
+
+	req, resp := handler.HandleRequest(req, nil)
+
+	assert.Nil(t, resp)
+	assertUnauthenticated(t, req, "unmatched host")
 }
 
 func TestGitServerHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
@@ -177,7 +466,7 @@ func TestGitServerHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewGitServerHandler(tt.credentials, nil)
+			handler := NewGitServerHandler(tt.credentials, nil, true)
 
 			// Valid github git request, prioritises non-installation token
 			req := httptest.NewRequestWithContext(t.Context(), "GET", fmt.Sprintf("https://github.com/%s", tt.repoNWO), nil)
@@ -201,7 +490,7 @@ func TestGitServerHandler_AuthenticatedAccessToGitHubRepos(t *testing.T) {
 func TestGitServerHandler404Retry(t *testing.T) {
 	installationCred := testGitSourceCred("github.com", "x-access-token", "v1.token")
 	credentials := config.Credentials{installationCred}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 	rsp := &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader(""))}
 	url, err := url.Parse("https://example.com")
 	require.NoError(t, err)
@@ -233,7 +522,7 @@ func TestGitServerHandler404Retry(t *testing.T) {
 func TestGitServerHandlerNoRetry(t *testing.T) {
 	installationCred := testGitSourceCred("ghes.com", "x-access-token", "v1.token")
 	credentials := config.Credentials{installationCred}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 	rsp := &http.Response{StatusCode: 404}
 	url := "https://ghes.com/api/v3"
 
@@ -324,7 +613,7 @@ func TestGitServerHandler_TokenFallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewGitServerHandler(credentials, nil)
+			handler := NewGitServerHandler(credentials, nil, true)
 
 			var capturedTokens []string
 			roundTripper := goproxy.RoundTripperFunc(func(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Response, error) {
@@ -372,7 +661,7 @@ func TestGitServerHandler_TokenFallbackWithPost(t *testing.T) {
 		testGitSourceCred("github.com", "x-access-token", installationToken),
 		testGitSourceCred("github.com", "x-access-token", userToken),
 	}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 
 	tests := []struct {
 		name           string
@@ -406,7 +695,7 @@ func TestGitServerHandler_TokenFallbackWithPost(t *testing.T) {
 			"https://github.com/github/dependabot-action",
 			404,
 			404,
-			[]string{userToken},
+			[]string{""},
 		},
 	}
 
@@ -429,6 +718,7 @@ func TestGitServerHandler_TokenFallbackWithPost(t *testing.T) {
 
 			req, err := http.NewRequestWithContext(context.Background(), "POST", tt.url, io.NopCloser(strings.NewReader("test body")))
 			require.NoError(t, err, "failed to create request")
+			req.Header.Set("Content-Type", "application/x-git-upload-pack-request")
 			proxyCtx := &goproxy.ProxyCtx{Req: req, RoundTripper: roundTripper}
 			rsp := &http.Response{StatusCode: tt.respCode, Body: io.NopCloser(strings.NewReader(""))}
 
@@ -454,10 +744,11 @@ func TestGitServerHandler_NoCloneWithSingleCredPost(t *testing.T) {
 	credentials := config.Credentials{
 		testGitSourceCred("github.com", "x-access-token", installationToken),
 	}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 
 	req, err := http.NewRequestWithContext(context.Background(), "POST", "https://github.com/github/dependabot-action/git-upload-pack", io.NopCloser(strings.NewReader("test body")))
 	require.NoError(t, err, "failed to create request")
+	req.Header.Set("Content-Type", "application/x-git-upload-pack-request")
 	proxyCtx := &goproxy.ProxyCtx{Req: req}
 	_ = handleRequestAndClose(handler, req, proxyCtx)
 	buffer, found := proxyctx.GetBuffer(proxyCtx, reqBodyCtxKey)
@@ -482,7 +773,7 @@ func TestGitServerHandler_RepositoryScopedCredentials(t *testing.T) {
 		otherGitHubCred,
 		bitBucketCred,
 	}
-	handler := NewGitServerHandler(credentials, nil)
+	handler := NewGitServerHandler(credentials, nil, true)
 
 	tests := map[string]string{
 		"valid github git request":         "https://github.com/account1/repo1",
@@ -549,7 +840,7 @@ func TestGitServerHandler_RequestJITAccess(t *testing.T) {
 			credentials := config.Credentials{jitCred}
 
 			testClient := &TestScopeRequester{}
-			handler := NewGitServerHandler(credentials, testClient)
+			handler := NewGitServerHandler(credentials, testClient, true)
 			rsp := &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader(""))}
 			url, err := url.Parse(test.url)
 			require.NoError(t, err)
@@ -651,7 +942,7 @@ func TestJITEndpointUsesExplicitAuthWhenProvided(t *testing.T) {
 	})
 
 	apiClient := apiclient.New("", "job-token-is-wrong-token", "") // other token given for the API client
-	handler := NewGitServerHandler(creds, apiClient)
+	handler := NewGitServerHandler(creds, apiClient, true)
 
 	// this is the actual network request
 	req, err := http.NewRequestWithContext(context.Background(), "GET", "https://github.com/account/repo/info/refs?service=git-upload-pack", nil)

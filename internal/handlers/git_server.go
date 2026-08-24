@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 	"sync"
@@ -11,6 +13,7 @@ import (
 	"github.com/elazarl/goproxy"
 
 	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/gitproto"
 	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/dependabot/proxy/internal/logging"
 	"github.com/dependabot/proxy/internal/proxyctx"
@@ -20,9 +23,10 @@ import (
 // GitServerHandler handles requests destined remote git servers such as
 // github.com or private git servers
 type GitServerHandler struct {
-	credentials     *gitCredentialsMap
-	jitAccessByHost map[string]jitAccessConfig
-	client          ScopeRequester
+	credentials            *gitCredentialsMap
+	jitAccessByHost        map[string]jitAccessConfig
+	client                 ScopeRequester
+	readOnlyGitCredentials bool
 
 	reposAlreadyTried *threadsafe.Map[string, struct{}]
 }
@@ -32,6 +36,8 @@ type jitAccessConfig struct {
 	username string
 	password string
 }
+
+const blockedGitRequestMessage = "Dependabot proxy blocked authentication for a non-read-only Git request\n"
 
 type gitCredentialsMap struct {
 	sync.RWMutex
@@ -213,9 +219,10 @@ type gitCredentials struct {
 }
 
 const (
-	addedAuthCtxKey         = "git-server.added-auth"
-	reqBodyCtxKey           = "git-server.req-body"
-	allReposScopeIdentifier = ""
+	addedAuthCtxKey          = "git-server.added-auth"
+	nonReadOnlyRequestCtxKey = "git-server.non-read-only-request"
+	reqBodyCtxKey            = "git-server.req-body"
+	allReposScopeIdentifier  = ""
 )
 
 type ScopeRequester interface {
@@ -224,12 +231,17 @@ type ScopeRequester interface {
 
 // NewGitServerHandler returns a new GitServerHandler, adding basic auth to
 // requests to hosts for which we have credentials
-func NewGitServerHandler(creds config.Credentials, client ScopeRequester) *GitServerHandler {
+func NewGitServerHandler(
+	creds config.Credentials,
+	client ScopeRequester,
+	readOnlyGitCredentials bool,
+) *GitServerHandler {
 	handler := GitServerHandler{
-		credentials:       newGitCredentialsMap(),
-		jitAccessByHost:   map[string]jitAccessConfig{},
-		client:            client,
-		reposAlreadyTried: threadsafe.NewMap[string, struct{}](),
+		credentials:            newGitCredentialsMap(),
+		jitAccessByHost:        map[string]jitAccessConfig{},
+		client:                 client,
+		readOnlyGitCredentials: readOnlyGitCredentials,
+		reposAlreadyTried:      threadsafe.NewMap[string, struct{}](),
 	}
 
 	for _, cred := range creds {
@@ -271,12 +283,26 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 		return req, nil
 	}
 
-	if _, pw, ok := req.BasicAuth(); ok && pw != "" {
+	creds := getCredentialsForRequest(req, h.credentials, gitExtractOrgAndRepo)
+	if len(creds) == 0 {
 		return req, nil
 	}
 
-	creds := getCredentialsForRequest(req, h.credentials, gitExtractOrgAndRepo)
-	if len(creds) == 0 {
+	if h.readOnlyGitCredentials {
+		readOnly := isReadOnlyGitRequest(req)
+		if !readOnly && proxyCtx != nil {
+			proxyctx.SetValue(proxyCtx, nonReadOnlyRequestCtxKey, true)
+		}
+
+		if _, pw, ok := req.BasicAuth(); ok && pw != "" {
+			return req, nil
+		}
+
+		if !readOnly {
+			logging.RequestLogf(proxyCtx, "* blocked authentication for non-read-only git request (method: %s, host: %s, path: %s)", req.Method, helpers.GetHost(req), req.URL.Path)
+			return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, blockedGitRequestMessage)
+		}
+	} else if _, pw, ok := req.BasicAuth(); ok && pw != "" {
 		return req, nil
 	}
 
@@ -302,6 +328,119 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 		}
 	}
 	return req, nil
+}
+
+func isReadOnlyGitRequest(req *http.Request) bool {
+	if helpers.MethodPermitted(req, http.MethodGet, http.MethodHead) {
+		return req.URL.Query().Get("service") != "git-receive-pack"
+	}
+	if gitproto.IsUploadPackRequest(req) {
+		return true
+	}
+	return isLFSDownloadRequest(req)
+}
+
+func isLFSDownloadRequest(req *http.Request) bool {
+	if req.Method != http.MethodPost {
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/vnd.git-lfs+json" {
+		return false
+	}
+	if !strings.HasSuffix(req.URL.Path, "/objects/batch") || req.Body == nil {
+		return false
+	}
+
+	var body bytes.Buffer
+	originalBody := req.Body
+	isDownload := isLFSDownloadBatch(io.TeeReader(originalBody, &body))
+	req.Body = struct {
+		io.Reader
+		io.Closer
+	}{
+		Reader: io.MultiReader(&body, originalBody),
+		Closer: originalBody,
+	}
+	return isDownload
+}
+
+func isLFSDownloadBatch(reader io.Reader) bool {
+	decoder := json.NewDecoder(reader)
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return false
+	}
+
+	var operation string
+	operationSeen := false
+	for decoder.More() {
+		token, err = decoder.Token()
+		key, ok := token.(string)
+		if err != nil || !ok {
+			return false
+		}
+
+		if strings.EqualFold(key, "operation") {
+			if key != "operation" || operationSeen {
+				return false
+			}
+			token, err = decoder.Token()
+			operation, ok = token.(string)
+			if err != nil || !ok {
+				return false
+			}
+			operationSeen = true
+			continue
+		}
+
+		if !skipJSONValue(decoder) {
+			return false
+		}
+	}
+
+	token, err = decoder.Token()
+	if err != nil || token != json.Delim('}') {
+		return false
+	}
+	if _, err = decoder.Token(); err != io.EOF {
+		return false
+	}
+	return operationSeen && operation == "download"
+}
+
+func skipJSONValue(decoder *json.Decoder) bool {
+	token, err := decoder.Token()
+	if err != nil {
+		return false
+	}
+
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return true
+	}
+
+	switch delim {
+	case '{':
+		for decoder.More() {
+			token, err = decoder.Token()
+			if _, ok = token.(string); err != nil || !ok || !skipJSONValue(decoder) {
+				return false
+			}
+		}
+		token, err = decoder.Token()
+		return err == nil && token == json.Delim('}')
+	case '[':
+		for decoder.More() {
+			if !skipJSONValue(decoder) {
+				return false
+			}
+		}
+		token, err = decoder.Token()
+		return err == nil && token == json.Delim(']')
+	default:
+		return false
+	}
 }
 
 // extracts the org and repo from the expected path
@@ -370,6 +509,10 @@ func getCredentialsForRequest(r *http.Request, credentials *gitCredentialsMap, e
 // original.
 func (h *GitServerHandler) HandleResponse(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if rsp == nil {
+		return rsp
+	}
+
+	if nonReadOnly, ok := proxyctx.GetBool(proxyCtx, nonReadOnlyRequestCtxKey); ok && nonReadOnly {
 		return rsp
 	}
 
@@ -537,7 +680,7 @@ func (h *GitServerHandler) isGitHubAPIRequest(req *http.Request) bool {
 }
 
 func (h *GitServerHandler) isGitUploadPackPost(req *http.Request) bool {
-	if req.Method != "POST" {
+	if req.Method != http.MethodPost {
 		return false
 	}
 	return strings.HasSuffix(req.URL.Path, "/git-upload-pack")
