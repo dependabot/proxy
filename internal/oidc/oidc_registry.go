@@ -19,6 +19,7 @@ import (
 type OIDCRegistry struct {
 	byHost map[string][]oidcEntry
 	mutex  sync.RWMutex
+	client *http.Client
 }
 
 type oidcEntry struct {
@@ -27,10 +28,15 @@ type oidcEntry struct {
 	credential *OIDCCredential
 }
 
-// NewOIDCRegistry creates an empty registry.
-func NewOIDCRegistry() *OIDCRegistry {
+// NewOIDCRegistry creates an empty registry. client is used for every outbound
+// OIDC request and must use the same restricted transport as the proxy.
+func NewOIDCRegistry(client *http.Client) *OIDCRegistry {
+	if err := validateHTTPClient(client); err != nil {
+		panic(err)
+	}
 	return &OIDCRegistry{
 		byHost: make(map[string][]oidcEntry),
+		client: client,
 	}
 }
 
@@ -47,7 +53,7 @@ func (r *OIDCRegistry) Register(
 	urlFields []string,
 	registryType string,
 ) (*OIDCCredential, string, bool) {
-	oidcCredential, _ := CreateOIDCCredential(cred)
+	oidcCredential, _ := CreateOIDCCredential(cred, r.client)
 	if oidcCredential == nil {
 		return nil, "", false
 	}

@@ -62,12 +62,12 @@ type nugetDiscoveryAuth struct {
 }
 
 // NewNugetFeedHandler returns a new NugetFeedHandler.
-func NewNugetFeedHandler(creds config.Credentials) *NugetFeedHandler {
+func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFeedHandler {
 	handler := NugetFeedHandler{
 		credentials:         []nugetFeedCredentials{},
 		credentialURLs:      make(map[string]struct{}),
 		discoverySourceURLs: make(map[string]struct{}),
-		oidcRegistry:        oidc.NewOIDCRegistry(),
+		oidcRegistry:        oidc.NewOIDCRegistry(client),
 	}
 
 	for _, cred := range creds {

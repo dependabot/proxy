@@ -46,7 +46,7 @@ func TestCargoRegistryHandler(t *testing.T) {
 		},
 	}
 
-	handler := NewCargoRegistryHandler(credentials)
+	handler := NewCargoRegistryHandler(credentials, testOIDCClient)
 
 	// valid request, should authenticate
 	url := validURL
@@ -108,7 +108,7 @@ func TestCargoRegistryHandlerWithHost(t *testing.T) {
 		},
 	}
 
-	handler := NewCargoRegistryHandler(credentials)
+	handler := NewCargoRegistryHandler(credentials, testOIDCClient)
 
 	// matching host should authenticate
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://cargo.example.com/some/path", nil)
@@ -139,7 +139,7 @@ func TestCargoRegistryHandlerWithUsernamePassword(t *testing.T) {
 		},
 	}
 
-	handler := NewCargoRegistryHandler(credentials)
+	handler := NewCargoRegistryHandler(credentials, testOIDCClient)
 
 	// matching url should authenticate with basic auth
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://cargo.example.com/registry/crate", nil)
@@ -165,7 +165,7 @@ func TestCargoRegistryHandlerWithHostAndUsernamePassword(t *testing.T) {
 		},
 	}
 
-	handler := NewCargoRegistryHandler(credentials)
+	handler := NewCargoRegistryHandler(credentials, testOIDCClient)
 
 	// matching host should authenticate with basic auth
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://cargo.example.com/any/path", nil)
@@ -191,7 +191,7 @@ func TestCargoRegistryHandlerTokenTakesPrecedenceOverPassword(t *testing.T) {
 		},
 	}
 
-	handler := NewCargoRegistryHandler(credentials)
+	handler := NewCargoRegistryHandler(credentials, testOIDCClient)
 
 	// token should take precedence over username/password
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://cargo.example.com/registry/crate", nil)
@@ -207,7 +207,7 @@ func TestCargoRegistryHandlerIgnoresNoUrlOrHost(t *testing.T) {
 		},
 	}
 
-	handler := NewCargoRegistryHandler(credentials)
+	handler := NewCargoRegistryHandler(credentials, testOIDCClient)
 
 	// should not authenticate any request since no url or host was provided
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://anything.example.com/path", nil)
@@ -227,7 +227,7 @@ func TestCargoRegistryHandlerUrlScopingNotBypassedByHost(t *testing.T) {
 		},
 	}
 
-	handler := NewCargoRegistryHandler(credentials)
+	handler := NewCargoRegistryHandler(credentials, testOIDCClient)
 
 	// in-scope path should authenticate
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://cargo.example.com/myorg/crate", nil)

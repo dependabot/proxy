@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/elazarl/goproxy"
 	"github.com/rs/dnscache"
@@ -51,6 +52,10 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 		},
 		Proxy: http.ProxyFromEnvironment,
 	}
+	oidcClient := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: transport,
+	}
 
 	apiClient := apiclient.New(envSettings.APIEndpoint, envSettings.JobToken, envSettings.JobID, apiclient.WithTransport(transport))
 	metricsClient := metrics.New(envSettings, apiClient)
@@ -68,7 +73,7 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 	proxy.OnRequest().DoFunc(logger.logRequest)
 	proxy.OnResponse().DoFunc(logger.logResponse)
 
-	nugetFeedHandler := handlers.NewNugetFeedHandler(cfg.Credentials)
+	nugetFeedHandler := handlers.NewNugetFeedHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(nugetFeedHandler.PrepareRequest)
 
 	enableCache := os.Getenv("PROXY_CACHE") == "true"
@@ -102,50 +107,50 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 	proxy.OnRequest().DoFunc(gitServerHandler.HandleRequest)
 	proxy.OnResponse().DoFunc(gitServerHandler.HandleResponse)
 
-	npmRegistryHandler := handlers.NewNPMRegistryHandler(cfg.Credentials)
+	npmRegistryHandler := handlers.NewNPMRegistryHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(npmRegistryHandler.HandleRequest)
 
 	hexOrganizationHandler := handlers.NewHexOrganizationHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(hexOrganizationHandler.HandleRequest)
 
-	hexRepositoryHandler := handlers.NewHexRepositoryHandler(cfg.Credentials)
+	hexRepositoryHandler := handlers.NewHexRepositoryHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(hexRepositoryHandler.HandleRequest)
 
-	pythonHandler := handlers.NewPythonIndexHandler(cfg.Credentials)
+	pythonHandler := handlers.NewPythonIndexHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(pythonHandler.HandleRequest)
 	proxy.OnResponse().DoFunc(pythonHandler.HandleResponse)
 
-	composerHandler := handlers.NewComposerHandler(cfg.Credentials)
+	composerHandler := handlers.NewComposerHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(composerHandler.HandleRequest)
 
-	dockerRegistryHandler := handlers.NewDockerRegistryHandler(cfg.Credentials, transport, nil)
+	dockerRegistryHandler := handlers.NewDockerRegistryHandler(cfg.Credentials, oidcClient, nil)
 	proxy.OnRequest().DoFunc(dockerRegistryHandler.HandleRequest)
 
-	rubyGemsServerHandler := handlers.NewRubyGemsServerHandler(cfg.Credentials)
+	rubyGemsServerHandler := handlers.NewRubyGemsServerHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(rubyGemsServerHandler.HandleRequest)
 
 	proxy.OnRequest().DoFunc(nugetFeedHandler.HandleRequest)
 	proxy.OnResponse().DoFunc(nugetFeedHandler.HandleResponse)
 
-	mavenRepositoryHandler := handlers.NewMavenRepositoryHandler(cfg.Credentials)
+	mavenRepositoryHandler := handlers.NewMavenRepositoryHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(mavenRepositoryHandler.HandleRequest)
 
-	terraformRegistryHandler := handlers.NewTerraformRegistryHandler(cfg.Credentials)
+	terraformRegistryHandler := handlers.NewTerraformRegistryHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(terraformRegistryHandler.HandleRequest)
 
-	openTofuRegistryHandler := handlers.NewOpenTofuRegistryHandler(cfg.Credentials)
+	openTofuRegistryHandler := handlers.NewOpenTofuRegistryHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(openTofuRegistryHandler.HandleRequest)
 
-	pubRepositoryHandler := handlers.NewPubRepositoryHandler(cfg.Credentials)
+	pubRepositoryHandler := handlers.NewPubRepositoryHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(pubRepositoryHandler.HandleRequest)
 
-	cargoRegistryHandler := handlers.NewCargoRegistryHandler(cfg.Credentials)
+	cargoRegistryHandler := handlers.NewCargoRegistryHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(cargoRegistryHandler.HandleRequest)
 
-	goProxyServerHandler := handlers.NewGoProxyServerHandler(cfg.Credentials)
+	goProxyServerHandler := handlers.NewGoProxyServerHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(goProxyServerHandler.HandleRequest)
 
-	helmRegistryHandler := handlers.NewHelmRegistryHandler(cfg.Credentials)
+	helmRegistryHandler := handlers.NewHelmRegistryHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(helmRegistryHandler.HandleRequest)
 
 	proxy.OnResponse().DoFunc(cacher.OnResponse)

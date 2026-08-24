@@ -36,7 +36,7 @@ func TestGoProxyHandler(t *testing.T) {
 			"password": deltaForcePassword,
 		},
 	}
-	handler := NewGoProxyServerHandler(credentials)
+	handler := NewGoProxyServerHandler(credentials, testOIDCClient)
 
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://corp.dependabot.com/packages/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)

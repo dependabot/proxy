@@ -47,10 +47,10 @@ type cargoRepositoryCredentials struct {
 	password string
 }
 
-func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandler {
+func NewCargoRegistryHandler(credentials config.Credentials, client *http.Client) *CargoRegistryHandler {
 	handler := CargoRegistryHandler{
 		credentials:  []cargoRepositoryCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(client),
 	}
 
 	for _, credential := range credentials {
@@ -68,7 +68,7 @@ func NewCargoRegistryHandler(credentials config.Credentials) *CargoRegistryHandl
 			if oidcCred, _, _ := handler.oidcRegistry.Register(credential, []string{"url"}, "cargo registry"); oidcCred != nil {
 				continue
 			}
-		} else if oidcCred, _ := oidc.CreateOIDCCredential(credential); oidcCred != nil {
+		} else if oidcCred, _ := oidc.CreateOIDCCredential(credential, client); oidcCred != nil {
 			continue
 		}
 

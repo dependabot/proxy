@@ -24,10 +24,10 @@ type goProxyServerCredentials struct {
 }
 
 // NewGoProxyServerHandler returns a new GoProxyServerHandler.
-func NewGoProxyServerHandler(creds config.Credentials) *GoProxyServerHandler {
+func NewGoProxyServerHandler(creds config.Credentials, client *http.Client) *GoProxyServerHandler {
 	handler := GoProxyServerHandler{
 		credentials:  []goProxyServerCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(),
+		oidcRegistry: oidc.NewOIDCRegistry(client),
 	}
 
 	for _, cred := range creds {
