@@ -22,6 +22,26 @@ func TestParse(t *testing.T) {
 			input:    "{\"proxy_auth\": { \"username\": \"proxy_user\", \"password\": \"password\" }}",
 			expected: &Config{ProxyAuth: BasicAuthCredentials{Username: "proxy_user", Password: "password"}},
 		},
+		"experiments": {
+			input: `{
+				"experiments": {
+					"enabled": true,
+					"disabled": false,
+					"string": "value",
+					"number": 42,
+					"object": {"key": "value"}
+				}
+			}`,
+			expected: &Config{
+				Experiments: Experiments{
+					"enabled":  true,
+					"disabled": false,
+					"string":   "value",
+					"number":   float64(42),
+					"object":   map[string]any{"key": "value"},
+				},
+			},
+		},
 	}
 
 	temp := t.TempDir()
@@ -45,6 +65,22 @@ func TestParse(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestExperimentsEnabled(t *testing.T) {
+	experiments := Experiments{
+		"enabled":     true,
+		"disabled":    false,
+		"string_true": "true",
+		"number":      float64(1),
+	}
+
+	assert.True(t, experiments.Enabled("enabled"))
+	assert.False(t, experiments.Enabled("disabled"))
+	assert.False(t, experiments.Enabled("string_true"))
+	assert.False(t, experiments.Enabled("number"))
+	assert.False(t, experiments.Enabled("missing"))
+	assert.False(t, Experiments(nil).Enabled("enabled"))
 }
 
 func TestHost(t *testing.T) {

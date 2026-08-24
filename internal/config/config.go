@@ -23,6 +23,16 @@ type Config struct {
 	Credentials Credentials          `json:"all_credentials"`
 	CA          CaDetails            `json:"ca"`
 	ProxyAuth   BasicAuthCredentials `json:"proxy_auth"`
+	Experiments Experiments          `json:"experiments"`
+}
+
+// Experiments contains job experiments passed to the proxy.
+type Experiments map[string]any
+
+// Enabled reports whether an experiment is explicitly enabled.
+func (e Experiments) Enabled(name string) bool {
+	enabled, ok := e[name].(bool)
+	return ok && enabled
 }
 
 // Credential is a wrapper around map[string]any, which is the format
