@@ -280,6 +280,26 @@ func TestGitServerHandler_OnlyAuthenticatesReadRequests(t *testing.T) {
 	}
 }
 
+func TestGitServerHandler_AuthenticatesWriteRequestsWhenReadOnlyCredentialsAreDisabled(t *testing.T) {
+	credential := testGitSourceCred("github.com", "x-access-token", "secret")
+	handler := NewGitServerHandlerWithOptions(
+		config.Credentials{credential},
+		nil,
+		GitServerHandlerOptions{ReadOnlyGitCredentials: false},
+	)
+	request := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"https://github.com/dependabot/proxy/git-receive-pack",
+		strings.NewReader("write request"),
+	)
+
+	request, response := handler.HandleRequest(request, nil)
+
+	require.Nil(t, response)
+	assertHasBasicAuth(t, request, "x-access-token", "secret", "write request")
+}
+
 func TestGitServerHandler_RejectsAmbiguousLFSOperations(t *testing.T) {
 	credential := testGitSourceCred("github.com", "x-access-token", "proxy-token")
 	handler := NewGitServerHandler(config.Credentials{credential}, nil)

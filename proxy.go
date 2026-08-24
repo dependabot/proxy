@@ -94,7 +94,13 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 	azureDevOpsAPIHandler := handlers.NewAzureDevOpsAPIHandler(cfg.Credentials)
 	proxy.OnRequest().DoFunc(azureDevOpsAPIHandler.HandleRequest)
 
-	gitServerHandler := handlers.NewGitServerHandler(cfg.Credentials, apiClient)
+	gitServerHandler := handlers.NewGitServerHandlerWithOptions(
+		cfg.Credentials,
+		apiClient,
+		handlers.GitServerHandlerOptions{
+			ReadOnlyGitCredentials: cfg.Experiments.Enabled("proxy_read_only_git_credentials"),
+		},
+	)
 	proxy.OnRequest().DoFunc(gitServerHandler.HandleRequest)
 	proxy.OnResponse().DoFunc(gitServerHandler.HandleResponse)
 
