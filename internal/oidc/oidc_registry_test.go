@@ -3,7 +3,9 @@ package oidc
 import (
 	"bytes"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jarcoal/httpmock"
@@ -248,6 +250,41 @@ func TestOIDCRegistry_TryAuth_WrongPathNoMatch(t *testing.T) {
 
 	assert.False(t, ok, "should not match different path")
 	assert.Empty(t, req.Header.Get("Authorization"))
+}
+
+func TestOIDCRegistry_CredentialForRequestConcurrentRegistration(t *testing.T) {
+	r := NewOIDCRegistry(testHTTPClient)
+	credential := &OIDCCredential{
+		parameters: &AzureOIDCParameters{
+			TenantID: "tenant-1",
+			ClientID: "client-1",
+		},
+	}
+	r.RegisterURL("https://registry.example.com/packages", credential, "test registry")
+
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://registry.example.com/packages/some-package", nil)
+
+	var wg sync.WaitGroup
+	for i := range 50 {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			r.RegisterURL(
+				"https://registry.example.com/packages/feed-"+strconv.Itoa(i),
+				credential,
+				"test registry",
+			)
+		}(i)
+		go func() {
+			defer wg.Done()
+			for range 100 {
+				_ = r.CredentialForRequest(req)
+			}
+		}()
+	}
+	wg.Wait()
+
+	assert.Same(t, credential, r.CredentialForRequest(req))
 }
 
 func TestOIDCRegistry_CredentialForRequestRequiresPathBoundary(t *testing.T) {

@@ -249,6 +249,20 @@ func TestDockerRegistryHandlerProxyOnlyCredentials(t *testing.T) {
 	proxyCtx = &goproxy.ProxyCtx{}
 	handleRequestAndClose(handler, req, proxyCtx)
 	assert.Nil(t, proxyCtx.RoundTripper, "host mismatch does not configure challenge transport")
+
+	nonDefaultPortHandler := NewDockerRegistryHandler(config.Credentials{
+		{
+			"type":       "docker_registry",
+			"registry":   "https://ghcr.io:8443",
+			"username":   "x-access-token",
+			"password":   "automatic-token",
+			"proxy-only": true,
+		},
+	}, client, nil)
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://ghcr.io:8443/v2/other/image/manifests/latest", nil)
+	proxyCtx = &goproxy.ProxyCtx{}
+	handleRequestAndClose(nonDefaultPortHandler, req, proxyCtx)
+	assert.Nil(t, proxyCtx.RoundTripper, "automatic credential does not authenticate a non-default port")
 }
 
 func TestDockerRegistryHandlerOIDCRepositoryScope(t *testing.T) {

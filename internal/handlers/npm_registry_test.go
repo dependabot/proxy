@@ -18,7 +18,7 @@ func TestNPMRegistryHandler(t *testing.T) {
 	credentials := config.Credentials{
 		config.Credential{
 			"type":     "npm_registry",
-			"registry": "https://registry.npmjs.org",
+			"registry": "https://Registry.Npmjs.Org",
 			"token":    npmjsOrgToken,
 		},
 		config.Credential{

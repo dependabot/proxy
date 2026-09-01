@@ -166,7 +166,8 @@ func npmRegistryHostMatches(regHost, reqHost string) bool {
 	// We could use areHostnamesEqual here, but that likely isn't necessary
 	// because it was added to better support private registries with custom
 	// domains.
-	if regHost == "registry.npmjs.org" && reqHost == "registry.yarnpkg.com" {
+	if strings.EqualFold(regHost, "registry.npmjs.org") &&
+		strings.EqualFold(reqHost, "registry.yarnpkg.com") {
 		return true
 	}
 

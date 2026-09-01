@@ -150,6 +150,10 @@ func (h *DockerRegistryHandler) authenticateStaticCredential(
 	proxyCtx *goproxy.ProxyCtx,
 	proxyOnly bool,
 ) bool {
+	if proxyOnly && !proxyOnlyCredentialRequestAllowed(req) {
+		return false
+	}
+
 	for _, cred := range h.credentials {
 		if cred.proxyOnly != proxyOnly {
 			continue
