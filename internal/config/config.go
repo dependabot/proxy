@@ -52,6 +52,14 @@ func (c Credential) GetString(key string) string {
 	return ""
 }
 
+// GetBool returns a Boolean value or false.
+func (c Credential) GetBool(key string) bool {
+	if val, ok := c[key].(bool); ok {
+		return val
+	}
+	return false
+}
+
 // Host returns the host of the credential, either from the "host" key or from the "url" key. Empty if neither is set.
 func (c Credential) Host() string {
 	if val, ok := c["host"].(string); ok {

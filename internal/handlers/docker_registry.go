@@ -3,8 +3,8 @@ package handlers
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -56,22 +56,41 @@ func NewDockerRegistryHandler(creds config.Credentials, client *http.Client, get
 			continue
 		}
 
-		registry := cred.GetString("registry")
-		if registry == "" {
-			registry = cred.Host()
+		registryLocation, matchLocation, matchField, ok := dockerCredentialLocations(cred)
+		if !ok {
+			continue
+		}
+		matchURL, path, ok := dockerRegistryCredentialLocation(matchLocation)
+		if !ok {
+			continue
 		}
 
-		// OIDC credentials are not used as static credentials.
-		if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"registry"}, "docker registry"); oidcCred != nil {
+		proxyOnly := cred.GetBool("proxy-only")
+		if !proxyOnly {
+			// OIDC credentials are not used as static credentials.
+			oidcMatchingCred, urlFields := dockerOIDCMatchingCredential(cred, matchField, matchURL)
+			if oidcCred, _, _ := handler.oidcRegistry.Register(oidcMatchingCred, urlFields, "docker registry"); oidcCred != nil {
+				continue
+			}
+		}
+		if proxyOnly && cred.GetString("username") == "" && cred.GetString("password") == "" {
+			continue
+		}
+
+		parsedRegistry, err := helpers.ParseURLLax(registryLocation)
+		if err != nil || parsedRegistry.Host == "" {
 			continue
 		}
 
 		registryCred := &dockerRegistryCredentials{
-			registry:     registry,
+			matchURL:     matchURL,
+			registry:     parsedRegistry.Host,
+			path:         path,
 			username:     cred.GetString("username"),
 			password:     cred.GetString("password"),
 			httpClient:   client,
 			getECRClient: getECRClient,
+			proxyOnly:    proxyOnly,
 		}
 		handler.credentials = append(handler.credentials, registryCred)
 	}
@@ -108,18 +127,35 @@ func (h *DockerRegistryHandler) HandleRequest(req *http.Request, proxyCtx *gopro
 		return req, nil
 	}
 
-	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, proxyCtx) {
+	oidcCredential := h.oidcRegistry.CredentialForRequest(req)
+	if h.oidcRegistry.TryAuthCredential(req, proxyCtx, oidcCredential) {
 		return req, nil
 	}
-
-	// Fall back to static credentials
-	if _, _, ok := req.BasicAuth(); ok {
+	if hasUsableAuthorization(req) {
 		return req, nil
 	}
+	if h.authenticateStaticCredential(req, proxyCtx, false) {
+		return req, nil
+	}
+	if oidcCredential != nil {
+		return req, nil
+	}
+	h.authenticateStaticCredential(req, proxyCtx, true)
 
+	return req, nil
+}
+
+func (h *DockerRegistryHandler) authenticateStaticCredential(
+	req *http.Request,
+	proxyCtx *goproxy.ProxyCtx,
+	proxyOnly bool,
+) bool {
 	for _, cred := range h.credentials {
-		if !helpers.UrlMatchesRequest(req, cred.registry, true) {
+		if cred.proxyOnly != proxyOnly {
+			continue
+		}
+		matchedPath, ok := dockerCredentialMatchesRequest(req, cred)
+		if !ok {
 			continue
 		}
 
@@ -134,7 +170,7 @@ func (h *DockerRegistryHandler) HandleRequest(req *http.Request, proxyCtx *gopro
 					Username:  cred.getUsername(),
 					Password:  cred.getPassword(),
 				},
-				URL:      fmt.Sprintf("https://%s", cred.registry),
+				URL:      (&url.URL{Scheme: req.URL.Scheme, Host: req.URL.Host}).String() + matchedPath,
 				Username: cred.getUsername(),
 				Password: cred.getPassword(),
 			}
@@ -143,10 +179,138 @@ func (h *DockerRegistryHandler) HandleRequest(req *http.Request, proxyCtx *gopro
 			}
 		}
 
-		return req, nil
+		return true
 	}
 
-	return req, nil
+	return false
+}
+
+func dockerCredentialMatchesRequest(
+	req *http.Request,
+	cred *dockerRegistryCredentials,
+) (string, bool) {
+	if !helpers.CredentialURLMatchesRequest(req, cred.matchURL, true) {
+		return "", false
+	}
+	return helpers.MatchingPathPrefix(req.URL.EscapedPath(), cred.path)
+}
+
+func dockerOIDCMatchingCredential(
+	cred config.Credential,
+	field string,
+	matchURL string,
+) (config.Credential, []string) {
+	if field == "" {
+		return cred, nil
+	}
+	copy := make(config.Credential, len(cred))
+	for key, value := range cred {
+		copy[key] = value
+	}
+	copy[field] = matchURL
+	return copy, []string{field}
+}
+
+func dockerCredentialLocations(cred config.Credential) (registry, match, matchField string, ok bool) {
+	registry = cred.GetString("registry")
+	configuredURL := cred.GetString("url")
+
+	if registry == "" && configuredURL == "" {
+		registry = cred.Host()
+		if _, _, _, ok := parseDockerCredentialLocation(registry); !ok {
+			return "", "", "", false
+		}
+		return registry, registry, "", true
+	}
+	if registry == "" {
+		if _, _, _, ok := parseDockerCredentialLocation(configuredURL); !ok {
+			return "", "", "", false
+		}
+		return configuredURL, configuredURL, "url", true
+	}
+
+	registryURL, registryPath, registrySpecificity, ok := parseDockerCredentialLocation(registry)
+	if !ok {
+		return "", "", "", false
+	}
+	if configuredURL == "" {
+		return registry, registry, "registry", true
+	}
+
+	url, urlPath, urlSpecificity, ok := parseDockerCredentialLocation(configuredURL)
+	if !ok {
+		return "", "", "", false
+	}
+	if !dockerOriginsEqual(registryURL, url) {
+		return "", "", "", false
+	}
+	if registryPath == urlPath {
+		return registry, registry, "registry", true
+	}
+	if urlSpecificity > registrySpecificity &&
+		helpers.PathMatches(url.EscapedPath(), registryURL.EscapedPath()) {
+		return registry, configuredURL, "url", true
+	}
+	if registrySpecificity > urlSpecificity &&
+		helpers.PathMatches(registryURL.EscapedPath(), url.EscapedPath()) {
+		return registry, registry, "registry", true
+	}
+	return "", "", "", false
+}
+
+func parseDockerCredentialLocation(location string) (*url.URL, string, int, bool) {
+	parsed, err := helpers.ParseURLLax(location)
+	if err != nil || parsed.Host == "" || parsed.User != nil {
+		return nil, "", 0, false
+	}
+	path, ok := helpers.CanonicalPath(parsed.EscapedPath())
+	if !ok {
+		return nil, "", 0, false
+	}
+	return parsed, path, strings.Count(path, "/"), true
+}
+
+func dockerOriginsEqual(a, b *url.URL) bool {
+	scheme := func(url *url.URL) string {
+		if url.Scheme == "" {
+			return "https"
+		}
+		return strings.ToLower(url.Scheme)
+	}
+	port := func(url *url.URL) string {
+		if url.Port() != "" {
+			return url.Port()
+		}
+		if scheme(url) == "http" {
+			return "80"
+		}
+		return "443"
+	}
+
+	return scheme(a) == scheme(b) &&
+		port(a) == port(b) &&
+		helpers.AreHostnamesEqual(a.Hostname(), b.Hostname())
+}
+
+func dockerRegistryCredentialLocation(location string) (matchURL, path string, ok bool) {
+	parsed, err := helpers.ParseURLLax(location)
+	if err != nil || parsed.Host == "" {
+		return "", "", false
+	}
+
+	path = strings.TrimRight(parsed.EscapedPath(), "/")
+	if path == "" {
+		return location, "", true
+	}
+	if path != "/v2" && !strings.HasPrefix(path, "/v2/") {
+		parsed.Path = "/v2" + strings.TrimRight(parsed.Path, "/")
+		if parsed.RawPath != "" {
+			parsed.RawPath = "/v2" + path
+		}
+		path = "/v2" + path
+	}
+
+	return parsed.String(), path, true
 }
 
 func defaultGetECRClient(ctx context.Context, region, keyID, secretKey string, client *http.Client) (ecrClient, error) {
@@ -164,13 +328,16 @@ func defaultGetECRClient(ctx context.Context, region, keyID, secretKey string, c
 }
 
 type dockerRegistryCredentials struct {
+	matchURL     string
 	registry     string
+	path         string
 	username     string
 	password     string
 	ecrUsername  string
 	ecrPassword  string
 	httpClient   *http.Client
 	getECRClient getECRClient
+	proxyOnly    bool
 }
 
 func (c *dockerRegistryCredentials) getECRCredentials(requestCtx context.Context, proxyCtx *goproxy.ProxyCtx) bool {

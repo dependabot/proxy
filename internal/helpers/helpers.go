@@ -63,26 +63,8 @@ func MethodPermitted(r *http.Request, methods ...string) bool {
 }
 
 func UrlMatchesRequest(req *http.Request, urlStr string, pathMatch bool) bool {
-	parsedURL, err := ParseURLLax(urlStr)
-	if err != nil {
-		return false
-	}
-
-	if !AreHostnamesEqual(parsedURL.Hostname(), req.URL.Hostname()) {
-		return false
-	}
-
-	urlPort := parsedURL.Port()
-	if urlPort == "" {
-		urlPort = "443"
-	}
-
-	reqPort := req.URL.Port()
-	if reqPort == "" {
-		reqPort = "443"
-	}
-
-	if urlPort != reqPort {
+	parsedURL, ok := requestURLMatch(req, urlStr)
+	if !ok {
 		return false
 	}
 
@@ -91,6 +73,115 @@ func UrlMatchesRequest(req *http.Request, urlStr string, pathMatch bool) bool {
 	}
 
 	return strings.HasPrefix(req.URL.Path, strings.TrimRight(parsedURL.Path, "/"))
+}
+
+// CredentialURLMatchesRequest safely matches a request against a credential URL.
+func CredentialURLMatchesRequest(req *http.Request, urlStr string, pathMatch bool) bool {
+	parsedURL, ok := requestURLMatch(req, urlStr)
+	if !ok {
+		return false
+	}
+
+	if !pathMatch {
+		return true
+	}
+
+	return PathMatches(req.URL.EscapedPath(), parsedURL.EscapedPath())
+}
+
+func requestURLMatch(req *http.Request, urlStr string) (*url.URL, bool) {
+	parsedURL, err := ParseURLLax(urlStr)
+	if err != nil || !AreHostnamesEqual(parsedURL.Hostname(), req.URL.Hostname()) {
+		return nil, false
+	}
+
+	urlPort := parsedURL.Port()
+	if urlPort == "" {
+		urlPort = "443"
+	}
+	reqPort := req.URL.Port()
+	if reqPort == "" {
+		reqPort = "443"
+	}
+	return parsedURL, urlPort == reqPort
+}
+
+// PathMatches reports whether an escaped request path is within an escaped configured path scope.
+func PathMatches(requestPath, configuredPath string) bool {
+	_, ok := MatchingPathPrefix(requestPath, configuredPath)
+	return ok
+}
+
+// MatchingPathPrefix returns the request's escaped path prefix corresponding to
+// the configured scope. Encoded separators remain within their original path
+// segment, and ambiguous dot segments do not match path-scoped credentials.
+func MatchingPathPrefix(requestPath, configuredPath string) (string, bool) {
+	_, configuredSegments, ok := canonicalPathSegments(configuredPath)
+	if !ok {
+		return "", false
+	}
+
+	requestRawSegments, requestSegments, ok := canonicalPathSegments(requestPath)
+	if !ok {
+		return "", false
+	}
+	if len(configuredSegments) == 0 {
+		return "", true
+	}
+	if len(requestSegments) < len(configuredSegments) {
+		return "", false
+	}
+
+	for i := range configuredSegments {
+		if requestSegments[i] != configuredSegments[i] {
+			return "", false
+		}
+	}
+
+	return strings.Join(requestRawSegments[:len(configuredSegments)], "/"), true
+}
+
+// CanonicalPath returns a stable escaped representation of a URL path.
+func CanonicalPath(escapedPath string) (string, bool) {
+	_, segments, ok := canonicalPathSegments(escapedPath)
+	if !ok {
+		return "", false
+	}
+
+	canonicalSegments := make([]string, len(segments))
+	for i, segment := range segments {
+		canonicalSegments[i] = url.PathEscape(segment)
+	}
+
+	return strings.Join(canonicalSegments, "/"), true
+}
+
+func canonicalPathSegments(escapedPath string) ([]string, []string, bool) {
+	escapedPath = strings.TrimRight(escapedPath, "/")
+	if escapedPath == "" {
+		return nil, nil, true
+	}
+
+	rawSegments := strings.Split(escapedPath, "/")
+	segments := make([]string, len(rawSegments))
+	for i, rawSegment := range rawSegments {
+		segment, err := url.PathUnescape(rawSegment)
+		if err != nil || containsDotPathComponent(segment) {
+			return nil, nil, false
+		}
+		segments[i] = segment
+	}
+
+	return rawSegments, segments, true
+}
+
+func containsDotPathComponent(segment string) bool {
+	for component := range strings.SplitSeq(segment, "/") {
+		if component == "." || component == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // https://tools.ietf.org/html/rfc3986#section-3

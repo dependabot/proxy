@@ -19,9 +19,10 @@ type RubyGemsServerHandler struct {
 }
 
 type rubyGemsServerCredentials struct {
-	host  string
-	url   string
-	token string
+	host      string
+	url       string
+	token     string
+	proxyOnly bool
 }
 
 // NewRubyGemsServerHandler returns a new RubyGemsServerHandler.
@@ -39,15 +40,22 @@ func NewRubyGemsServerHandler(creds config.Credentials, client *http.Client) *Ru
 		host := cred.Host()
 		url := cred.GetString("url")
 
-		// OIDC credentials are not used as static credentials.
-		if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"url"}, "rubygems server"); oidcCred != nil {
+		proxyOnly := cred.GetBool("proxy-only")
+		if !proxyOnly {
+			// OIDC credentials are not used as static credentials.
+			if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"url"}, "rubygems server"); oidcCred != nil {
+				continue
+			}
+		}
+		if proxyOnly && cred.GetString("token") == "" {
 			continue
 		}
 
 		serverCred := rubyGemsServerCredentials{
-			host:  host,
-			url:   url,
-			token: cred.GetString("token"),
+			host:      host,
+			url:       url,
+			token:     cred.GetString("token"),
+			proxyOnly: proxyOnly,
 		}
 		handler.credentials = append(handler.credentials, serverCred)
 	}
@@ -61,29 +69,49 @@ func (h *RubyGemsServerHandler) HandleRequest(req *http.Request, proxyCtx *gopro
 		return req, nil
 	}
 
-	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, proxyCtx) {
+	oidcCredential := h.oidcRegistry.CredentialForRequest(req)
+	if h.oidcRegistry.TryAuthCredential(req, proxyCtx, oidcCredential) {
 		return req, nil
 	}
+	if h.authenticateStaticCredential(req, proxyCtx, false) {
+		return req, nil
+	}
+	if hasUsableAuthorization(req) {
+		return req, nil
+	}
+	if oidcCredential != nil {
+		return req, nil
+	}
+	if !proxyOnlyCredentialRequestAllowed(req) {
+		return req, nil
+	}
+	h.authenticateStaticCredential(req, proxyCtx, true)
 
-	// Fall back to static credentials
+	return req, nil
+}
+
+func (h *RubyGemsServerHandler) authenticateStaticCredential(
+	req *http.Request,
+	proxyCtx *goproxy.ProxyCtx,
+	proxyOnly bool,
+) bool {
 	for _, cred := range h.credentials {
+		if cred.proxyOnly != proxyOnly {
+			continue
+		}
 		matchURL := cred.url
 		if matchURL == "" {
 			matchURL = cred.host
 		}
-		if !helpers.UrlMatchesRequest(req, matchURL, true) {
+		if !helpers.CredentialURLMatchesRequest(req, matchURL, true) {
 			continue
 		}
 
 		logging.RequestLogf(proxyCtx, "* authenticating rubygems server request (host: %s)", req.URL.Hostname())
-
-		// ignore `found` because it's okay for the password to be an empty string
 		username, password, _ := strings.Cut(cred.token, ":")
 		helpers.SetBasicAuthorization(req, username, password)
-
-		return req, nil
+		return true
 	}
 
-	return req, nil
+	return false
 }

@@ -212,3 +212,39 @@ func TestUrlMatchesRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestCredentialURLMatchesRequest(t *testing.T) {
+	tests := []struct {
+		name     string
+		request  string
+		expected bool
+	}{
+		{name: "child path", request: "https://example.com/dependabot/package", expected: true},
+		{name: "encoded package child", request: "https://example.com/dependabot/@scope%2Fpackage", expected: true},
+		{name: "sibling path", request: "https://example.com/dependabot-attacker/package"},
+		{name: "encoded separator", request: "https://example.com/dependabot%2Fattacker/package"},
+		{name: "dot traversal", request: "https://example.com/dependabot/../attacker"},
+		{name: "encoded dot traversal", request: "https://example.com/dependabot/%2e%2e%2fattacker"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := newRequest(t, test.request)
+			assert.Equal(
+				t,
+				test.expected,
+				CredentialURLMatchesRequest(req, "https://example.com/dependabot", true),
+			)
+		})
+	}
+}
+
+func TestMatchingPathPrefixPreservesWireEncoding(t *testing.T) {
+	prefix, ok := MatchingPathPrefix(
+		"/npm/@scope%2fpackage/-/package.tgz",
+		"/npm/@scope%2Fpackage/",
+	)
+
+	assert.True(t, ok)
+	assert.Equal(t, "/npm/@scope%2fpackage", prefix)
+}

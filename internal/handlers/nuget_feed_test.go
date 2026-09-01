@@ -535,6 +535,43 @@ func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
 	assert.Len(t, handler.credentials, 2)
 }
 
+func TestNugetFeedHandlerCanonicalURLKeys(t *testing.T) {
+	equivalentEncodedURL := "https://nuget.example.com/f%65ed"
+	equivalentPlainURL := "https://nuget.example.com/feed"
+	encodedSlashURL := "https://nuget.example.com/feed%2fencoded"
+	literalSlashURL := "https://nuget.example.com/feed/encoded"
+
+	assert.Equal(t, nugetCredentialURLKey(equivalentEncodedURL), nugetCredentialURLKey(equivalentPlainURL))
+	assert.Equal(t, nugetDiscoverySourceKey(equivalentEncodedURL), nugetDiscoverySourceKey(equivalentPlainURL))
+	assert.NotEqual(t, nugetCredentialURLKey(encodedSlashURL), nugetCredentialURLKey(literalSlashURL))
+	assert.NotEqual(t, nugetDiscoverySourceKey(encodedSlashURL), nugetDiscoverySourceKey(literalSlashURL))
+
+	equivalentHandler := newTestNugetFeedHandler(config.Credentials{
+		testNugetFeedCredential(equivalentEncodedURL, "first-token"),
+		testNugetFeedCredential(equivalentPlainURL, "second-token"),
+	})
+	assert.Len(t, equivalentHandler.credentials, 1, "equivalent encodings deduplicate first-wins")
+	assert.Len(t, equivalentHandler.discoverySources, 1, "equivalent discovery sources deduplicate")
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, equivalentPlainURL+"/package/index.json", nil)
+	req = handleRequestAndClose(equivalentHandler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "first-token", "first equivalent credential is retained")
+
+	distinctHandler := newTestNugetFeedHandler(config.Credentials{
+		testNugetFeedCredential(encodedSlashURL, "encoded-token"),
+		testNugetFeedCredential(literalSlashURL, "literal-token"),
+	})
+	assert.Len(t, distinctHandler.credentials, 2, "encoded slash remains distinct from a path separator")
+	assert.Len(t, distinctHandler.discoverySources, 2, "distinct paths retain separate discovery sources")
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, encodedSlashURL+"/package/index.json", nil)
+	req = handleRequestAndClose(distinctHandler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "encoded-token", "encoded slash credential")
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, literalSlashURL+"/package/index.json", nil)
+	req = handleRequestAndClose(distinctHandler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "literal-token", "literal path separator credential")
+}
+
 func TestNugetFeedHandlerIgnoresUnusableStaticCredentials(t *testing.T) {
 	usableCredential := testNugetFeedCredential("https://nuget.example.com/v3/index.json", "some-token")
 	unusableCredential := config.Credential{
@@ -602,6 +639,56 @@ func TestNugetFeedHandlerPrefersMostSpecificURLCredential(t *testing.T) {
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.example.com/feed/specific/package/index.json", nil)
 	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
 	assertHasTokenAuth(t, req, "Bearer", "specific-token", "most specific URL credential")
+}
+
+func TestNugetFeedHandlerProxyOnlyCredentials(t *testing.T) {
+	handler := newTestNugetFeedHandler(config.Credentials{
+		{
+			"type":       "nuget_feed",
+			"host":       "nuget.pkg.github.com",
+			"username":   "x-access-token",
+			"password":   "automatic-token",
+			"proxy-only": true,
+		},
+		{
+			"type":  "nuget_feed",
+			"url":   "https://nuget.pkg.github.com/dependabot/index.json",
+			"token": "explicit-token",
+		},
+	})
+
+	assert.Len(t, handler.discoverySources, 1, "proxy-only credentials do not create discovery sources")
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.pkg.github.com/other/package/index.json", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, "x-access-token", "automatic-token", "host-only automatic credential")
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.pkg.github.com/other/package/index.json", nil)
+	req.Header.Set("Authorization", authorizationPlaceholder)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, "x-access-token", "automatic-token", "automatic credential replaces placeholder auth")
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.pkg.github.com/other/package/index.json", nil)
+	req.Header.Set("Authorization", "Bearer caller-token")
+	req = handleRequestAndClose(handler, req, nil)
+	assert.Equal(t, "Bearer caller-token", req.Header.Get("Authorization"), "automatic credential preserves request auth")
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.pkg.github.com/dependabot/index.json", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasTokenAuth(t, req, "Bearer", "explicit-token", "path-specific explicit credential")
+
+	for _, requestURL := range []string{
+		"http://nuget.pkg.github.com/other/package/index.json",
+		"https://nuget.pkg.github.com:8443/other/package/index.json",
+	} {
+		req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, requestURL, nil)
+		req = handleRequestAndClose(handler, req, nil)
+		assertUnauthenticated(t, req, "automatic credential destination safety")
+	}
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://nuget.pkg.github.example/other/package/index.json", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "automatic credential host mismatch")
 }
 
 func TestNugetFeedHandlerDiscoversThroughCrossOriginRedirectWithoutLeakingCredentials(t *testing.T) {

@@ -4,6 +4,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/dependabot/proxy/internal/config"
 )
 
@@ -85,4 +87,57 @@ func TestMavenRepositoryHandler(t *testing.T) {
 	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://PKGS.dev.azure.com/somepkg", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertHasBasicAuth(t, req, deltaForceUser, deltaForcePassword, "azure devops case insensitive registry request")
+}
+
+func TestMavenRepositoryHandlerProxyOnlyCredentials(t *testing.T) {
+	handler := NewMavenRepositoryHandler(config.Credentials{
+		{
+			"type":       "maven_repository",
+			"host":       "maven.pkg.github.com",
+			"username":   "x-access-token",
+			"password":   "automatic-token",
+			"proxy-only": true,
+		},
+		{
+			"type":     "maven_repository",
+			"url":      "https://maven.pkg.github.com/dependabot/core",
+			"username": "explicit-user",
+			"password": "explicit-token",
+		},
+	}, testOIDCClient)
+
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://maven.pkg.github.com/other/package.jar", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, "x-access-token", "automatic-token", "host-only automatic credential")
+
+	for _, requestURL := range []string{
+		"http://maven.pkg.github.com/other/package.jar",
+		"https://maven.pkg.github.com:8443/other/package.jar",
+	} {
+		req = httptest.NewRequestWithContext(t.Context(), "GET", requestURL, nil)
+		req = handleRequestAndClose(handler, req, nil)
+		assertUnauthenticated(t, req, "automatic credential destination safety")
+	}
+
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://maven.pkg.github.com/other/package.jar", nil)
+	req.Header.Set("Authorization", authorizationPlaceholder)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, "x-access-token", "automatic-token", "automatic credential replaces placeholder auth")
+
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://maven.pkg.github.com/other/package.jar", nil)
+	req.Header.Set("Authorization", "Bearer caller-token")
+	req = handleRequestAndClose(handler, req, nil)
+	assert.Equal(t, "Bearer caller-token", req.Header.Get("Authorization"), "automatic credential preserves request auth")
+
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://maven.pkg.github.com/dependabot/core/package.jar", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, "explicit-user", "explicit-token", "path-specific explicit credential")
+
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://maven.pkg.github.com/dependabot-attacker/package.jar", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, "x-access-token", "automatic-token", "sibling path uses automatic credential")
+
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://maven.pkg.github.example/other/package.jar", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "automatic credential host mismatch")
 }

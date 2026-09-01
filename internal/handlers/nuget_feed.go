@@ -47,11 +47,12 @@ type NugetFeedHandler struct {
 }
 
 type nugetFeedCredentials struct {
-	url      string
-	host     string
-	token    string
-	username string
-	password string
+	url       string
+	host      string
+	token     string
+	username  string
+	password  string
+	proxyOnly bool
 }
 
 type nugetDiscoveryAuth struct {
@@ -82,31 +83,41 @@ func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFe
 		username := cred.GetString("username")
 		password := cred.GetString("password")
 
-		oidcCredential, _, ok := handler.oidcRegistry.Register(cred, []string{"url"}, "nuget feed")
-		if ok {
-			if url != "" {
-				handler.addDiscoverySource(nugetDiscoveryAuth{
-					serviceIndexURL:      url,
-					oidc:                 oidcCredential,
-					registerRedirectAuth: true,
-				})
+		proxyOnly := cred.GetBool("proxy-only")
+		if proxyOnly {
+			if host == "" {
+				continue
 			}
-			continue
+			url = ""
 		}
-		// OIDC credentials are not used as static credentials.
-		if oidcCredential != nil {
-			continue
+		if !proxyOnly {
+			oidcCredential, _, ok := handler.oidcRegistry.Register(cred, []string{"url"}, "nuget feed")
+			if ok {
+				if url != "" {
+					handler.addDiscoverySource(nugetDiscoveryAuth{
+						serviceIndexURL:      url,
+						oidc:                 oidcCredential,
+						registerRedirectAuth: true,
+					})
+				}
+				continue
+			}
+			// OIDC credentials are not used as static credentials.
+			if oidcCredential != nil {
+				continue
+			}
 		}
 
 		feedCred := nugetFeedCredentials{
-			url:      url,
-			host:     host,
-			token:    token,
-			username: username,
-			password: password,
+			url:       url,
+			host:      host,
+			token:     token,
+			username:  username,
+			password:  password,
+			proxyOnly: proxyOnly,
 		}
 		handler.addStaticCredential(feedCred)
-		if url != "" && (token != "" || password != "") {
+		if !proxyOnly && url != "" && (token != "" || password != "") {
 			handler.addDiscoverySource(nugetDiscoveryAuth{
 				serviceIndexURL:      url,
 				static:               feedCred,
@@ -222,43 +233,29 @@ func (h *NugetFeedHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 		return req, nil
 	}
 
-	// Try OIDC credentials first (HTTPS only to avoid leaking tokens over plaintext)
+	var oidcCredential *oidc.OIDCCredential
 	if req.URL.Scheme == "https" {
-		oidcCredential := h.oidcRegistry.CredentialForRequest(req)
+		oidcCredential = h.oidcRegistry.CredentialForRequest(req)
 		if h.oidcRegistry.TryAuthCredential(req, proxyCtx, oidcCredential) {
 			return req, nil
 		}
 	}
 
-	// Prefer the most specific URL credential, with host-only credentials as
-	// fallback. This avoids a broad credential shadowing a narrower feed.
-	h.credentialsMutex.RLock()
-	defer h.credentialsMutex.RUnlock()
-	var urlCredential *nugetFeedCredentials
-	var hostCredential *nugetFeedCredentials
-	bestPathLength := -1
-	for i := range h.credentials {
-		cred := &h.credentials[i]
-		if cred.token == "" && cred.password == "" {
-			continue
-		}
-		if helpers.UrlMatchesRequest(req, cred.url, true) {
-			parsedURL, err := helpers.ParseURLLax(cred.url)
-			if err == nil && len(parsedURL.Path) > bestPathLength {
-				urlCredential = cred
-				bestPathLength = len(parsedURL.Path)
-			}
-		}
-		if hostCredential == nil && helpers.CheckHost(req, cred.host) {
-			hostCredential = cred
-		}
-	}
-	if urlCredential != nil {
-		authenticateNugetRequest(req, *urlCredential, proxyCtx)
+	if credential := h.staticCredentialForRequest(req, false); credential != nil {
+		authenticateNugetRequest(req, *credential, proxyCtx)
 		return req, nil
 	}
-	if hostCredential != nil {
-		authenticateNugetRequest(req, *hostCredential, proxyCtx)
+	if hasUsableAuthorization(req) {
+		return req, nil
+	}
+	if oidcCredential != nil {
+		return req, nil
+	}
+	if !proxyOnlyCredentialRequestAllowed(req) {
+		return req, nil
+	}
+	if credential := h.staticCredentialForRequest(req, true); credential != nil {
+		authenticateNugetRequest(req, *credential, proxyCtx)
 	}
 
 	return req, nil
@@ -371,6 +368,48 @@ func (h *NugetFeedHandler) addStaticCredential(credential nugetFeedCredentials) 
 	return true
 }
 
+func (h *NugetFeedHandler) staticCredentialForRequest(
+	req *http.Request,
+	proxyOnly bool,
+) *nugetFeedCredentials {
+	h.credentialsMutex.RLock()
+	defer h.credentialsMutex.RUnlock()
+
+	var urlCredential *nugetFeedCredentials
+	var hostCredential *nugetFeedCredentials
+	bestSpecificity := -1
+	for i := range h.credentials {
+		cred := &h.credentials[i]
+		if cred.proxyOnly != proxyOnly || (cred.token == "" && cred.password == "") {
+			continue
+		}
+		if !proxyOnly && helpers.CredentialURLMatchesRequest(req, cred.url, true) {
+			parsedURL, err := helpers.ParseURLLax(cred.url)
+			if err == nil {
+				path, ok := helpers.CanonicalPath(parsedURL.EscapedPath())
+				specificity := strings.Count(path, "/")
+				if ok && specificity > bestSpecificity {
+					urlCredential = cred
+					bestSpecificity = specificity
+				}
+			}
+		}
+		if hostCredential == nil && helpers.CheckHost(req, cred.host) {
+			hostCredential = cred
+		}
+	}
+
+	if urlCredential != nil {
+		credential := *urlCredential
+		return &credential
+	}
+	if hostCredential != nil {
+		credential := *hostCredential
+		return &credential
+	}
+	return nil
+}
+
 func (h *NugetFeedHandler) addDiscoverySource(source nugetDiscoveryAuth) bool {
 	h.discoveryMutex.Lock()
 	defer h.discoveryMutex.Unlock()
@@ -408,14 +447,15 @@ func isNugetServiceIndexRequest(req *http.Request, sourceURL string) bool {
 		return false
 	}
 	parsedURL, err := helpers.ParseURLLax(sourceURL)
-	if err != nil || !helpers.UrlMatchesRequest(req, sourceURL, true) {
+	if err != nil || !helpers.CredentialURLMatchesRequest(req, sourceURL, true) {
 		return false
 	}
 	if parsedURL.Scheme != "" && !strings.EqualFold(parsedURL.Scheme, req.URL.Scheme) {
 		return false
 	}
-	return strings.TrimRight(parsedURL.Path, "/") == strings.TrimRight(req.URL.Path, "/") &&
-		parsedURL.RawQuery == req.URL.RawQuery
+	sourcePath, sourceOK := helpers.CanonicalPath(parsedURL.EscapedPath())
+	requestPath, requestOK := helpers.CanonicalPath(req.URL.EscapedPath())
+	return sourceOK && requestOK && sourcePath == requestPath && parsedURL.RawQuery == req.URL.RawQuery
 }
 
 func nugetCredentialURLKey(rawURL string) string {
@@ -423,11 +463,15 @@ func nugetCredentialURLKey(rawURL string) string {
 	if err != nil {
 		return rawURL
 	}
+	path, ok := helpers.CanonicalPath(parsedURL.EscapedPath())
+	if !ok {
+		return rawURL
+	}
 	port := parsedURL.Port()
 	if port == "" {
 		port = "443"
 	}
-	return strings.ToLower(parsedURL.Hostname()) + ":" + port + strings.TrimRight(parsedURL.Path, "/") + "?" + parsedURL.RawQuery
+	return strings.ToLower(parsedURL.Hostname()) + ":" + port + path + "?" + parsedURL.RawQuery
 }
 
 // Discovery matching distinguishes explicit schemes, while static credential

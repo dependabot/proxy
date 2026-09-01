@@ -23,9 +23,10 @@ type OIDCRegistry struct {
 }
 
 type oidcEntry struct {
-	path       string // URL path prefix, e.g. "/org/_packaging/feed-A/npm/registry"
-	port       string // port, defaults to "443"
-	credential *OIDCCredential
+	path        string // Canonical URL path prefix, e.g. "/org/_packaging/feed-A/npm/registry"
+	port        string // port, defaults to "443"
+	specificity int
+	credential  *OIDCCredential
 }
 
 // NewOIDCRegistry creates an empty registry. client is used for every outbound
@@ -124,20 +125,20 @@ func (r *OIDCRegistry) CredentialForRequest(req *http.Request) *OIDCCredential {
 	}
 
 	// Find the most specific matching entry: host is already matched,
-	// select the longest path prefix among entries with the same port.
+	// select the entry with the most canonical path segments.
 	var matched *OIDCCredential
-	bestPathLen := -1
+	bestSpecificity := -1
 	for i := range entries {
 		e := &entries[i]
 		if e.port != reqPort {
 			continue
 		}
-		if !strings.HasPrefix(req.URL.Path, e.path) {
+		if !helpers.PathMatches(req.URL.EscapedPath(), e.path) {
 			continue
 		}
-		if len(e.path) > bestPathLen {
+		if e.specificity > bestSpecificity {
 			matched = e.credential
-			bestPathLen = len(e.path)
+			bestSpecificity = e.specificity
 		}
 	}
 
@@ -190,7 +191,7 @@ func (r *OIDCRegistry) addEntry(urlOrHost string, cred *OIDCCredential, registry
 		logging.RequestLogf(nil, "failed to parse OIDC credential URL: %s", urlOrHost)
 		return false
 	}
-
+	specificity := strings.Count(path, "/")
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
@@ -204,9 +205,10 @@ func (r *OIDCRegistry) addEntry(urlOrHost string, cred *OIDCCredential, registry
 	}
 
 	r.byHost[host] = append(r.byHost[host], oidcEntry{
-		path:       path,
-		port:       port,
-		credential: cred,
+		path:        path,
+		port:        port,
+		specificity: specificity,
+		credential:  cred,
 	})
 
 	logging.RequestLogf(nil, "registered %s OIDC credentials for %s: %s", cred.Provider(), registryType, urlOrHost)
@@ -222,7 +224,10 @@ func parseRegistryURL(urlOrHost string) (host, path, port string) {
 	}
 
 	host = strings.ToLower(parsed.Hostname())
-	path = strings.TrimRight(parsed.Path, "/")
+	path, ok := helpers.CanonicalPath(parsed.EscapedPath())
+	if !ok {
+		return "", "", ""
+	}
 	port = parsed.Port()
 	if port == "" {
 		port = "443"
