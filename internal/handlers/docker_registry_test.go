@@ -210,6 +210,14 @@ func TestDockerRegistryHandlerProxyOnlyCredentials(t *testing.T) {
 	trans := rt.transport.(*registry.BasicTransport)
 	assert.Equal(t, "x-access-token", trans.Username)
 	assert.Equal(t, "automatic-token", trans.Password)
+	assert.Equal(t, "https://ghcr.io/v2", trans.URL)
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"https://ghcr.io/token?service=ghcr.io&scope=repository:private/package:pull", nil)
+	proxyCtx = &goproxy.ProxyCtx{}
+	req = handleRequestAndClose(handler, req, proxyCtx)
+	assert.Nil(t, proxyCtx.RoundTripper, "automatic credential is not applied directly to the token endpoint")
+	assertUnauthenticated(t, req, "automatic credential is not applied directly to the token endpoint")
 
 	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://ghcr.io/v2/other/image/manifests/latest", nil)
 	req.SetBasicAuth(authorizationPlaceholder, "placeholder-password")
@@ -263,6 +271,36 @@ func TestDockerRegistryHandlerProxyOnlyCredentials(t *testing.T) {
 	proxyCtx = &goproxy.ProxyCtx{}
 	handleRequestAndClose(nonDefaultPortHandler, req, proxyCtx)
 	assert.Nil(t, proxyCtx.RoundTripper, "automatic credential does not authenticate a non-default port")
+}
+
+func TestDockerRegistryHandlerProxyOnlyCredentialCompletesTokenChallenge(t *testing.T) {
+	transport := &dockerChallengeTransport{t: t}
+	client := &http.Client{Transport: transport, Timeout: testOIDCClient.Timeout}
+	handler := NewDockerRegistryHandler(config.Credentials{
+		{
+			"type":       "docker_registry",
+			"registry":   "ghcr.io",
+			"username":   "x-access-token",
+			"password":   "automatic-token",
+			"proxy-only": true,
+		},
+	}, client, nil)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"https://ghcr.io/v2/private/package/manifests/latest", nil)
+	proxyCtx := &goproxy.ProxyCtx{}
+	handleRequestAndClose(handler, req, proxyCtx)
+
+	require.NotNil(t, proxyCtx.RoundTripper)
+	resp, err := proxyCtx.RoundTripper.RoundTrip(req, proxyCtx)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, []string{
+		"/v2/private/package/manifests/latest",
+		"/token",
+		"/v2/private/package/manifests/latest",
+	}, transport.paths)
 }
 
 func TestDockerRegistryHandlerOIDCRepositoryScope(t *testing.T) {
@@ -441,6 +479,58 @@ func (t *recordingECRTransport) RoundTrip(req *http.Request) (*http.Response, er
 		Header:     make(http.Header),
 		Request:    req,
 	}, nil
+}
+
+type dockerChallengeTransport struct {
+	t     *testing.T
+	paths []string
+}
+
+func (t *dockerChallengeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.paths = append(t.paths, req.URL.Path)
+	const bearerScheme = "Bearer"
+
+	switch req.URL.Path {
+	case "/token":
+		username, password, ok := req.BasicAuth()
+		require.True(t.t, ok)
+		assert.Equal(t.t, "x-access-token", username)
+		assert.Equal(t.t, "automatic-token", password)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"token":"scoped-token"}`)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	case "/v2/private/package/manifests/latest":
+		if req.Header.Get("Authorization") == bearerScheme+" scoped-token" {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("{}")),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		}
+
+		username, password, ok := req.BasicAuth()
+		require.True(t.t, ok)
+		assert.Equal(t.t, "x-access-token", username)
+		assert.Equal(t.t, "automatic-token", password)
+		header := make(http.Header)
+		header.Set(
+			"WWW-Authenticate",
+			bearerScheme+` realm="https://ghcr.io/token",service="ghcr.io",scope="repository:private/package:pull"`,
+		)
+		return &http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Body:       http.NoBody,
+			Header:     header,
+			Request:    req,
+		}, nil
+	default:
+		t.t.Fatalf("unexpected request path: %s", req.URL.Path)
+		return nil, nil
+	}
 }
 
 type mockECRClient struct {

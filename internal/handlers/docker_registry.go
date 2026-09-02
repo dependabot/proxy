@@ -60,12 +60,12 @@ func NewDockerRegistryHandler(creds config.Credentials, client *http.Client, get
 		if !ok {
 			continue
 		}
-		matchURL, path, ok := dockerRegistryCredentialLocation(matchLocation)
+		proxyOnly := cred.GetBool("proxy-only")
+		matchURL, path, ok := dockerRegistryCredentialLocation(matchLocation, proxyOnly)
 		if !ok {
 			continue
 		}
 
-		proxyOnly := cred.GetBool("proxy-only")
 		if !proxyOnly {
 			// OIDC credentials are not used as static credentials.
 			oidcMatchingCred, urlFields := dockerOIDCMatchingCredential(cred, matchField, matchURL)
@@ -296,7 +296,7 @@ func dockerOriginsEqual(a, b *url.URL) bool {
 		helpers.AreHostnamesEqual(a.Hostname(), b.Hostname())
 }
 
-func dockerRegistryCredentialLocation(location string) (matchURL, path string, ok bool) {
+func dockerRegistryCredentialLocation(location string, proxyOnly bool) (matchURL, path string, ok bool) {
 	parsed, err := helpers.ParseURLLax(location)
 	if err != nil || parsed.Host == "" {
 		return "", "", false
@@ -304,7 +304,12 @@ func dockerRegistryCredentialLocation(location string) (matchURL, path string, o
 
 	path = strings.TrimRight(parsed.EscapedPath(), "/")
 	if path == "" {
-		return location, "", true
+		if !proxyOnly {
+			return location, "", true
+		}
+		parsed.Path = "/v2"
+		parsed.RawPath = ""
+		return parsed.String(), "/v2", true
 	}
 	canonicalPath, ok := helpers.CanonicalPath(path)
 	if !ok {
