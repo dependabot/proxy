@@ -306,7 +306,11 @@ func dockerRegistryCredentialLocation(location string) (matchURL, path string, o
 	if path == "" {
 		return location, "", true
 	}
-	if path != "/v2" && !strings.HasPrefix(path, "/v2/") {
+	canonicalPath, ok := helpers.CanonicalPath(path)
+	if !ok {
+		return "", "", false
+	}
+	if canonicalPath != "/v2" && !strings.HasPrefix(canonicalPath, "/v2/") {
 		parsed.Path = "/v2" + strings.TrimRight(parsed.Path, "/")
 		if parsed.RawPath != "" {
 			parsed.RawPath = "/v2" + path

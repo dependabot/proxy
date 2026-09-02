@@ -344,6 +344,26 @@ func TestDockerRegistryHandlerURLCredentialUsesMatchedRequestOrigin(t *testing.T
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	assertHasBasicAuth(t, req, "user", "password", "transport authenticates the matched request form")
+
+	encodedV2Handler := NewDockerRegistryHandler(config.Credentials{
+		{
+			"type":     "docker_registry",
+			"url":      "https://example.com/%76%32/dependabot/core",
+			"username": "encoded-user",
+			"password": "encoded-password",
+		},
+	}, client, nil)
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"https://example.com/v2/dependabot/core/manifests/latest", nil)
+	proxyCtx = &goproxy.ProxyCtx{}
+	handleRequestAndClose(encodedV2Handler, req, proxyCtx)
+
+	rt, ok = proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
+	require.True(t, ok, "canonically encoded /v2 prefix is not rewritten")
+	transport = rt.transport.(*registry.BasicTransport)
+	assert.Equal(t, "encoded-user", transport.Username)
+	assert.Equal(t, "encoded-password", transport.Password)
+	assert.Equal(t, "https://example.com/v2/dependabot/core", transport.URL)
 }
 
 func TestDockerRegistryHandlerRejectsConflictingCredentialLocations(t *testing.T) {
