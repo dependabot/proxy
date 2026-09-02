@@ -122,6 +122,18 @@ func AreHostnamesEqual(a, b string) bool {
 	return a == b
 }
 
+// HostMatchesDomain reports whether host equals domain or is a subdomain of it.
+// The leading dot in the suffix check enforces a DNS-label boundary, so
+// "evilnpmjs.org" does not match "npmjs.org".
+func HostMatchesDomain(host, domain string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	domain = strings.ToLower(strings.TrimSuffix(domain, "."))
+	if host == "" || domain == "" {
+		return false
+	}
+	return host == domain || strings.HasSuffix(host, "."+domain)
+}
+
 // DrainAndClose completes reading the response body and closes it while ignoring any errors.
 // draining the response allows the connection to be reused while closing the response frees
 // the connection

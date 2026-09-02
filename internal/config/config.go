@@ -20,10 +20,19 @@ type ProxyEnvSettings struct {
 
 // Config is the structure of the proxy's config file
 type Config struct {
-	Credentials Credentials          `json:"all_credentials"`
-	CA          CaDetails            `json:"ca"`
-	ProxyAuth   BasicAuthCredentials `json:"proxy_auth"`
-	Experiments Experiments          `json:"experiments"`
+	Credentials     Credentials          `json:"all_credentials"`
+	CA              CaDetails            `json:"ca"`
+	ProxyAuth       BasicAuthCredentials `json:"proxy_auth"`
+	Experiments     Experiments          `json:"experiments"`
+	EgressAllowlist EgressAllowlist      `json:"egress_allowlist"`
+}
+
+// EgressAllowlist controls domain-based egress filtering. Both flags default to
+// false, which allows all traffic (fail-open). Observe logs non-allowlisted
+// requests; Enforce blocks them with a 403.
+type EgressAllowlist struct {
+	Observe bool `json:"observe"`
+	Enforce bool `json:"enforce"`
 }
 
 // Experiments contains job experiments passed to the proxy.
