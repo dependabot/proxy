@@ -59,6 +59,56 @@ func TestProxyHTTPRequest(t *testing.T) {
 	assert.Equal(t, 200, rsp.StatusCode)
 }
 
+func TestProxyEgressAllowlistEnforceBlocks(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	cfg := &config.Config{
+		CA:              testProxyConfig.CA,
+		EgressAllowlist: config.EgressAllowlist{Enforce: true},
+	}
+	env := config.ProxyEnvSettings{PackageManager: "npm_and_yarn"}
+	client, proxy := testProxyServerWithEnv(t, env, cfg, nil, upstream.Certificate())
+	closeOnCleanup(t, proxy)
+
+	// The upstream host (127.0.0.1) is not on the allowlist, so enforce drops it.
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+	require.NoError(t, err)
+	rsp, err := client.Do(req)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, rsp.Body.Close())
+	}()
+	assert.Equal(t, http.StatusForbidden, rsp.StatusCode)
+}
+
+func TestProxyEgressAllowlistObserveAllows(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	cfg := &config.Config{
+		CA:              testProxyConfig.CA,
+		EgressAllowlist: config.EgressAllowlist{Observe: true},
+	}
+	env := config.ProxyEnvSettings{PackageManager: "npm_and_yarn"}
+	client, proxy := testProxyServerWithEnv(t, env, cfg, nil, upstream.Certificate())
+	closeOnCleanup(t, proxy)
+
+	// Observe mode logs the non-allowlisted host but still lets it through.
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+	require.NoError(t, err)
+	rsp, err := client.Do(req)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, rsp.Body.Close())
+	}()
+	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+}
+
 func TestProxyHTTPSMITMFixedLengthResponseFraming(t *testing.T) {
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", "5")
@@ -466,7 +516,10 @@ func testProxyServer(t *testing.T, cfg *config.Config, blockedIPs []net.IP, upst
 		JobID:          "",
 		JobToken:       "",
 	}
+	return testProxyServerWithEnv(t, envSettings, cfg, blockedIPs, upstreamRoots...)
+}
 
+func testProxyServerWithEnv(t *testing.T, envSettings config.ProxyEnvSettings, cfg *config.Config, blockedIPs []net.IP, upstreamRoots ...*x509.Certificate) (*http.Client, *http.Server) {
 	// Spin up a test proxy server
 	srv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
