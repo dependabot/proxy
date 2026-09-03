@@ -287,6 +287,80 @@ func TestOIDCRegistry_CredentialForRequestConcurrentRegistration(t *testing.T) {
 	assert.Same(t, credential, r.CredentialForRequest(req))
 }
 
+func TestOIDCRegistry_CredentialForRequestRequiresPathBoundary(t *testing.T) {
+	r := NewOIDCRegistry(testHTTPClient)
+	credential := &OIDCCredential{
+		parameters: &AzureOIDCParameters{
+			TenantID: "tenant-1",
+			ClientID: "client-1",
+		},
+	}
+	r.RegisterURL("https://registry.example.com/dependabot", credential, "test registry")
+
+	tests := []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{name: "exact path", url: "https://registry.example.com/dependabot", want: true},
+		{name: "ordinary child", url: "https://registry.example.com/dependabot/package", want: true},
+		{name: "encoded package child", url: "https://registry.example.com/dependabot/@scope%2Fpackage", want: true},
+		{name: "sibling path", url: "https://registry.example.com/dependabot-attacker/package"},
+		{name: "encoded separator", url: "https://registry.example.com/dependabot%2Fattacker/package"},
+		{name: "encoded separator introducing parent component", url: "https://registry.example.com/dependabot/%2e%2e%2fattacker"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), "GET", test.url, nil)
+			if test.want {
+				assert.Same(t, credential, r.CredentialForRequest(req))
+			} else {
+				assert.Nil(t, r.CredentialForRequest(req))
+			}
+		})
+	}
+
+	encodedCredential := &OIDCCredential{
+		parameters: &AzureOIDCParameters{
+			TenantID: "tenant-encoded",
+			ClientID: "client-encoded",
+		},
+	}
+	r.RegisterURL("https://registry.example.com/npm/@scope%2Fpackage", encodedCredential, "test registry")
+	req := httptest.NewRequestWithContext(t.Context(), "GET",
+		"https://registry.example.com/npm/@scope%2fpackage/-/package.tgz", nil,
+	)
+	assert.Same(t, encodedCredential, r.CredentialForRequest(req))
+}
+
+func TestOIDCRegistry_CredentialForRequestUsesCanonicalPathSpecificity(t *testing.T) {
+	r := NewOIDCRegistry(testHTTPClient)
+	broadCredential := &OIDCCredential{
+		parameters: &AzureOIDCParameters{
+			TenantID: "tenant-broad",
+			ClientID: "client-broad",
+		},
+	}
+	narrowCredential := &OIDCCredential{
+		parameters: &AzureOIDCParameters{
+			TenantID: "tenant-narrow",
+			ClientID: "client-narrow",
+		},
+	}
+	r.RegisterURL("https://registry.example.com/%66%6f%6f", broadCredential, "test registry")
+	r.RegisterURL("https://registry.example.com/foo/b", narrowCredential, "test registry")
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		"GET",
+		"https://registry.example.com/foo/b/package",
+		nil,
+	)
+
+	assert.Same(t, narrowCredential, r.CredentialForRequest(req))
+}
+
 func TestOIDCRegistry_RegisterURL(t *testing.T) {
 	setupOIDCEnv(t)
 	httpmock.Activate()
@@ -396,10 +470,10 @@ func TestOIDCRegistry_TryAuth_CaseInsensitiveHost(t *testing.T) {
 
 	r := NewOIDCRegistry(testHTTPClient)
 
-	cred := azureCredWithURL("tenant-1", "client-1", "https://Registry.Example.COM/packages")
+	cred := azureCredWithURL("tenant-1", "client-1", "https://Registry.Example.COM:443/packages")
 	r.Register(cred, []string{"url"}, "test registry")
 
-	// Request with different casing should still match
+	// Request with different casing and an omitted default port should still match
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://REGISTRY.EXAMPLE.COM/packages/something", nil)
 	ok := r.TryAuth(req, nil)
 
@@ -488,10 +562,10 @@ func TestOIDCRegistry_TryAuth_GCP_DockerUsesBasicAuth(t *testing.T) {
 
 	r := NewOIDCRegistry(testHTTPClient)
 
-	cred := gcpCred("projects/123/locations/global/workloadIdentityPools/pool/providers/prov", "https://us-central1-docker.pkg.dev/my-project/my-repo")
+	cred := gcpCred("projects/123/locations/global/workloadIdentityPools/pool/providers/prov", "https://us-central1-docker.pkg.dev/v2/my-project/my-repo")
 	r.Register(cred, []string{"url"}, "docker registry")
 
-	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://us-central1-docker.pkg.dev/my-project/my-repo/v2/some-image/manifests/latest", nil)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://us-central1-docker.pkg.dev/v2/my-project/my-repo/manifests/latest", nil)
 	ok := r.TryAuth(req, nil)
 
 	assert.True(t, ok, "GCP OIDC should authenticate docker")

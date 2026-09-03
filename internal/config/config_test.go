@@ -83,6 +83,22 @@ func TestExperimentsEnabled(t *testing.T) {
 	assert.False(t, Experiments(nil).Enabled("enabled"))
 }
 
+func TestCredentialGetBool(t *testing.T) {
+	credential := Credential{
+		"enabled":     true,
+		"disabled":    false,
+		"string_true": "true",
+		"number":      float64(1),
+	}
+
+	assert.True(t, credential.GetBool("enabled"))
+	assert.False(t, credential.GetBool("disabled"))
+	assert.False(t, credential.GetBool("string_true"))
+	assert.False(t, credential.GetBool("number"))
+	assert.False(t, credential.GetBool("missing"))
+	assert.False(t, Credential(nil).GetBool("enabled"))
+}
+
 func TestHost(t *testing.T) {
 	cases := map[string]struct {
 		input    Credential

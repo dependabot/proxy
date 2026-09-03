@@ -20,11 +20,12 @@ type NPMRegistryHandler struct {
 }
 
 type npmRegistryCredentials struct {
-	registry string
-	token    string
-	host     string
-	username string
-	password string
+	registry  string
+	token     string
+	host      string
+	username  string
+	password  string
+	proxyOnly bool
 }
 
 // NewNPMRegistryHandler returns a new NPMRegistryHandler,
@@ -40,18 +41,28 @@ func NewNPMRegistryHandler(creds config.Credentials, client *http.Client) *NPMRe
 		}
 
 		registry := cred.GetString("registry")
+		if registry == "" {
+			registry = cred.GetString("url")
+		}
 
-		// OIDC credentials are not used as static credentials.
-		if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"registry", "url"}, "npm registry"); oidcCred != nil {
+		proxyOnly := cred.GetBool("proxy-only")
+		if !proxyOnly {
+			// OIDC credentials are not used as static credentials.
+			if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"registry", "url"}, "npm registry"); oidcCred != nil {
+				continue
+			}
+		}
+		if proxyOnly && cred.GetString("token") == "" && cred.GetString("password") == "" {
 			continue
 		}
 
 		npmCred := npmRegistryCredentials{
-			registry: registry,
-			token:    cred.GetString("token"),
-			host:     cred.Host(),
-			username: cred.GetString("username"),
-			password: cred.GetString("password"),
+			registry:  registry,
+			token:     cred.GetString("token"),
+			host:      cred.Host(),
+			username:  cred.GetString("username"),
+			password:  cred.GetString("password"),
+			proxyOnly: proxyOnly,
 		}
 		handler.credentials = append(handler.credentials, npmCred)
 	}
@@ -65,47 +76,37 @@ func (h *NPMRegistryHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.
 		return req, nil
 	}
 
-	reqHost := helpers.GetHost(req)
-	reqPort := req.URL.Port()
-	if reqPort == "" {
-		reqPort = "443"
-	}
-
-	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, proxyCtx) {
+	oidcCredential := h.oidcRegistry.CredentialForRequest(req)
+	if h.oidcRegistry.TryAuthCredential(req, proxyCtx, oidcCredential) {
 		return req, nil
 	}
+	if h.authenticateStaticCredential(req, proxyCtx, false) {
+		return req, nil
+	}
+	if hasUsableAuthorization(req) {
+		return req, nil
+	}
+	if oidcCredential != nil {
+		return req, nil
+	}
+	if !proxyOnlyCredentialRequestAllowed(req) {
+		return req, nil
+	}
+	h.authenticateStaticCredential(req, proxyCtx, true)
 
-	// Fall back to static credentials
+	return req, nil
+}
+
+func (h *NPMRegistryHandler) authenticateStaticCredential(
+	req *http.Request,
+	proxyCtx *goproxy.ProxyCtx,
+	proxyOnly bool,
+) bool {
 	for _, cred := range h.credentials {
-		regURL, err := helpers.ParseURLLax(cred.registry)
-		if err != nil {
+		if cred.proxyOnly != proxyOnly {
 			continue
 		}
-
-		host := cred.host
-		if host == "" {
-			host = regURL.Hostname()
-		}
-
-		if !npmRegistryHostMatches(host, reqHost) {
-			continue
-		}
-
-		regPort := regURL.Port()
-		if regPort == "" {
-			regPort = "443"
-		}
-
-		if regPort != reqPort {
-			continue
-		}
-
-		// Path-segment-aware matching prevents credentials configured for one
-		// path-scoped registry from being applied to sibling paths on the same
-		// host (e.g., /team-a-npm should not match /team-b-npm).
-		regPath := strings.TrimSuffix(regURL.Path, "/")
-		if regPath != "" && !strings.HasPrefix(req.URL.Path, regPath+"/") && req.URL.Path != regPath {
+		if !npmCredentialMatchesRequest(req, cred) {
 			continue
 		}
 
@@ -115,16 +116,42 @@ func (h *NPMRegistryHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.
 
 		username, password, found := strings.Cut(cred.token, ":")
 		if found {
-			logging.RequestLogf(proxyCtx, "* authenticating npm registry request (host: %s, basic auth)", reqHost)
+			logging.RequestLogf(proxyCtx, "* authenticating npm registry request (host: %s, basic auth)", helpers.GetHost(req))
 			helpers.SetBasicAuthorization(req, username, password)
 		} else {
-			logging.RequestLogf(proxyCtx, "* authenticating npm registry request (host: %s, token auth)", reqHost)
+			logging.RequestLogf(proxyCtx, "* authenticating npm registry request (host: %s, token auth)", helpers.GetHost(req))
 			helpers.SetBearerAuthorization(req, cred.token)
 		}
-		return req, nil
+		return true
 	}
 
-	return req, nil
+	return false
+}
+
+func npmCredentialMatchesRequest(req *http.Request, cred npmRegistryCredentials) bool {
+	matchURL := cred.registry
+	if matchURL == "" {
+		matchURL = cred.host
+	}
+	if helpers.CredentialURLMatchesRequest(req, matchURL, true) {
+		return true
+	}
+
+	regURL, err := helpers.ParseURLLax(matchURL)
+	if err != nil || helpers.AreHostnamesEqual(regURL.Hostname(), req.URL.Hostname()) ||
+		!npmRegistryHostMatches(regURL.Hostname(), req.URL.Hostname()) {
+		return false
+	}
+
+	regPort := regURL.Port()
+	if regPort == "" {
+		regPort = "443"
+	}
+	reqPort := req.URL.Port()
+	if reqPort == "" {
+		reqPort = "443"
+	}
+	return regPort == reqPort && helpers.PathMatches(req.URL.EscapedPath(), regURL.EscapedPath())
 }
 
 func npmRegistryHostMatches(regHost, reqHost string) bool {
@@ -139,7 +166,8 @@ func npmRegistryHostMatches(regHost, reqHost string) bool {
 	// We could use areHostnamesEqual here, but that likely isn't necessary
 	// because it was added to better support private registries with custom
 	// domains.
-	if regHost == "registry.npmjs.org" && reqHost == "registry.yarnpkg.com" {
+	if strings.EqualFold(regHost, "registry.npmjs.org") &&
+		strings.EqualFold(reqHost, "registry.yarnpkg.com") {
 		return true
 	}
 

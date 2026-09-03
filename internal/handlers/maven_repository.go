@@ -18,10 +18,11 @@ type MavenRepositoryHandler struct {
 }
 
 type mavenRepositoryCredentials struct {
-	url      string
-	host     string
-	username string
-	password string
+	url       string
+	host      string
+	username  string
+	password  string
+	proxyOnly bool
 }
 
 // NewMavenRepositoryHandler returns a new MavenRepositoryHandler.
@@ -38,9 +39,12 @@ func NewMavenRepositoryHandler(creds config.Credentials, client *http.Client) *M
 
 		url := cred.GetString("url")
 
-		// OIDC credentials are not used as static credentials.
-		if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"url"}, "maven repository"); oidcCred != nil {
-			continue
+		proxyOnly := cred.GetBool("proxy-only")
+		if !proxyOnly {
+			// OIDC credentials are not used as static credentials.
+			if oidcCred, _, _ := handler.oidcRegistry.Register(cred, []string{"url"}, "maven repository"); oidcCred != nil {
+				continue
+			}
 		}
 
 		username := cred.GetString("username")
@@ -50,10 +54,11 @@ func NewMavenRepositoryHandler(creds config.Credentials, client *http.Client) *M
 		}
 
 		repoCred := mavenRepositoryCredentials{
-			url:      url,
-			host:     cred.GetString("host"),
-			username: username,
-			password: password,
+			url:       url,
+			host:      cred.GetString("host"),
+			username:  username,
+			password:  password,
+			proxyOnly: proxyOnly,
 		}
 		handler.credentials = append(handler.credentials, repoCred)
 	}
@@ -67,22 +72,52 @@ func (h *MavenRepositoryHandler) HandleRequest(req *http.Request, proxyCtx *gopr
 		return req, nil
 	}
 
-	// Try OIDC credentials first
-	if h.oidcRegistry.TryAuth(req, proxyCtx) {
+	var oidcCredential *oidc.OIDCCredential
+	if req.URL.Scheme == "https" {
+		oidcCredential = h.oidcRegistry.CredentialForRequest(req)
+		if h.oidcRegistry.TryAuthCredential(req, proxyCtx, oidcCredential) {
+			return req, nil
+		}
+	}
+	if h.authenticateStaticCredential(req, proxyCtx, false) {
 		return req, nil
 	}
+	if hasUsableAuthorization(req) {
+		return req, nil
+	}
+	if oidcCredential != nil {
+		return req, nil
+	}
+	if !proxyOnlyCredentialRequestAllowed(req) {
+		return req, nil
+	}
+	h.authenticateStaticCredential(req, proxyCtx, true)
 
-	// Fall back to static credentials
+	return req, nil
+}
+
+func (h *MavenRepositoryHandler) authenticateStaticCredential(
+	req *http.Request,
+	proxyCtx *goproxy.ProxyCtx,
+	proxyOnly bool,
+) bool {
+	if proxyOnly && !proxyOnlyCredentialRequestAllowed(req) {
+		return false
+	}
+
 	for _, cred := range h.credentials {
-		if !helpers.UrlMatchesRequest(req, cred.url, true) && !helpers.CheckHost(req, cred.host) {
+		if cred.proxyOnly != proxyOnly {
+			continue
+		}
+		if !helpers.CredentialURLMatchesRequest(req, cred.url, true) &&
+			!helpers.CheckHost(req, cred.host) {
 			continue
 		}
 
 		logging.RequestLogf(proxyCtx, "* authenticating maven repository request (host: %s)", req.URL.Hostname())
 		helpers.SetBasicAuthorization(req, cred.username, cred.password)
-
-		return req, nil
+		return true
 	}
 
-	return req, nil
+	return false
 }

@@ -282,7 +282,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"registered aws OIDC credentials for docker registry: https://docker.example.com",
 			},
 			urlsToAuthenticate: []string{
-				"https://docker.example.com/some-package",
+				"https://docker.example.com/v2/some-package/manifests/latest",
 			},
 		},
 		{
@@ -303,7 +303,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"registered azure OIDC credentials for docker registry: https://docker.example.com",
 			},
 			urlsToAuthenticate: []string{
-				"https://docker.example.com/some-package",
+				"https://docker.example.com/v2/some-package/manifests/latest",
 			},
 		},
 		{
@@ -315,15 +315,15 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			credentials: config.Credentials{
 				config.Credential{
 					"type":                     "docker_registry",
-					"url":                      "https://jfrog.example.com",
+					"url":                      "https://jfrog.example.com/dependabot",
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
 			expectedLogLines: []string{
-				"registered jfrog OIDC credentials for docker registry: jfrog.example.com",
+				"registered jfrog OIDC credentials for docker registry: https://jfrog.example.com/v2/dependabot",
 			},
 			urlsToAuthenticate: []string{
-				"https://jfrog.example.com/some-package",
+				"https://jfrog.example.com/v2/dependabot/manifests/latest",
 			},
 		},
 		{
@@ -345,7 +345,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"registered cloudsmith OIDC credentials for docker registry: https://cloudsmith.example.com",
 			},
 			urlsToAuthenticate: []string{
-				"https://cloudsmith.example.com/some-package",
+				"https://cloudsmith.example.com/v2/some-package/manifests/latest",
 			},
 		},
 		{
@@ -365,7 +365,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 				"registered gcp OIDC credentials for docker registry: https://us-central1-docker.pkg.dev",
 			},
 			urlsToAuthenticate: []string{
-				"https://us-central1-docker.pkg.dev/some-package",
+				"https://us-central1-docker.pkg.dev/v2/some-package/manifests/latest",
 			},
 		},
 		//
@@ -1594,6 +1594,150 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					assertHasTokenAuth(t, req, "Bearer", "__test_token__", "package url: "+urlToAuth)
 				}
 			}
+		})
+	}
+}
+
+func TestNPMExplicitOIDCBeatsStaticProxyOnlyCredential(t *testing.T) {
+	const tokenURL = "https://token.actions.example.com" //nolint:gosec // test URL
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", tokenURL)
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "request-token")
+
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	httpmock.RegisterResponder(http.MethodGet, tokenURL,
+		httpmock.NewStringResponder(http.StatusOK, `{"count":1,"value":"github-token"}`))
+	httpmock.RegisterResponder(
+		http.MethodPost,
+		"https://login.microsoftonline.com/explicit-tenant/oauth2/v2.0/token",
+		httpmock.NewStringResponder(
+			http.StatusOK,
+			`{"access_token":"explicit-token","expires_in":3600,"token_type":"Bearer"}`,
+		),
+	)
+
+	handler := NewNPMRegistryHandler(config.Credentials{
+		{
+			"type":       "npm_registry",
+			"registry":   "https://npm.example.com",
+			"token":      "automatic-user:automatic-token",
+			"tenant-id":  "automatic-tenant",
+			"client-id":  "automatic-client",
+			"proxy-only": true,
+		},
+		{
+			"type":      "npm_registry",
+			"registry":  "https://npm.example.com/dependabot",
+			"tenant-id": "explicit-tenant",
+			"client-id": "explicit-client",
+		},
+	}, testOIDCClient)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://npm.example.com/dependabot/package", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasTokenAuth(t, req, "Bearer", "explicit-token", "explicit OIDC credential")
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://npm.example.com/other/package", nil)
+	assert.Nil(t, handler.oidcRegistry.CredentialForRequest(req), "proxy-only credential is not registered for OIDC")
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, "automatic-user", "automatic-token", "static proxy-only credential")
+}
+
+func TestFailedExplicitOIDCBlocksProxyOnlyFallback(t *testing.T) {
+	const tokenURL = "https://token.actions.example.com" //nolint:gosec // test URL
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", tokenURL)
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "request-token")
+
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	httpmock.RegisterResponder(http.MethodGet, tokenURL,
+		httpmock.NewStringResponder(http.StatusInternalServerError, "failed"))
+
+	oidcCredential := func(credentialType, field, location string) config.Credential {
+		return config.Credential{
+			"type":      credentialType,
+			field:       location,
+			"tenant-id": "failed-tenant",
+			"client-id": "failed-client",
+		}
+	}
+	tests := []struct {
+		name        string
+		requestURL  string
+		credentials config.Credentials
+		handler     func(config.Credentials) oidcHandler
+	}{
+		{
+			name:       "npm",
+			requestURL: "https://registry.example.com/dependabot/package",
+			credentials: config.Credentials{
+				{"type": "npm_registry", "registry": "https://registry.example.com", "token": "automatic-token", "proxy-only": true},
+				oidcCredential("npm_registry", "registry", "https://registry.example.com/dependabot"),
+			},
+			handler: func(credentials config.Credentials) oidcHandler {
+				return NewNPMRegistryHandler(credentials, testOIDCClient)
+			},
+		},
+		{
+			name:       "maven",
+			requestURL: "https://registry.example.com/dependabot/package.jar",
+			credentials: config.Credentials{
+				{"type": "maven_repository", "host": "registry.example.com", "username": "automatic", "password": "token", "proxy-only": true},
+				oidcCredential("maven_repository", "url", "https://registry.example.com/dependabot"),
+			},
+			handler: func(credentials config.Credentials) oidcHandler {
+				return NewMavenRepositoryHandler(credentials, testOIDCClient)
+			},
+		},
+		{
+			name:       "rubygems",
+			requestURL: "https://registry.example.com/dependabot/gem",
+			credentials: config.Credentials{
+				{"type": "rubygems_server", "host": "registry.example.com", "token": "automatic:token", "proxy-only": true},
+				oidcCredential("rubygems_server", "url", "https://registry.example.com/dependabot"),
+			},
+			handler: func(credentials config.Credentials) oidcHandler {
+				return NewRubyGemsServerHandler(credentials, testOIDCClient)
+			},
+		},
+		{
+			name:       "nuget",
+			requestURL: "https://registry.example.com/dependabot/index.json",
+			credentials: config.Credentials{
+				{"type": "nuget_feed", "host": "registry.example.com", "username": "automatic", "password": "token", "proxy-only": true},
+				oidcCredential("nuget_feed", "url", "https://registry.example.com/dependabot"),
+			},
+			handler: func(credentials config.Credentials) oidcHandler {
+				return NewNugetFeedHandler(credentials, testOIDCClient)
+			},
+		},
+		{
+			name:       "docker",
+			requestURL: "https://registry.example.com/v2/dependabot/core/manifests/latest",
+			credentials: config.Credentials{
+				{"type": "docker_registry", "registry": "registry.example.com", "username": "automatic", "password": "token", "proxy-only": true},
+				{
+					"type":      "docker_registry",
+					"registry":  "registry.example.com",
+					"url":       "https://registry.example.com/dependabot/core",
+					"tenant-id": "failed-tenant",
+					"client-id": "failed-client",
+				},
+			},
+			handler: func(credentials config.Credentials) oidcHandler {
+				return NewDockerRegistryHandler(credentials, testOIDCClient, nil)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, test.requestURL, nil)
+			proxyCtx := &goproxy.ProxyCtx{}
+			req = handleRequestAndClose(test.handler(test.credentials), req, proxyCtx)
+
+			assertUnauthenticated(t, req, "failed OIDC blocks automatic auth")
+			assert.Nil(t, proxyCtx.RoundTripper, "failed OIDC blocks automatic transport")
 		})
 	}
 }

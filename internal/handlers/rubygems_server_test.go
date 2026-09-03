@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/dependabot/proxy/internal/config"
 )
 
@@ -74,4 +76,42 @@ func TestRubyGemsServerHandler(t *testing.T) {
 	req = httptest.NewRequestWithContext(t.Context(), "POST", "https://corp.dependabot.com/gems", nil)
 	req = handleRequestAndClose(handler, req, nil)
 	assertUnauthenticated(t, req, "post request")
+}
+
+func TestRubyGemsServerHandlerProxyOnlyCredentials(t *testing.T) {
+	handler := NewRubyGemsServerHandler(config.Credentials{
+		config.Credential{
+			"type":       "rubygems_server",
+			"host":       "rubygems.pkg.github.com",
+			"token":      "x-access-token:automatic-token",
+			"proxy-only": true,
+		},
+		config.Credential{
+			"type":  "rubygems_server",
+			"url":   "https://rubygems.pkg.github.com/dependabot",
+			"token": "explicit-user:explicit-token",
+		},
+	}, testOIDCClient)
+
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://rubygems.pkg.github.com/other/gem", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, "x-access-token", "automatic-token", "host-only automatic credential")
+
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://rubygems.pkg.github.com/other/gem", nil)
+	req.Header.Set("Authorization", authorizationPlaceholder)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, "x-access-token", "automatic-token", "automatic credential replaces placeholder auth")
+
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://rubygems.pkg.github.com/other/gem", nil)
+	req.Header.Set("Authorization", "Bearer request-token")
+	req = handleRequestAndClose(handler, req, nil)
+	assert.Equal(t, "Bearer request-token", req.Header.Get("Authorization"), "automatic credential preserves request auth")
+
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://rubygems.pkg.github.com/dependabot/gem", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertHasBasicAuth(t, req, "explicit-user", "explicit-token", "path-specific explicit credential")
+
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://rubygems.pkg.github.example/other/gem", nil)
+	req = handleRequestAndClose(handler, req, nil)
+	assertUnauthenticated(t, req, "automatic credential host mismatch")
 }
