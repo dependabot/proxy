@@ -79,7 +79,7 @@ func TestEgressAllowlist_EcosystemDefaults(t *testing.T) {
 	h := newEgressHandler(false, true, "pip")
 
 	assert.Nil(t, egressResult(t, h, "https://pypi.org/simple/requests/"), "pip index allowed")
-	assert.Nil(t, egressResult(t, h, "https://files.pythonhosted.org/packages/x.whl"), "pip CDN allowed via subdomain match")
+	assert.Nil(t, egressResult(t, h, "https://files.pythonhosted.org/packages/x.whl"), "pip CDN host allowed")
 
 	// npm defaults must not apply when the job is a pip job.
 	resp := egressResult(t, h, "https://registry.npmjs.org/left-pad")
@@ -87,6 +87,29 @@ func TestEgressAllowlist_EcosystemDefaults(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	}
 }
+
+func TestEgressAllowlist_ExactEntryRejectsSubdomain(t *testing.T) {
+	// storage.googleapis.com is an exact entry: a user-created bucket reachable
+	// as <bucket>.storage.googleapis.com must NOT be allowed, or it becomes an
+	// exfiltration channel.
+	h := newEgressHandler(false, true, "go_modules")
+
+	assert.Nil(t, egressResult(t, h, "https://storage.googleapis.com/proxy-golang-org/x.zip"), "exact object-store host allowed")
+
+	resp := egressResult(t, h, "https://attacker-bucket.storage.googleapis.com/loot")
+	if assert.NotNil(t, resp, "user-controlled bucket subdomain must be blocked") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	}
+}
+
+func TestEgressAllowlist_SuffixEntryAllowsSubdomain(t *testing.T) {
+	// .gcr.io is a leading-dot entry, so regional subdomains match.
+	h := newEgressHandler(false, true, "docker")
+
+	assert.Nil(t, egressResult(t, h, "https://us.gcr.io/v2/project/image"), "provider-controlled subdomain allowed")
+	assert.Nil(t, egressResult(t, h, "https://europe-docker.pkg.dev/v2/project/image"), "artifact registry subdomain allowed")
+}
+
 
 func TestEgressAllowlist_UnknownPackageManagerAllowsOnlyGitHubInfra(t *testing.T) {
 	h := newEgressHandler(false, true, "does_not_exist")
@@ -107,3 +130,20 @@ func TestEgressAllowlist_LabelBoundaryGuard(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	}
 }
+
+func TestEgressAllowlist_AdditionalEcosystemsAllowDefaults(t *testing.T) {
+	cases := map[string]string{
+		"sbt":            "https://repo1.maven.org/maven2/x.jar",
+		"opentofu":       "https://registry.opentofu.org/v1/modules",
+		"elm":            "https://package.elm-lang.org/packages/elm/core/latest",
+		"deno":           "https://jsr.io/@std/assert",
+		"bazel":          "https://bcr.bazel.build/modules/rules_go",
+		"julia":          "https://pkg.julialang.org/registries",
+		"rust_toolchain": "https://static.rust-lang.org/dist/channel-rust-1.80.toml",
+	}
+	for pkgManager, target := range cases {
+		h := newEgressHandler(false, true, pkgManager)
+		assert.Nilf(t, egressResult(t, h, target), "%s default host should be allowed", pkgManager)
+	}
+}
+

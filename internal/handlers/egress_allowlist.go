@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/elazarl/goproxy"
 
@@ -55,8 +56,14 @@ func (h *EgressAllowlistHandler) HandleRequest(req *http.Request, proxyCtx *gopr
 }
 
 func (h *EgressAllowlistHandler) isAllowed(host string) bool {
-	for _, domain := range h.allowed {
-		if helpers.HostMatchesDomain(host, domain) {
+	for _, entry := range h.allowed {
+		// A leading dot means "this domain and any subdomain"; otherwise the
+		// entry must match the host exactly.
+		if domain, ok := strings.CutPrefix(entry, "."); ok {
+			if helpers.HostMatchesDomain(host, domain) {
+				return true
+			}
+		} else if helpers.AreHostnamesEqual(host, entry) {
 			return true
 		}
 	}
