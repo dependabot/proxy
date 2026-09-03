@@ -23,10 +23,9 @@ import (
 // GitServerHandler handles requests destined remote git servers such as
 // github.com or private git servers
 type GitServerHandler struct {
-	credentials            *gitCredentialsMap
-	jitAccessByHost        map[string]jitAccessConfig
-	client                 ScopeRequester
-	readOnlyGitCredentials bool
+	credentials     *gitCredentialsMap
+	jitAccessByHost map[string]jitAccessConfig
+	client          ScopeRequester
 
 	reposAlreadyTried *threadsafe.Map[string, struct{}]
 }
@@ -231,17 +230,12 @@ type ScopeRequester interface {
 
 // NewGitServerHandler returns a new GitServerHandler, adding basic auth to
 // requests to hosts for which we have credentials
-func NewGitServerHandler(
-	creds config.Credentials,
-	client ScopeRequester,
-	readOnlyGitCredentials bool,
-) *GitServerHandler {
+func NewGitServerHandler(creds config.Credentials, client ScopeRequester) *GitServerHandler {
 	handler := GitServerHandler{
-		credentials:            newGitCredentialsMap(),
-		jitAccessByHost:        map[string]jitAccessConfig{},
-		client:                 client,
-		readOnlyGitCredentials: readOnlyGitCredentials,
-		reposAlreadyTried:      threadsafe.NewMap[string, struct{}](),
+		credentials:       newGitCredentialsMap(),
+		jitAccessByHost:   map[string]jitAccessConfig{},
+		client:            client,
+		reposAlreadyTried: threadsafe.NewMap[string, struct{}](),
 	}
 
 	for _, cred := range creds {
@@ -288,22 +282,18 @@ func (h *GitServerHandler) HandleRequest(req *http.Request, proxyCtx *goproxy.Pr
 		return req, nil
 	}
 
-	if h.readOnlyGitCredentials {
-		readOnly := isReadOnlyGitRequest(req)
-		if !readOnly && proxyCtx != nil {
-			proxyctx.SetValue(proxyCtx, nonReadOnlyRequestCtxKey, true)
-		}
+	readOnly := isReadOnlyGitRequest(req)
+	if !readOnly && proxyCtx != nil {
+		proxyctx.SetValue(proxyCtx, nonReadOnlyRequestCtxKey, true)
+	}
 
-		if _, pw, ok := req.BasicAuth(); ok && pw != "" {
-			return req, nil
-		}
-
-		if !readOnly {
-			logging.RequestLogf(proxyCtx, "* blocked authentication for non-read-only git request (method: %s, host: %s, path: %s)", req.Method, helpers.GetHost(req), req.URL.Path)
-			return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, blockedGitRequestMessage)
-		}
-	} else if _, pw, ok := req.BasicAuth(); ok && pw != "" {
+	if _, pw, ok := req.BasicAuth(); ok && pw != "" {
 		return req, nil
+	}
+
+	if !readOnly {
+		logging.RequestLogf(proxyCtx, "* blocked authentication for non-read-only git request (method: %s, host: %s, path: %s)", req.Method, helpers.GetHost(req), req.URL.Path)
+		return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, blockedGitRequestMessage)
 	}
 
 	logging.RequestLogf(proxyCtx, "* authenticating git server request (host: %s)", helpers.GetHost(req))
