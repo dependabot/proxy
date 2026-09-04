@@ -57,5 +57,3 @@ var ecosystemDefaultDomains = map[string][]string{
 	"julia":          {"pkg.julialang.org"},
 	"rust_toolchain": {"static.rust-lang.org"},
 }
-
-
