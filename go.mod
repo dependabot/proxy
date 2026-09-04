@@ -14,7 +14,7 @@ require (
 	github.com/lestrrat-go/backoff v1.0.1
 	github.com/rs/dnscache v0.0.0-20211102005908-e0241e321417
 	github.com/rubyist/circuitbreaker v2.2.1+incompatible
-	github.com/sirupsen/logrus v1.10.1
+	github.com/sirupsen/logrus v1.10.2
 	github.com/stackrox/docker-registry-client v0.2.1
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/net v0.58.0
