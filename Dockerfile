@@ -1,4 +1,4 @@
-FROM docker.io/library/golang:1.27.0-alpine3.23 AS builder-base
+FROM docker.io/library/golang:1.27.1-alpine3.23 AS builder-base
 
 ENV GOOS=linux GOARCH=amd64
 
