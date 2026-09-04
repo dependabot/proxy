@@ -11,10 +11,39 @@ import (
 )
 
 func newEgressHandler(observe, enforce bool, packageManager string) *EgressAllowlistHandler {
-	cfg := &config.Config{
-		EgressAllowlist: config.EgressAllowlist{Observe: observe, Enforce: enforce},
+	return NewEgressAllowlistHandler(egressCfg(observe, enforce), config.ProxyEnvSettings{PackageManager: packageManager}, nil)
+}
+
+// egressCfg builds a Config whose experiments toggle the egress observe/enforce
+// flags.
+func egressCfg(observe, enforce bool) *config.Config {
+	return &config.Config{
+		Experiments: config.Experiments{
+			egressObserveExperiment: observe,
+			egressEnforceExperiment: enforce,
+		},
 	}
-	return NewEgressAllowlistHandler(cfg, config.ProxyEnvSettings{PackageManager: packageManager})
+}
+
+// fakeMetricSender records SendMetric calls for assertions.
+type fakeMetricSender struct {
+	calls []fakeMetricCall
+}
+
+type fakeMetricCall struct {
+	name       string
+	metricType string
+	value      float64
+	tags       map[string]string
+}
+
+func (f *fakeMetricSender) SendMetric(name, metricType string, value float64, tags map[string]string) error {
+	f.calls = append(f.calls, fakeMetricCall{name: name, metricType: metricType, value: value, tags: tags})
+	return nil
+}
+
+func newEgressHandlerWithMetrics(observe, enforce bool, packageManager string, m metricSender) *EgressAllowlistHandler {
+	return NewEgressAllowlistHandler(egressCfg(observe, enforce), config.ProxyEnvSettings{PackageManager: packageManager}, m)
 }
 
 // egressResult runs HandleRequest and returns the response (nil means allowed).
@@ -110,7 +139,6 @@ func TestEgressAllowlist_SuffixEntryAllowsSubdomain(t *testing.T) {
 	assert.Nil(t, egressResult(t, h, "https://europe-docker.pkg.dev/v2/project/image"), "artifact registry subdomain allowed")
 }
 
-
 func TestEgressAllowlist_UnknownPackageManagerAllowsOnlyGitHubInfra(t *testing.T) {
 	h := newEgressHandler(false, true, "does_not_exist")
 
@@ -147,3 +175,39 @@ func TestEgressAllowlist_AdditionalEcosystemsAllowDefaults(t *testing.T) {
 	}
 }
 
+func TestEgressAllowlist_EmitsMetricForNonAllowlistedHost(t *testing.T) {
+	m := &fakeMetricSender{}
+	h := newEgressHandlerWithMetrics(true, false, "npm_and_yarn", m)
+
+	assert.Nil(t, egressResult(t, h, "https://evil.example.com/steal"), "observe mode allows but records")
+
+	if assert.Len(t, m.calls, 1, "exactly one metric emitted for a non-allowlisted host") {
+		call := m.calls[0]
+		assert.Equal(t, "egress_not_allowlisted_count", call.name)
+		assert.Equal(t, "increment", call.metricType)
+		assert.Equal(t, "evil.example.com", call.tags["request_host"], "real host recorded, not bucketed")
+	}
+}
+
+func TestEgressAllowlist_DoesNotEmitMetricForAllowlistedHost(t *testing.T) {
+	m := &fakeMetricSender{}
+	h := newEgressHandlerWithMetrics(true, true, "npm_and_yarn", m)
+
+	assert.Nil(t, egressResult(t, h, "https://registry.npmjs.org/left-pad"), "allowlisted host passes")
+
+	assert.Empty(t, m.calls, "no metric emitted for an allowlisted host")
+}
+
+func TestEgressAllowlist_EmitsMetricWhenEnforcing(t *testing.T) {
+	m := &fakeMetricSender{}
+	h := newEgressHandlerWithMetrics(false, true, "npm_and_yarn", m)
+
+	resp := egressResult(t, h, "https://evil.example.com/steal")
+	if assert.NotNil(t, resp, "enforce blocks the host") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	}
+
+	if assert.Len(t, m.calls, 1, "metric still emitted when enforcing") {
+		assert.Equal(t, "evil.example.com", m.calls[0].tags["request_host"])
+	}
+}

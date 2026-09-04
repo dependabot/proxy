@@ -66,8 +66,8 @@ func TestProxyEgressAllowlistEnforceBlocks(t *testing.T) {
 	defer upstream.Close()
 
 	cfg := &config.Config{
-		CA:              testProxyConfig.CA,
-		EgressAllowlist: config.EgressAllowlist{Enforce: true},
+		CA:          testProxyConfig.CA,
+		Experiments: config.Experiments{"proxy_egress_enforce": true},
 	}
 	env := config.ProxyEnvSettings{PackageManager: "npm_and_yarn"}
 	client, proxy := testProxyServerWithEnv(t, env, cfg, nil, upstream.Certificate())
@@ -91,8 +91,8 @@ func TestProxyEgressAllowlistObserveAllows(t *testing.T) {
 	defer upstream.Close()
 
 	cfg := &config.Config{
-		CA:              testProxyConfig.CA,
-		EgressAllowlist: config.EgressAllowlist{Observe: true},
+		CA:          testProxyConfig.CA,
+		Experiments: config.Experiments{"proxy_egress_observe": true},
 	}
 	env := config.ProxyEnvSettings{PackageManager: "npm_and_yarn"}
 	client, proxy := testProxyServerWithEnv(t, env, cfg, nil, upstream.Certificate())
