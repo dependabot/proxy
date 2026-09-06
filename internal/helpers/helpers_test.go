@@ -122,6 +122,32 @@ func TestReplaceAuthorization_CustomKey(t *testing.T) {
 	})
 }
 
+func TestHostMatchesDomain(t *testing.T) {
+	tests := []struct {
+		name   string
+		host   string
+		domain string
+		want   bool
+	}{
+		{"exact match", "npmjs.org", "npmjs.org", true},
+		{"subdomain match", "registry.npmjs.org", "npmjs.org", true},
+		{"nested subdomain match", "a.b.npmjs.org", "npmjs.org", true},
+		{"case insensitive", "REGISTRY.NPMJS.ORG", "npmjs.org", true},
+		{"trailing dot on host", "registry.npmjs.org.", "npmjs.org", true},
+		{"trailing dot on domain", "registry.npmjs.org", "npmjs.org.", true},
+		{"label-boundary guard", "evilnpmjs.org", "npmjs.org", false},
+		{"suffix in the middle", "npmjs.org.evil.com", "npmjs.org", false},
+		{"unrelated host", "example.com", "npmjs.org", false},
+		{"empty host", "", "npmjs.org", false},
+		{"empty domain", "npmjs.org", "", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, HostMatchesDomain(tc.host, tc.domain))
+		})
+	}
+}
+
 func TestUrlMatchesRequest(t *testing.T) {
 	tests := []struct {
 		name      string
