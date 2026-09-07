@@ -27,10 +27,13 @@ var githubInfraDomains = []string{
 // (storage.googleapis.com) are intentionally exact so user-created buckets under
 // them are not allowlisted.
 //
-// Ecosystems that resolve only over git or from user-configured registries have
-// no entry on purpose: github_actions, git_submodules, swift, vcpkg, nix,
-// pre_commit, devcontainers (all covered by githubInfraDomains, git, or the
-// job's own credentials) and helm (basic-auth registries supplied per job).
+// Every registered Dependabot ecosystem has an explicit entry below. An empty
+// entry ({}) means the ecosystem reaches only GitHub/Dependabot infrastructure
+// or plain git (covered by githubInfraDomains and the job's own git
+// credentials), or its registries are configured per job. These are:
+// github_actions, submodules, swift, vcpkg, pre_commit (all git/GitHub-hosted)
+// and helm (chart repositories supplied per job). Keys must match the ecosystem
+// internal names registered in dependabot-core (Dependabot::FileFetchers.register).
 var ecosystemDefaultDomains = map[string][]string{
 	"npm_and_yarn":   {"registry.npmjs.org", "registry.yarnpkg.com"},
 	"bun":            {"registry.npmjs.org", "registry.yarnpkg.com"},
@@ -56,4 +59,13 @@ var ecosystemDefaultDomains = map[string][]string{
 	"bazel":          {"bcr.bazel.build"},
 	"julia":          {"pkg.julialang.org"},
 	"rust_toolchain": {"static.rust-lang.org"},
+	"conda":          {"api.anaconda.org", "anaconda.org", "conda.anaconda.org", "repo.anaconda.com"},
+	"nix":            {"channels.nixos.org"},
+	"devcontainers":  {"registry-1.docker.io", "auth.docker.io", "index.docker.io", "production.cloudflare.docker.com", "ghcr.io", "mcr.microsoft.com", "quay.io", "public.ecr.aws", ".gcr.io", ".pkg.dev"},
+	"github_actions": {}, // GitHub-hosted; covered by githubInfraDomains
+	"submodules":     {}, // plain git; covered by githubInfraDomains + job git credentials
+	"swift":          {}, // SwiftPM git dependencies; covered by githubInfraDomains + git
+	"vcpkg":          {}, // baseline is the microsoft/vcpkg git repo; covered by githubInfraDomains
+	"pre_commit":     {}, // hooks are git repos; covered by githubInfraDomains + git
+	"helm":           {}, // chart repositories supplied per job; OCI charts via githubInfraDomains
 }

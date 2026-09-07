@@ -168,6 +168,9 @@ func TestEgressAllowlist_AdditionalEcosystemsAllowDefaults(t *testing.T) {
 		"bazel":          "https://bcr.bazel.build/modules/rules_go",
 		"julia":          "https://pkg.julialang.org/registries",
 		"rust_toolchain": "https://static.rust-lang.org/dist/channel-rust-1.80.toml",
+		"conda":          "https://api.anaconda.org/package/conda-forge/numpy",
+		"nix":            "https://channels.nixos.org/nixos-24.05/nixexprs.tar.xz",
+		"devcontainers":  "https://mcr.microsoft.com/v2/devcontainers/features/manifests/latest",
 	}
 	for pkgManager, target := range cases {
 		h := newEgressHandler(false, true, pkgManager)
