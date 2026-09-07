@@ -345,6 +345,16 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		}
 
 		d.cacheDB[key] = entry
+	}, func() {
+		// The response body was closed before it was fully read (e.g. the
+		// downstream write to the mitm'd client failed partway through, as
+		// happens on a broken pipe). The file on disk only contains a partial
+		// copy of the response, so remove it rather than leaving an orphaned,
+		// truncated file behind. The cache entry was never added to cacheDB,
+		// so this request is simply treated as a cache miss.
+		if removeErr := os.Remove(f.Name()); removeErr != nil && !os.IsNotExist(removeErr) {
+			logrus.Warnln("Failed to remove incomplete cache file:", removeErr.Error())
+		}
 	})
 	return resp
 }
@@ -393,24 +403,31 @@ func (d *DB) WriteToDisk() error {
 	return nil
 }
 
-// TeeReadCloser is an io.TeeReader that also closes, and calls the callback after all streams are closed.
-// The callback is only called if there were no errors closing the reader. This is so that if
-// the connection is severed or the file is corrupted we don't cache. If there's a problem with the writer,
-// it finishes reading still and skips the callback. That way if the disk is full we don't cache but
-// the read is successful.
-func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, callback func()) io.ReadCloser {
+// TeeReadCloser is an io.TeeReader that also closes, and calls onComplete after all streams
+// are closed, but only if the reader was read all the way to EOF with no write errors. This is
+// so that if the connection is severed or the file is corrupted we don't cache. If there's a
+// problem with the writer, it finishes reading still and skips onComplete. That way if the disk
+// is full we don't cache but the read is successful.
+//
+// If Close is called before the reader reached EOF (for example because a downstream write to
+// the real client failed partway through, such as a broken pipe), onIncomplete is called instead
+// so the caller can discard the partial data instead of caching a truncated response.
+func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, onComplete func(), onIncomplete func()) io.ReadCloser {
 	return &teeReader{
-		r:        r,
-		w:        w,
-		callback: callback,
+		r:            r,
+		w:            w,
+		onComplete:   onComplete,
+		onIncomplete: onIncomplete,
 	}
 }
 
 type teeReader struct {
-	r        io.ReadCloser
-	w        io.WriteCloser
-	callback func()
-	writeErr error
+	r            io.ReadCloser
+	w            io.WriteCloser
+	onComplete   func()
+	onIncomplete func()
+	writeErr     error
+	eof          bool
 }
 
 func (t *teeReader) Read(p []byte) (n int, err error) {
@@ -423,6 +440,9 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 		}
 		n = m
 	}
+	if err == io.EOF {
+		t.eof = true
+	}
 	return
 }
 
@@ -432,10 +452,17 @@ func (t *teeReader) Close() error {
 	if err != nil {
 		return err
 	}
-	if t.writeErr != nil {
+	if t.writeErr != nil || !t.eof {
+		// Either the write to the cache file failed, or the reader was closed
+		// before the response body was fully consumed (e.g. the write to the
+		// downstream client failed partway through). Either way the cached
+		// copy would be incomplete, so don't treat it as a valid cache entry.
+		if t.writeErr == nil {
+			t.onIncomplete()
+		}
 		return nil
 	}
-	t.callback()
+	t.onComplete()
 	return nil
 }
 

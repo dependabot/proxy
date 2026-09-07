@@ -134,6 +134,54 @@ func TestCache(t *testing.T) {
 	})
 }
 
+// TestCache_TruncatedResponseIsNotCached is a regression test for a bug where a
+// response body that stopped being read before reaching EOF (e.g. because the
+// downstream write to the mitm'd client failed partway through with a broken
+// pipe) was still cached as if it were complete. That caused every subsequent
+// request for the same resource in the job to be served the same truncated
+// bytes, matching customer reports of "Unexpected end of file" tarball errors.
+func TestCache_TruncatedResponseIsNotCached(t *testing.T) {
+	const enabled = true
+	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))
+	cleanupCacheDir(t, cacheDir)
+
+	cacher, err := New(enabled, cacheDir)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), "GET", URL, nil)
+	proxyCtx := &goproxy.ProxyCtx{
+		Req: req,
+	}
+
+	_, resp := cacher.OnRequest(req, proxyCtx)
+	assert.Nil(t, resp)
+
+	fullBody := "this is the full body of the response"
+	resp = &http.Response{
+		Request:    req,
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(fullBody)),
+	}
+	resp = cacher.OnResponse(resp, proxyCtx)
+
+	// Simulate a downstream write failure partway through the body: only a
+	// prefix is read before the body is closed, mirroring what goproxy does
+	// when resp.Write fails partway (e.g. broken pipe writing to the client).
+	partial := make([]byte, 10)
+	n, readErr := resp.Body.Read(partial)
+	require.NoError(t, readErr)
+	assert.Equal(t, 10, n)
+	require.NoError(t, resp.Body.Close())
+
+	assert.Empty(t, cacher.cacheDB, "a truncated response must not be cached")
+
+	entries, err := os.ReadDir(cacheDir)
+	require.NoError(t, err)
+	for _, e := range entries {
+		assert.NotEqual(t, "db.yaml", e.Name())
+	}
+}
+
 func Test_bodyless(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -564,21 +612,26 @@ func (b *BufferWithClose) Close() error {
 }
 
 func TestTeeReadCloser(t *testing.T) {
-	t.Run("reads, writes, and calls the callback", func(t *testing.T) {
+	t.Run("reads, writes, and calls onComplete", func(t *testing.T) {
 		writeCloser := &BufferWithClose{}
 		readCloser := io.NopCloser(strings.NewReader("hello"))
-		callbackWasCalled := false
-		callback := func() {
-			callbackWasCalled = true
+		onCompleteCalled := false
+		onComplete := func() {
+			onCompleteCalled = true
 		}
-		tee := TeeReadCloser(readCloser, writeCloser, callback)
+		onIncompleteCalled := false
+		onIncomplete := func() {
+			onIncompleteCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, onComplete, onIncomplete)
 
 		data, err := io.ReadAll(tee)
 		assert.NoError(t, err)
 		assert.Equal(t, "hello", string(data))
 		assert.Equal(t, "hello", writeCloser.String())
 		assert.NoError(t, tee.Close())
-		assert.True(t, callbackWasCalled)
+		assert.True(t, onCompleteCalled)
+		assert.False(t, onIncompleteCalled)
 		assert.True(t, writeCloser.WasCloseCalled)
 	})
 
@@ -587,17 +640,52 @@ func TestTeeReadCloser(t *testing.T) {
 			ErrorToReturn: errors.New("out of memory"),
 		}
 		readCloser := io.NopCloser(strings.NewReader("hello"))
-		callbackWasCalled := false
-		callback := func() {
-			callbackWasCalled = true
+		onCompleteCalled := false
+		onComplete := func() {
+			onCompleteCalled = true
 		}
-		tee := TeeReadCloser(readCloser, writeCloser, callback)
+		onIncompleteCalled := false
+		onIncomplete := func() {
+			onIncompleteCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, onComplete, onIncomplete)
 
 		data, err := io.ReadAll(tee)
 		assert.NoError(t, err)
 		assert.Equal(t, "hello", string(data))
 		assert.NoError(t, tee.Close())
-		assert.False(t, callbackWasCalled)
+		assert.False(t, onCompleteCalled)
+		// The write to the cache file itself failed, so there's nothing to
+		// clean up; onIncomplete is reserved for a short read of the source.
+		assert.False(t, onIncompleteCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("when closed before the reader reaches EOF", func(t *testing.T) {
+		// Simulates a downstream write to the mitm'd client failing partway
+		// through (e.g. a broken pipe): the caller stops reading and closes
+		// the body before it has been read to completion.
+		writeCloser := &BufferWithClose{}
+		readCloser := io.NopCloser(strings.NewReader("hello world"))
+		onCompleteCalled := false
+		onComplete := func() {
+			onCompleteCalled = true
+		}
+		onIncompleteCalled := false
+		onIncomplete := func() {
+			onIncompleteCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, onComplete, onIncomplete)
+
+		buf := make([]byte, 5)
+		n, err := tee.Read(buf)
+		require.NoError(t, err)
+		assert.Equal(t, 5, n)
+		assert.Equal(t, "hello", writeCloser.String())
+
+		assert.NoError(t, tee.Close())
+		assert.False(t, onCompleteCalled)
+		assert.True(t, onIncompleteCalled)
 		assert.True(t, writeCloser.WasCloseCalled)
 	})
 }
