@@ -1,0 +1,147 @@
+# Egress allowlist default domains.
+#
+# Matching convention (see EgressAllowlistHandler): a leading dot (".github.com")
+# matches that domain and any subdomain, while an entry without a leading dot
+# ("storage.googleapis.com") matches only that exact host. Prefer exact hosts.
+# Use the leading-dot form only for domains whose subdomains are entirely
+# provider-controlled and never user-creatable, so that user-controlled
+# subdomains — e.g. object-storage buckets reachable as
+# <bucket>.storage.googleapis.com — cannot be abused as an exfiltration channel.
+
+# github_infra_domains are the GitHub and Dependabot infrastructure domains that
+# are always allowed. Their subdomains are entirely GitHub-controlled (api.,
+# codeload., objects./raw.githubusercontent.com, api.<tenant>.ghe.com), so the
+# leading-dot suffix form is safe here.
+github_infra_domains:
+  - .github.com
+  - .githubusercontent.com
+  - .githubapp.com
+  - .ghe.com
+  - ghcr.io
+
+# ecosystem_default_domains lists the public registry and CDN hosts each
+# Dependabot ecosystem needs. The map is kept keyed by ecosystem for provenance
+# and documentation, but the handler applies the UNION of all values to every
+# job (it does not partition by PACKAGE_MANAGER). Entries are exact hosts unless
+# a leading dot is present. Object-storage hosts (storage.googleapis.com) are
+# intentionally exact so user-created buckets under them are not allowlisted.
+#
+# Every registered Dependabot ecosystem has an entry. An empty list means the
+# ecosystem reaches only GitHub/Dependabot infrastructure or plain git (covered
+# by github_infra_domains and the job's own git credentials), or its registries
+# are configured per job: github_actions, submodules, swift, vcpkg, pre_commit
+# (all git/GitHub-hosted) and helm (chart repositories supplied per job). Keys
+# must match the ecosystem internal names registered in dependabot-core
+# (Dependabot::FileFetchers.register).
+ecosystem_default_domains:
+  npm_and_yarn:
+    - registry.npmjs.org
+    - registry.yarnpkg.com
+    - jsr.io
+    - registry.bower.io
+  bun:
+    - registry.npmjs.org
+    - registry.yarnpkg.com
+    - jsr.io
+    - registry.bower.io
+  pip:
+    - pypi.org
+    - pypi.python.org
+    - files.pythonhosted.org
+    - pythonhosted.org
+  uv:
+    - pypi.org
+    - pypi.python.org
+    - files.pythonhosted.org
+    - pythonhosted.org
+  bundler:
+    - rubygems.org
+    - index.rubygems.org
+    - gems.rubygems.org
+  maven:
+    - repo.maven.apache.org
+    - repo1.maven.org
+    - plugins.gradle.org
+    - dl.google.com
+  gradle:
+    - repo.maven.apache.org
+    - repo1.maven.org
+    - plugins.gradle.org
+    - dl.google.com
+  sbt:
+    - repo1.maven.org
+    - repo.maven.apache.org
+    - repo.scala-sbt.org
+  cargo:
+    - crates.io
+    - static.crates.io
+    - index.crates.io
+  composer:
+    - repo.packagist.org
+    - packagist.org
+  go_modules:
+    - proxy.golang.org
+    - sum.golang.org
+    - storage.googleapis.com
+  docker: &docker_registries
+    - registry-1.docker.io
+    - auth.docker.io
+    - index.docker.io
+    - registry.hub.docker.com
+    - production.cloudflare.docker.com
+    - ghcr.io
+    - mcr.microsoft.com
+    - quay.io
+    - public.ecr.aws
+    - .gcr.io
+    - .pkg.dev
+  docker_compose: *docker_registries
+  nuget:
+    - api.nuget.org
+  dotnet_sdk:
+    - api.nuget.org
+  hex:
+    - repo.hex.pm
+    - hex.pm
+  pub:
+    - pub.dev
+    - pub.dartlang.org
+    - storage.googleapis.com
+  terraform:
+    - registry.terraform.io
+    - releases.hashicorp.com
+  opentofu:
+    - registry.opentofu.org
+    - releases.hashicorp.com
+  elm:
+    - package.elm-lang.org
+  deno:
+    - jsr.io
+    - deno.land
+    - registry.npmjs.org
+  bazel:
+    - bcr.bazel.build
+  julia:
+    - pkg.julialang.org
+  rust_toolchain:
+    - static.rust-lang.org
+  conda:
+    - api.anaconda.org
+    - anaconda.org
+    - conda.anaconda.org
+    - repo.anaconda.com
+  nix:
+    - channels.nixos.org
+  devcontainers: *docker_registries
+  # helm pulls OCI charts from container registries, so it shares the docker set
+  # (chart-repo HTTP registries are still supplied per job via credentials).
+  helm: *docker_registries
+  # GitHub-hosted or per-job configured; covered by github_infra_domains / git.
+  # Note: additional per-job dependencies (e.g. pre_commit hooks that install
+  # from other ecosystems) are covered because the handler applies the union of
+  # ALL ecosystem hosts to every job, not just the job's own package manager.
+  github_actions: []
+  submodules: []
+  swift: []
+  vcpkg: []
+  pre_commit: []

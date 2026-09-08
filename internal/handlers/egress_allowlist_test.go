@@ -104,15 +104,18 @@ func TestEgressAllowlist_GitHubInfraAlwaysAllowed(t *testing.T) {
 	}
 }
 
-func TestEgressAllowlist_EcosystemDefaults(t *testing.T) {
+func TestEgressAllowlist_UnionAllowsAllEcosystemDefaults(t *testing.T) {
+	// The handler applies the union of every ecosystem's defaults, so a pip job
+	// may reach npm's registry and vice versa. Partitioning by PACKAGE_MANAGER
+	// is intentionally not done.
 	h := newEgressHandler(false, true, "pip")
 
 	assert.Nil(t, egressResult(t, h, "https://pypi.org/simple/requests/"), "pip index allowed")
 	assert.Nil(t, egressResult(t, h, "https://files.pythonhosted.org/packages/x.whl"), "pip CDN host allowed")
+	assert.Nil(t, egressResult(t, h, "https://registry.npmjs.org/left-pad"), "other-ecosystem default also allowed under union")
 
-	// npm defaults must not apply when the job is a pip job.
-	resp := egressResult(t, h, "https://registry.npmjs.org/left-pad")
-	if assert.NotNil(t, resp, "other-ecosystem default is not allowed") {
+	resp := egressResult(t, h, "https://evil.com/steal")
+	if assert.NotNil(t, resp, "unknown host still blocked") {
 		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	}
 }
@@ -139,14 +142,20 @@ func TestEgressAllowlist_SuffixEntryAllowsSubdomain(t *testing.T) {
 	assert.Nil(t, egressResult(t, h, "https://europe-docker.pkg.dev/v2/project/image"), "artifact registry subdomain allowed")
 }
 
-func TestEgressAllowlist_UnknownPackageManagerAllowsOnlyGitHubInfra(t *testing.T) {
-	h := newEgressHandler(false, true, "does_not_exist")
+func TestEgressAllowlist_UnknownOrEmptyPackageManagerStillGetsUnion(t *testing.T) {
+	// The allowlist does not depend on PACKAGE_MANAGER: an unknown or empty
+	// value still yields GitHub infra + the full ecosystem union.
+	for _, pm := range []string{"does_not_exist", ""} {
+		h := newEgressHandler(false, true, pm)
 
-	assert.Nil(t, egressResult(t, h, "https://github.com/x/y"), "github infra still allowed")
+		assert.Nilf(t, egressResult(t, h, "https://github.com/x/y"), "github infra allowed (pm=%q)", pm)
+		assert.Nilf(t, egressResult(t, h, "https://registry.npmjs.org/left-pad"), "npm default allowed under union (pm=%q)", pm)
+		assert.Nilf(t, egressResult(t, h, "https://pypi.org/simple/requests/"), "pypi default allowed under union (pm=%q)", pm)
 
-	resp := egressResult(t, h, "https://registry.npmjs.org/left-pad")
-	if assert.NotNil(t, resp, "no ecosystem defaults for unknown package manager") {
-		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		resp := egressResult(t, h, "https://evil.com/steal")
+		if assert.NotNilf(t, resp, "unknown host blocked (pm=%q)", pm) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
 	}
 }
 
@@ -157,6 +166,15 @@ func TestEgressAllowlist_LabelBoundaryGuard(t *testing.T) {
 	if assert.NotNil(t, resp, "lookalike host must not match npmjs.org") {
 		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	}
+}
+
+func TestEgressAllowlist_ExactMatchAllowsAbsoluteFQDN(t *testing.T) {
+	// An absolute DNS name (trailing dot) must match an exact allowlist entry,
+	// consistent with the suffix form's boundary handling.
+	h := newEgressHandler(false, true, "npm_and_yarn")
+
+	assert.Nil(t, egressResult(t, h, "https://registry.npmjs.org./left-pad"),
+		"absolute FQDN form of an exact entry must be allowed")
 }
 
 func TestEgressAllowlist_AdditionalEcosystemsAllowDefaults(t *testing.T) {
@@ -176,6 +194,23 @@ func TestEgressAllowlist_AdditionalEcosystemsAllowDefaults(t *testing.T) {
 		h := newEgressHandler(false, true, pkgManager)
 		assert.Nilf(t, egressResult(t, h, target), "%s default host should be allowed", pkgManager)
 	}
+}
+
+func TestEgressDefaults_LoadedFromYAML(t *testing.T) {
+	assert.NotEmpty(t, githubInfraDomains, "github infra domains loaded from YAML")
+	assert.NotEmpty(t, ecosystemDefaultDomains, "ecosystem map loaded from YAML")
+	assert.NotEmpty(t, allEcosystemDomains, "union computed from YAML")
+
+	// The union must be deduplicated even though several ecosystems share hosts
+	// (e.g. npm_and_yarn/bun/deno all list registry.npmjs.org).
+	seen := make(map[string]struct{}, len(allEcosystemDomains))
+	for _, host := range allEcosystemDomains {
+		_, dup := seen[host]
+		assert.Falsef(t, dup, "union contains duplicate host %q", host)
+		seen[host] = struct{}{}
+	}
+	assert.Contains(t, allEcosystemDomains, "registry.npmjs.org")
+	assert.Contains(t, allEcosystemDomains, "pypi.org")
 }
 
 func TestEgressAllowlist_EmitsMetricForNonAllowlistedHost(t *testing.T) {

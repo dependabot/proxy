@@ -38,12 +38,13 @@ type EgressAllowlistHandler struct {
 }
 
 // NewEgressAllowlistHandler builds the allowlist from the always-allowed GitHub
-// infrastructure domains plus the static per-ecosystem defaults for the job's
-// package manager. The observe/enforce toggles are driven by job experiments.
-// The metrics client may be nil, in which case no telemetry is emitted.
+// infrastructure domains plus the union of every ecosystem's default registry
+// hosts (see allEcosystemDomains for why we do not partition by PACKAGE_MANAGER).
+// The observe/enforce toggles are driven by job experiments. The metrics client
+// may be nil, in which case no telemetry is emitted.
 func NewEgressAllowlistHandler(cfg *config.Config, env config.ProxyEnvSettings, metrics metricSender) *EgressAllowlistHandler {
 	allowed := append([]string(nil), githubInfraDomains...)
-	allowed = append(allowed, ecosystemDefaultDomains[env.PackageManager]...)
+	allowed = append(allowed, allEcosystemDomains...)
 
 	return &EgressAllowlistHandler{
 		observe: cfg.Experiments.Enabled(egressObserveExperiment),
@@ -90,6 +91,10 @@ func (h *EgressAllowlistHandler) recordNotAllowlisted(host string) {
 }
 
 func (h *EgressAllowlistHandler) isAllowed(host string) bool {
+	// Normalize an absolute DNS name (trailing dot) so exact matches treat
+	// "registry.npmjs.org." as equivalent to "registry.npmjs.org", consistent
+	// with HostMatchesDomain's boundary handling for the suffix form.
+	host = strings.TrimSuffix(host, ".")
 	for _, entry := range h.allowed {
 		// A leading dot means "this domain and any subdomain"; otherwise the
 		// entry must match the host exactly.

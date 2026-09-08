@@ -10,11 +10,13 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"io"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -90,6 +92,11 @@ func TestProxyEgressAllowlistObserveAllows(t *testing.T) {
 	}))
 	defer upstream.Close()
 
+	// Capture the global logger so we can assert the observe-mode log entry.
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
 	cfg := &config.Config{
 		CA:          testProxyConfig.CA,
 		Experiments: config.Experiments{"proxy_egress_observe": true},
@@ -107,6 +114,11 @@ func TestProxyEgressAllowlistObserveAllows(t *testing.T) {
 		require.NoError(t, rsp.Body.Close())
 	}()
 	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+
+	upstreamHost, _, err := net.SplitHostPort(upstream.Listener.Addr().String())
+	require.NoError(t, err)
+	assert.Contains(t, logs.String(), "egress not allowlisted "+upstreamHost,
+		"observe mode must log the non-allowlisted host")
 }
 
 func TestProxyHTTPSMITMFixedLengthResponseFraming(t *testing.T) {

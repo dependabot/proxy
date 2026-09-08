@@ -1,71 +1,63 @@
 package handlers
 
-// Allowlist entries are matched by EgressAllowlistHandler with this convention:
-// a leading dot (".github.com") matches that domain and any subdomain, while an
-// entry without a leading dot ("storage.googleapis.com") matches only that exact
-// host. Prefer exact hosts. Use the leading-dot form only for domains whose
-// subdomains are entirely provider-controlled and never user-creatable, so that
-// user-controlled subdomains — e.g. object-storage buckets reachable as
-// <bucket>.storage.googleapis.com — cannot be abused as an exfiltration channel.
+import (
+	_ "embed"
+	"fmt"
+	"slices"
 
-// githubInfraDomains are the GitHub and Dependabot infrastructure domains that
-// are always allowed. Their subdomains are entirely GitHub-controlled (api.,
-// codeload., objects./raw.githubusercontent.com, api.<tenant>.ghe.com), so the
-// leading-dot suffix form is safe here.
-var githubInfraDomains = []string{
-	".github.com",
-	".githubusercontent.com",
-	".githubapp.com",
-	".ghe.com",
-	"ghcr.io",
+	"gopkg.in/yaml.v3"
+)
+
+// egressDefaultsYAML holds the allowlist defaults. It is the single source of
+// truth for the GitHub infrastructure domains and per-ecosystem registry hosts;
+// see the file itself for the matching convention and provenance notes.
+//
+//go:embed egress_allowlist_defaults.yaml
+var egressDefaultsYAML []byte
+
+// egressDefaults is the parsed representation of egress_allowlist_defaults.yaml.
+type egressDefaults struct {
+	GithubInfraDomains      []string            `yaml:"github_infra_domains"`
+	EcosystemDefaultDomains map[string][]string `yaml:"ecosystem_default_domains"`
 }
 
-// ecosystemDefaultDomains maps a Dependabot package manager (the PACKAGE_MANAGER
-// env value, which is Dependabot's internal name such as "go_modules", not the
-// dependabot.yml value "gomod") to the public registry and CDN hosts it needs.
-// Entries are exact hosts unless a leading dot is present. Object-storage hosts
-// (storage.googleapis.com) are intentionally exact so user-created buckets under
-// them are not allowlisted.
-//
-// Every registered Dependabot ecosystem has an explicit entry below. An empty
-// entry ({}) means the ecosystem reaches only GitHub/Dependabot infrastructure
-// or plain git (covered by githubInfraDomains and the job's own git
-// credentials), or its registries are configured per job. These are:
-// github_actions, submodules, swift, vcpkg, pre_commit (all git/GitHub-hosted)
-// and helm (chart repositories supplied per job). Keys must match the ecosystem
-// internal names registered in dependabot-core (Dependabot::FileFetchers.register).
-var ecosystemDefaultDomains = map[string][]string{
-	"npm_and_yarn":   {"registry.npmjs.org", "registry.yarnpkg.com"},
-	"bun":            {"registry.npmjs.org", "registry.yarnpkg.com"},
-	"pip":            {"pypi.org", "files.pythonhosted.org"},
-	"uv":             {"pypi.org", "files.pythonhosted.org"},
-	"bundler":        {"rubygems.org", "index.rubygems.org"},
-	"maven":          {"repo.maven.apache.org", "repo1.maven.org", "plugins.gradle.org", "dl.google.com"},
-	"gradle":         {"repo.maven.apache.org", "repo1.maven.org", "plugins.gradle.org", "dl.google.com"},
-	"sbt":            {"repo1.maven.org", "repo.maven.apache.org", "repo.scala-sbt.org"},
-	"cargo":          {"crates.io", "static.crates.io", "index.crates.io"},
-	"composer":       {"repo.packagist.org", "packagist.org"},
-	"go_modules":     {"proxy.golang.org", "sum.golang.org", "storage.googleapis.com"},
-	"docker":         {"registry-1.docker.io", "auth.docker.io", "index.docker.io", "production.cloudflare.docker.com", "ghcr.io", "mcr.microsoft.com", "quay.io", "public.ecr.aws", ".gcr.io", ".pkg.dev"},
-	"docker_compose": {"registry-1.docker.io", "auth.docker.io", "index.docker.io", "production.cloudflare.docker.com", "ghcr.io", "mcr.microsoft.com", "quay.io", "public.ecr.aws", ".gcr.io", ".pkg.dev"},
-	"nuget":          {"api.nuget.org"},
-	"dotnet_sdk":     {"api.nuget.org"},
-	"hex":            {"repo.hex.pm", "hex.pm"},
-	"pub":            {"pub.dev", "pub.dartlang.org", "storage.googleapis.com"},
-	"terraform":      {"registry.terraform.io", "releases.hashicorp.com"},
-	"opentofu":       {"registry.opentofu.org", "releases.hashicorp.com"},
-	"elm":            {"package.elm-lang.org"},
-	"deno":           {"jsr.io", "deno.land", "registry.npmjs.org"},
-	"bazel":          {"bcr.bazel.build"},
-	"julia":          {"pkg.julialang.org"},
-	"rust_toolchain": {"static.rust-lang.org"},
-	"conda":          {"api.anaconda.org", "anaconda.org", "conda.anaconda.org", "repo.anaconda.com"},
-	"nix":            {"channels.nixos.org"},
-	"devcontainers":  {"registry-1.docker.io", "auth.docker.io", "index.docker.io", "production.cloudflare.docker.com", "ghcr.io", "mcr.microsoft.com", "quay.io", "public.ecr.aws", ".gcr.io", ".pkg.dev"},
-	"github_actions": {}, // GitHub-hosted; covered by githubInfraDomains
-	"submodules":     {}, // plain git; covered by githubInfraDomains + job git credentials
-	"swift":          {}, // SwiftPM git dependencies; covered by githubInfraDomains + git
-	"vcpkg":          {}, // baseline is the microsoft/vcpkg git repo; covered by githubInfraDomains
-	"pre_commit":     {}, // hooks are git repos; covered by githubInfraDomains + git
-	"helm":           {}, // chart repositories supplied per job; OCI charts via githubInfraDomains
+var (
+	// githubInfraDomains are the GitHub/Dependabot infrastructure domains that
+	// are always allowed, regardless of ecosystem.
+	githubInfraDomains []string
+
+	// ecosystemDefaultDomains maps each Dependabot ecosystem to the public
+	// registry/CDN hosts it needs. Retained for provenance/documentation; the
+	// handler applies the union (allEcosystemDomains), not a per-key lookup.
+	ecosystemDefaultDomains map[string][]string
+
+	// allEcosystemDomains is the deduplicated union of every ecosystem's
+	// defaults, applied to all jobs. We intentionally do not partition by
+	// PACKAGE_MANAGER: launchers do not reliably set it, and multi-ecosystem
+	// jobs need several ecosystems at once. All entries are trusted public
+	// registries, so the loss of cross-ecosystem isolation is negligible versus
+	// the exfiltration protection (unknown hosts are still blocked).
+	allEcosystemDomains []string
+)
+
+func init() {
+	var defaults egressDefaults
+	if err := yaml.Unmarshal(egressDefaultsYAML, &defaults); err != nil {
+		panic(fmt.Sprintf("parsing egress_allowlist_defaults.yaml: %v", err))
+	}
+
+	githubInfraDomains = defaults.GithubInfraDomains
+	ecosystemDefaultDomains = defaults.EcosystemDefaultDomains
+
+	seen := make(map[string]struct{})
+	for _, hosts := range ecosystemDefaultDomains {
+		for _, host := range hosts {
+			if _, ok := seen[host]; ok {
+				continue
+			}
+			seen[host] = struct{}{}
+			allEcosystemDomains = append(allEcosystemDomains, host)
+		}
+	}
+	slices.Sort(allEcosystemDomains)
 }
