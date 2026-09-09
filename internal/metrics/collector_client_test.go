@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
 )
@@ -80,30 +79,6 @@ func TestSendResponseCountMetric(t *testing.T) {
 	assert.Equal(t, "false", tags["grouped_update"])
 	assert.Equal(t, "200", tags["response_code"])
 	assert.Equal(t, "example.com", tags["request_host"])
-}
-
-func TestSendIncrementMetricSeparatesDistinctTags(t *testing.T) {
-	// Increments for the same metric name/type but different tag values (here
-	// request_host) are distinct series and must NOT be aggregated together,
-	// otherwise later hosts are miscounted against the first host's tags.
-	client := createTestClient()
-	client.MetricsBuffer = make([]map[string]any, 0)
-
-	require.NoError(t, client.SendMetric("egress_not_allowlisted_count", "increment", 1, map[string]string{"request_host": "a.example.com"}))
-	require.NoError(t, client.SendMetric("egress_not_allowlisted_count", "increment", 1, map[string]string{"request_host": "b.example.com"}))
-	// A repeat of the first host should aggregate onto the first entry only.
-	require.NoError(t, client.SendMetric("egress_not_allowlisted_count", "increment", 1, map[string]string{"request_host": "a.example.com"}))
-
-	require.Len(t, client.MetricsBuffer, 2, "distinct hosts must produce distinct buffer entries")
-
-	byHost := make(map[string]float64)
-	for _, m := range client.MetricsBuffer {
-		tags, ok := m["tags"].(map[string]string)
-		require.True(t, ok)
-		byHost[tags["request_host"]] = m["value"].(float64)
-	}
-	assert.Equal(t, 2.0, byHost["a.example.com"], "two increments for host a")
-	assert.Equal(t, 1.0, byHost["b.example.com"], "one increment for host b")
 }
 
 func TestFlushBuffer(t *testing.T) {

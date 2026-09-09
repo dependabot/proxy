@@ -11,13 +11,6 @@ import (
 	"github.com/dependabot/proxy/internal/logging"
 )
 
-// metricSender is the subset of the metrics client used by this handler. It is
-// defined locally so the handler depends on the behaviour, not the concrete
-// metrics package (and to avoid an import cycle).
-type metricSender interface {
-	SendMetric(name string, metricType string, value float64, additionalTags map[string]string) error
-}
-
 // Experiment flags (job experiments) that toggle egress filtering. They are
 // independent: observe logs non-allowlisted hosts, enforce drops them with a
 // 403. Both default off (fail-open) when absent.
@@ -34,23 +27,22 @@ type EgressAllowlistHandler struct {
 	observe bool
 	enforce bool
 	allowed []string
-	metrics metricSender
 }
 
 // NewEgressAllowlistHandler builds the allowlist from the always-allowed GitHub
-// infrastructure domains plus the union of every ecosystem's default registry
-// hosts (see allEcosystemDomains for why we do not partition by PACKAGE_MANAGER).
-// The observe/enforce toggles are driven by job experiments. The metrics client
-// may be nil, in which case no telemetry is emitted.
-func NewEgressAllowlistHandler(cfg *config.Config, env config.ProxyEnvSettings, metrics metricSender) *EgressAllowlistHandler {
+// infrastructure domains, the union of every ecosystem's default registry hosts,
+// and the job's dynamic hosts (configured registries, backend-supplied domains,
+// and OIDC token-exchange endpoints derived from cfg.Credentials). The observe/
+// enforce toggles are driven by job experiments.
+func NewEgressAllowlistHandler(cfg *config.Config, env config.ProxyEnvSettings) *EgressAllowlistHandler {
 	allowed := append([]string(nil), githubInfraDomains...)
 	allowed = append(allowed, allEcosystemDomains...)
+	allowed = append(allowed, dynamicHosts(cfg.Credentials)...)
 
 	return &EgressAllowlistHandler{
 		observe: cfg.Experiments.Enabled(egressObserveExperiment),
 		enforce: cfg.Experiments.Enabled(egressEnforceExperiment),
 		allowed: allowed,
-		metrics: metrics,
 	}
 }
 
@@ -65,12 +57,6 @@ func (h *EgressAllowlistHandler) HandleRequest(req *http.Request, proxyCtx *gopr
 		return req, nil
 	}
 
-	// Record the real (unbucketed) host so we can see, per ecosystem (via the
-	// package_manager default tag), which hosts jobs actually reach that are
-	// not yet on the allowlist. Cardinality is naturally bounded to the long
-	// tail of non-allowlisted hosts, which is exactly what we want to discover.
-	h.recordNotAllowlisted(host)
-
 	if h.observe {
 		logging.RequestLogf(proxyCtx, "* egress not allowlisted %s", host)
 	}
@@ -78,16 +64,6 @@ func (h *EgressAllowlistHandler) HandleRequest(req *http.Request, proxyCtx *gopr
 		return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, "Forbidden")
 	}
 	return req, nil
-}
-
-// recordNotAllowlisted emits a counter tagged with the real request host. The
-// package_manager tag is attached by the metrics client's default tags, so the
-// resulting series answers "top hosts per ecosystem" for allowlist tuning.
-func (h *EgressAllowlistHandler) recordNotAllowlisted(host string) {
-	if h.metrics == nil {
-		return
-	}
-	_ = h.metrics.SendMetric("egress_not_allowlisted_count", "increment", 1, map[string]string{"request_host": host})
 }
 
 func (h *EgressAllowlistHandler) isAllowed(host string) bool {

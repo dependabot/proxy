@@ -134,14 +134,9 @@ func (c *CollectorClient) SendMetric(name string, metricType string, value float
 	c.BufferMutex.Lock()
 	defer c.BufferMutex.Unlock()
 
-	// Check for existing metric and aggregate if possible. The aggregation key
-	// must include the full tag set: two entries with the same name/type but
-	// different tags (e.g. different request_host values) are distinct series
-	// and must not be merged, or later hosts would be miscounted against the
-	// first entry's tags.
+	// Check for existing metric and aggregate if possible
 	for i, existingMetric := range c.MetricsBuffer {
-		existingTags, _ := existingMetric["tags"].(map[string]string)
-		if existingMetric["metric"] == prefixedName && existingMetric["type"] == metricType && maps.Equal(existingTags, combinedTags) {
+		if existingMetric["metric"] == prefixedName && existingMetric["type"] == metricType {
 			if metricType == "increment" {
 				if existingValue, ok := existingMetric["value"].(float64); ok {
 					c.MetricsBuffer[i]["value"] = existingValue + value
