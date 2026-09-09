@@ -311,17 +311,9 @@ func TestUrlsCanBeDeterminedFromNuGetFeeds(t *testing.T) {
 				]
 			}`,
 			[]string{"https://nuget.example.com/v3/query", "https://nuget.example.com/v3/unknown"}},
-		{"EmptyResponse",
-			"https://nuget.example.com/v3",
-			"",
-			[]string{}},
 		{"WhitespaceResponse",
 			"https://nuget.example.com/v3",
 			" \n\t",
-			[]string{}},
-		{"ShortUnknownResponse",
-			"https://nuget.example.com/v3",
-			"short",
 			[]string{}},
 	}
 	for _, tc := range testCases {
@@ -331,6 +323,16 @@ func TestUrlsCanBeDeterminedFromNuGetFeeds(t *testing.T) {
 			assert.ElementsMatch(t, tc.expectedExtraUrls, actualExtraUrls)
 		})
 	}
+}
+
+func TestExtraUrlsFromSourceResponseHandlesShortUnknownBody(t *testing.T) {
+	assert.NotPanics(t, func() {
+		assert.Empty(t, extraUrlsFromSourceResponse([]byte("x"), "https://nuget.example.com/index.json"))
+	})
+}
+
+func TestExtraUrlsFromSourceResponseHandlesBlankBody(t *testing.T) {
+	assert.Empty(t, extraUrlsFromSourceResponse(nil, "https://nuget.example.com/index.json"))
 }
 
 func TestExtraAuthenticatedURLsAreReportedInTheLog(t *testing.T) {
@@ -373,6 +375,23 @@ func TestExtraAuthenticatedURLsAreReportedInTheLog(t *testing.T) {
 	assert.True(t, strings.Contains(logContents, "  added url to authentication list: https://nuget.example.com/v3/packages"), "include PackageBaseAddress")
 	assert.True(t, strings.Contains(logContents, "  added url to authentication list: https://nuget.example.com/v3/query"), "include SearchQueryService")
 	assert.True(t, strings.Contains(logContents, "  added url to authentication list: https://nuget.example.com/v3/unknown"), "include SomeUnknownServiceTypeButShouldStillBeIncluded")
+}
+
+func TestNewNugetFeedHandlerDiscoversResources(t *testing.T) {
+	const resourceURL = "https://cdn.example.com/packages"
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: nugetRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+			return nugetDiscoveryResponse(resourceURL), nil
+		}),
+	}
+	handler := NewNugetFeedHandler(config.Credentials{
+		{"type": "nuget_feed", "url": "https://nuget.example.com/index.json", "token": "some-token"},
+	}, client)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, resourceURL+"/example/1.0.0/example.nupkg", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "some-token", "resource discovered during construction")
 }
 
 func TestNugetFeedHandlerProxyOnlyCredentials(t *testing.T) {
@@ -659,11 +678,189 @@ func TestNugetFeedHandlerDiscoversFeedsConcurrentlyInCredentialOrder(t *testing.
 	})
 }
 
-func TestNugetFeedHandlerOnlyDiscoversFromOKResponses(t *testing.T) {
+func TestNugetFeedHandlerKeepsHTTPAndHTTPSDiscoverySourcesDistinct(t *testing.T) {
+	var httpCalls atomic.Int32
+	var httpsCalls atomic.Int32
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: nugetRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Scheme == "http" {
+				httpCalls.Add(1)
+				return nugetDiscoveryResponse("https://http-cdn.example.com/packages"), nil
+			}
+			httpsCalls.Add(1)
+			return nugetDiscoveryResponse("https://https-cdn.example.com/packages"), nil
+		}),
+	}
+	handler := NewNugetFeedHandler(config.Credentials{
+		{"type": "nuget_feed", "url": "http://nuget.example.com/index.json", "token": "http-token"},
+		{"type": "nuget_feed", "url": "https://nuget.example.com/index.json", "token": "https-token"},
+	}, client)
+
+	assert.Equal(t, int32(1), httpCalls.Load())
+	assert.Equal(t, int32(1), httpsCalls.Load())
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://http-cdn.example.com/packages/example/index.json", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "http-token", "resource discovered from HTTP source")
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://https-cdn.example.com/packages/example/index.json", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "https-token", "resource discovered from HTTPS source")
+}
+
+func TestNugetFeedHandlerConcurrentDiscoveryIsDeduplicated(t *testing.T) {
+	const sourceCount = 50
+	const resourceURL = "https://shared.example.com/packages"
+	var calls atomic.Int32
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: nugetRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+			calls.Add(1)
+			return nugetDiscoveryResponse(resourceURL), nil
+		}),
+	}
+	credentials := make(config.Credentials, 0, sourceCount)
+	for i := range sourceCount {
+		credentials = append(credentials, config.Credential{
+			"type":  "nuget_feed",
+			"url":   fmt.Sprintf("https://source-%d.example.com/index.json", i),
+			"token": fmt.Sprintf("token-%d", i),
+		})
+	}
+
+	handler := NewNugetFeedHandler(credentials, client)
+
+	assert.Equal(t, int32(sourceCount), calls.Load())
+	require.Len(t, handler.credentials, sourceCount+1)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, resourceURL+"/example/index.json", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "token-0", "first discovered credential")
+}
+
+func TestNugetFeedHandlerDiscoversThroughCrossOriginRedirectWithoutLeakingCredentials(t *testing.T) {
+	const resourceURL = "https://cdn.example.com/packages"
+	var firstRedirectAuth string
+	var finalRedirectAuth string
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: nugetRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.URL.Hostname() == "nuget.example.com":
+				return nugetRedirectResponse("https://redirect.example.com/index.json"), nil
+			case req.URL.Path == "/index.json":
+				firstRedirectAuth = req.Header.Get("Authorization")
+				return nugetRedirectResponse("/v3/index.json"), nil
+			case req.URL.Path == "/v3/index.json":
+				finalRedirectAuth = req.Header.Get("Authorization")
+				return nugetDiscoveryResponse(resourceURL), nil
+			default:
+				return nil, fmt.Errorf("unexpected discovery URL %s", req.URL)
+			}
+		}),
+	}
+	handler := NewNugetFeedHandler(config.Credentials{
+		{"type": "nuget_feed", "url": "https://nuget.example.com/index.json", "token": "some-token"},
+	}, client)
+
+	assert.Empty(t, firstRedirectAuth)
+	assert.Empty(t, finalRedirectAuth)
+	for _, redirectURL := range []string{
+		"https://redirect.example.com/index.json",
+		"https://redirect.example.com/v3/index.json",
+	} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, redirectURL, nil)
+		req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+		assertUnauthenticated(t, req, "cross-origin service-index redirect")
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, resourceURL+"/example/index.json", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "some-token", "resource discovered after cross-origin redirect")
+}
+
+func TestNugetFeedHandlerAuthenticatesSameOriginServiceIndexRedirect(t *testing.T) {
+	testCases := []struct {
+		name          string
+		configuredURL string
+		location      string
+		redirectURL   string
+	}{
+		{
+			name:          "absolute path",
+			configuredURL: "https://nuget.example.com/index.json",
+			location:      "/v3/index.json",
+			redirectURL:   "https://nuget.example.com/v3/index.json",
+		},
+		{
+			name:          "relative path",
+			configuredURL: "https://nuget.example.com/feed/index.json",
+			location:      "v3/index.json",
+			redirectURL:   "https://nuget.example.com/feed/v3/index.json",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			const resourceURL = "https://cdn.example.com/packages"
+			var redirectAuth string
+			client := &http.Client{
+				Timeout: 5 * time.Second,
+				Transport: nugetRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+					if req.URL.String() == testCase.configuredURL {
+						return nugetRedirectResponse(testCase.location), nil
+					}
+					if req.URL.String() == testCase.redirectURL {
+						redirectAuth = req.Header.Get("Authorization")
+						return nugetDiscoveryResponse(resourceURL), nil
+					}
+					return nil, fmt.Errorf("unexpected discovery URL %s", req.URL)
+				}),
+			}
+			handler := NewNugetFeedHandler(config.Credentials{
+				{"type": "nuget_feed", "url": testCase.configuredURL, "token": "some-token"},
+			}, client)
+
+			assert.Equal(t, "Bearer some-token", redirectAuth)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, testCase.redirectURL, nil)
+			req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+			assertHasTokenAuth(t, req, "Bearer", "some-token", "same-origin service-index redirect")
+		})
+	}
+}
+
+func TestNugetFeedHandlerResolvesRelativeRedirectAgainstConfiguredServiceIndexURL(t *testing.T) {
+	const configuredURL = "https://nuget.example.com/feed/index.json"
+	const redirectURL = "https://nuget.example.com/feed/next.json"
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: nugetRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() == configuredURL {
+				return nugetRedirectResponse("next.json"), nil
+			}
+			if req.URL.String() == redirectURL {
+				return nugetDiscoveryResponse("https://cdn.example.com/packages"), nil
+			}
+			return nil, fmt.Errorf("unexpected discovery URL %s", req.URL)
+		}),
+	}
+	handler := NewNugetFeedHandler(config.Credentials{
+		{"type": "nuget_feed", "url": configuredURL, "token": "some-token"},
+	}, client)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, redirectURL, nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "some-token", "relative service-index redirect")
+}
+
+func TestNugetFeedHandlerSkipsDiscoveryFromUnsuccessfulResponse(t *testing.T) {
 	for _, statusCode := range []int{
+		http.StatusUnauthorized,
+		http.StatusForbidden,
 		http.StatusNoContent,
 		http.StatusResetContent,
 		http.StatusFound,
+		http.StatusInternalServerError,
 	} {
 		t.Run(http.StatusText(statusCode), func(t *testing.T) {
 			client := &http.Client{
@@ -686,6 +883,14 @@ func TestNugetFeedHandlerOnlyDiscoversFromOKResponses(t *testing.T) {
 			require.Len(t, handler.credentials, 1)
 			assert.Equal(t, "https://nuget.example.com/index.json", handler.credentials[0].url)
 		})
+	}
+}
+
+func nugetRedirectResponse(location string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusTemporaryRedirect,
+		Header:     http.Header{"Location": []string{location}},
+		Body:       http.NoBody,
 	}
 }
 

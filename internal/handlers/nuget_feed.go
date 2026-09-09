@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -55,6 +56,11 @@ type nugetDiscoveryJob struct {
 	serviceIndexURL  string
 	staticCredential nugetFeedCredentials
 	oidcCredential   *oidc.OIDCCredential
+}
+
+type nugetDiscoveryResult struct {
+	resourceURLs              []string
+	authenticatedRedirectURLs []string
 }
 
 // NewNugetFeedHandler returns a new NugetFeedHandler.
@@ -110,9 +116,10 @@ func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFe
 			password:  password,
 			proxyOnly: proxyOnly,
 		}
-		if !handler.addStaticCredential(feedCred) {
+		if feedCred.token == "" && feedCred.password == "" {
 			continue
 		}
+		handler.addStaticCredential(feedCred)
 
 		// If the credentials are for a specific feed, we query the base url to find all the resources
 		// and authenticate them all
@@ -127,14 +134,26 @@ func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFe
 
 	discoveredURLs := discoverNugetFeedURLs(discoveryJobs, client, handler.oidcRegistry)
 	for i, job := range discoveryJobs {
+		for _, redirectURL := range discoveredURLs[i].authenticatedRedirectURLs {
+			if job.oidcCredential != nil {
+				handler.oidcRegistry.RegisterURL(redirectURL, job.oidcCredential, "nuget service-index redirect")
+				continue
+			}
+
+			credential := job.staticCredential
+			credential.url = redirectURL
+			credential.host = ""
+			handler.addStaticCredential(credential)
+		}
+
 		if job.oidcCredential != nil {
-			for _, discoveredURL := range discoveredURLs[i] {
+			for _, discoveredURL := range discoveredURLs[i].resourceURLs {
 				handler.oidcRegistry.RegisterURL(discoveredURL, job.oidcCredential, "nuget resource")
 			}
 			continue
 		}
 
-		for _, discoveredURL := range discoveredURLs[i] {
+		for _, discoveredURL := range discoveredURLs[i].resourceURLs {
 			credential := job.staticCredential
 			credential.url = discoveredURL
 			credential.host = ""
@@ -165,8 +184,8 @@ func discoverNugetFeedURLs(
 	jobs []nugetDiscoveryJob,
 	client *http.Client,
 	oidcRegistry *oidc.OIDCRegistry,
-) [][]string {
-	results := make([][]string, len(jobs))
+) []nugetDiscoveryResult {
+	results := make([]nugetDiscoveryResult, len(jobs))
 	if len(jobs) == 0 {
 		return results
 	}
@@ -196,49 +215,75 @@ func discoverNugetFeedURLsForJob(
 	job nugetDiscoveryJob,
 	client *http.Client,
 	oidcRegistry *oidc.OIDCRegistry,
-) []string {
+) nugetDiscoveryResult {
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, job.serviceIndexURL, nil)
 	if err != nil {
 		logging.RequestLogf(nil, "error creating http request (%s): %v", job.serviceIndexURL, err)
-		return nil
+		return nugetDiscoveryResult{}
 	}
 
 	if job.oidcCredential != nil {
 		if req.URL.Scheme != "https" {
 			logging.RequestLogf(nil, "refusing to discover nuget feed over non-https URL %s", job.serviceIndexURL)
-			return nil
+			return nugetDiscoveryResult{}
 		}
 		if !oidcRegistry.TryAuthCredential(req, nil, job.oidcCredential) {
-			return nil
+			return nugetDiscoveryResult{}
 		}
 	} else {
 		authenticateNugetRequest(req, job.staticCredential, nil)
 	}
 
-	rawRsp, err := client.Do(req)
+	result := nugetDiscoveryResult{}
+	redirectAuthAllowed := true
+	responseURL := req.URL
+	discoveryClient := *client
+	originalCheckRedirect := client.CheckRedirect
+	discoveryClient.CheckRedirect = func(redirectReq *http.Request, via []*http.Request) error {
+		if originalCheckRedirect != nil {
+			if err := originalCheckRedirect(redirectReq, via); err != nil {
+				return err
+			}
+		} else if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+
+		responseURL = redirectReq.URL
+		redirectAuthAllowed = redirectAuthAllowed && sameOrigin(via[len(via)-1].URL, redirectReq.URL)
+		if !redirectAuthAllowed {
+			redirectReq.Header.Del("Authorization")
+			redirectReq.Header.Del("X-Api-Key")
+			return nil
+		}
+		result.authenticatedRedirectURLs = append(result.authenticatedRedirectURLs, redirectReq.URL.String())
+		return nil
+	}
+
+	rawRsp, err := discoveryClient.Do(req)
 	if err != nil {
 		logging.RequestLogf(nil, "error retrieving http response (%s): %v", job.serviceIndexURL, err)
-		return nil
+		return result
 	}
 	defer rawRsp.Body.Close()
 
 	body, err := io.ReadAll(rawRsp.Body)
 	if err != nil {
 		logging.RequestLogf(nil, "error reading http response body (%s): %v", job.serviceIndexURL, err)
-		return nil
+		return result
 	}
 
 	switch rawRsp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		logging.RequestLogf(nil, "unauthorized for nuget feed %s", job.serviceIndexURL)
-		return nil
+		return result
 	}
 	if rawRsp.StatusCode != http.StatusOK {
 		logging.RequestLogf(nil, "unexpected http response %d for nuget feed %s", rawRsp.StatusCode, job.serviceIndexURL)
-		return nil
+		return result
 	}
 
-	return extraUrlsFromSourceResponse(body, job.serviceIndexURL)
+	result.resourceURLs = extraUrlsFromSourceResponse(body, responseURL.String())
+	return result
 }
 
 func extraUrlsFromSourceResponse(body []byte, url string) []string {
