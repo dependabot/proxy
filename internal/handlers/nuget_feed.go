@@ -35,8 +35,9 @@ type nugetV3IndexResponse struct {
 
 // NugetFeedHandler handles requests to nuget feeds, adding auth.
 type NugetFeedHandler struct {
-	credentials  []nugetFeedCredentials
-	oidcRegistry *oidc.OIDCRegistry
+	credentials    []nugetFeedCredentials
+	credentialURLs map[string]struct{}
+	oidcRegistry   *oidc.OIDCRegistry
 }
 
 type nugetFeedCredentials struct {
@@ -51,20 +52,20 @@ type nugetFeedCredentials struct {
 const nugetDiscoveryConcurrency = 8
 
 type nugetDiscoveryJob struct {
-	serviceIndexURL     string
-	staticCredential    nugetFeedCredentials
-	staticCredentialSet int
-	oidcCredential      *oidc.OIDCCredential
+	serviceIndexURL  string
+	staticCredential nugetFeedCredentials
+	oidcCredential   *oidc.OIDCCredential
 }
 
 // NewNugetFeedHandler returns a new NugetFeedHandler.
 func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFeedHandler {
 	handler := NugetFeedHandler{
-		credentials:  []nugetFeedCredentials{},
-		oidcRegistry: oidc.NewOIDCRegistry(client),
+		credentials:    []nugetFeedCredentials{},
+		credentialURLs: make(map[string]struct{}),
+		oidcRegistry:   oidc.NewOIDCRegistry(client),
 	}
-	staticCredentialSets := make([][]nugetFeedCredentials, 0)
 	discoveryJobs := make([]nugetDiscoveryJob, 0)
+	discoverySourceURLs := make(map[string]struct{})
 
 	for _, cred := range creds {
 		if cred["type"] != "nuget_feed" {
@@ -88,10 +89,9 @@ func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFe
 			oidcCredential, _, ok := handler.oidcRegistry.Register(cred, []string{"url"}, "nuget feed")
 			if ok {
 				if url != "" {
-					discoveryJobs = append(discoveryJobs, nugetDiscoveryJob{
-						serviceIndexURL:     url,
-						staticCredentialSet: -1,
-						oidcCredential:      oidcCredential,
+					addNugetDiscoveryJob(&discoveryJobs, discoverySourceURLs, nugetDiscoveryJob{
+						serviceIndexURL: url,
+						oidcCredential:  oidcCredential,
 					})
 				}
 				continue
@@ -110,17 +110,17 @@ func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFe
 			password:  password,
 			proxyOnly: proxyOnly,
 		}
-		staticCredentialSet := len(staticCredentialSets)
-		staticCredentialSets = append(staticCredentialSets, []nugetFeedCredentials{feedCred})
+		if !handler.addStaticCredential(feedCred) {
+			continue
+		}
 
 		// If the credentials are for a specific feed, we query the base url to find all the resources
 		// and authenticate them all
 		if !proxyOnly && url != "" {
 			logging.RequestLogf(nil, "fetching service index for nuget feed %s", url)
-			discoveryJobs = append(discoveryJobs, nugetDiscoveryJob{
-				serviceIndexURL:     url,
-				staticCredential:    feedCred,
-				staticCredentialSet: staticCredentialSet,
+			addNugetDiscoveryJob(&discoveryJobs, discoverySourceURLs, nugetDiscoveryJob{
+				serviceIndexURL:  url,
+				staticCredential: feedCred,
 			})
 		}
 	}
@@ -135,23 +135,30 @@ func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFe
 		}
 
 		for _, discoveredURL := range discoveredURLs[i] {
-			staticCredentialSets[job.staticCredentialSet] = append(
-				staticCredentialSets[job.staticCredentialSet],
-				nugetFeedCredentials{
-					url:      discoveredURL,
-					token:    job.staticCredential.token,
-					username: job.staticCredential.username,
-					password: job.staticCredential.password,
-				},
-			)
-			logging.RequestLogf(nil, "  added url to authentication list: %s", discoveredURL)
+			credential := job.staticCredential
+			credential.url = discoveredURL
+			credential.host = ""
+			if handler.addStaticCredential(credential) {
+				logging.RequestLogf(nil, "  added url to authentication list: %s", discoveredURL)
+			}
 		}
-	}
-	for _, credentialSet := range staticCredentialSets {
-		handler.credentials = append(handler.credentials, credentialSet...)
 	}
 
 	return &handler
+}
+
+func addNugetDiscoveryJob(
+	jobs *[]nugetDiscoveryJob,
+	sourceURLs map[string]struct{},
+	job nugetDiscoveryJob,
+) {
+	key := nugetDiscoverySourceKey(job.serviceIndexURL)
+	if _, ok := sourceURLs[key]; ok {
+		logging.RequestLogf(nil, "skipping duplicate NuGet service index because it is already registered: %s", job.serviceIndexURL)
+		return
+	}
+	sourceURLs[key] = struct{}{}
+	*jobs = append(*jobs, job)
 }
 
 func discoverNugetFeedURLs(
@@ -369,6 +376,51 @@ func (h *NugetFeedHandler) staticCredentialForRequest(req *http.Request, proxyOn
 		return &credential
 	}
 	return nil
+}
+
+func (h *NugetFeedHandler) addStaticCredential(credential nugetFeedCredentials) bool {
+	if credential.token == "" && credential.password == "" {
+		return false
+	}
+
+	if credential.url != "" {
+		key := nugetCredentialURLKey(credential.url)
+		if _, ok := h.credentialURLs[key]; ok {
+			logging.RequestLogf(nil, "skipping duplicate NuGet credential URL because it is already registered: %s", credential.url)
+			return false
+		}
+		h.credentialURLs[key] = struct{}{}
+	}
+	h.credentials = append(h.credentials, credential)
+	return true
+}
+
+func nugetCredentialURLKey(rawURL string) string {
+	parsedURL, err := helpers.ParseURLLax(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	path, ok := helpers.CanonicalPath(parsedURL.EscapedPath())
+	if !ok {
+		return rawURL
+	}
+	port := parsedURL.Port()
+	if port == "" {
+		port = "443"
+	}
+	return strings.ToLower(parsedURL.Hostname()) + ":" + port + path + "?" + parsedURL.RawQuery
+}
+
+func nugetDiscoverySourceKey(rawURL string) string {
+	parsedURL, err := helpers.ParseURLLax(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	scheme := strings.ToLower(parsedURL.Scheme)
+	if scheme == "" {
+		scheme = "*"
+	}
+	return scheme + "|" + nugetCredentialURLKey(rawURL)
 }
 
 func authenticateNugetRequest(req *http.Request, cred nugetFeedCredentials, proxyCtx *goproxy.ProxyCtx) {

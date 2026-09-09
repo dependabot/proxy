@@ -9,9 +9,11 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/elazarl/goproxy"
 	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +26,18 @@ type nugetRoundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f nugetRoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func newTestNugetFeedHandler(credentials config.Credentials) *NugetFeedHandler {
+	return NewNugetFeedHandler(credentials, &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: nugetRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusNoContent,
+				Body:       http.NoBody,
+			}, nil
+		}),
+	})
 }
 
 func TestNugetFeedHandler(t *testing.T) {
@@ -141,7 +155,7 @@ func TestNugetFeedHandler(t *testing.T) {
 	handler := NewNugetFeedHandler(credentials, testOIDCClient)
 	logContents := buf.String()
 	assert.False(t, strings.Contains(logContents, "* authenticating nuget feed request (host: api.nuget.org, bearer auth)"), "don't authenticate a feed without a token or password")
-	assert.True(t, strings.Contains(logContents, "unauthorized for nuget feed https://nuget.example.com/auth-required/v3"), "authentication failure is reported")
+	assert.NotContains(t, logContents, "https://nuget.example.com/auth-required/v3", "don't query a feed without usable credentials")
 
 	req := httptest.NewRequestWithContext(t.Context(), "GET", "https://corp.dependabot.com/nuget", nil)
 	req = handleRequestAndClose(handler, req, nil)
@@ -405,6 +419,171 @@ func TestNugetFeedHandlerProxyOnlyCredentials(t *testing.T) {
 	}
 }
 
+func TestNugetFeedHandlerPrefersMostSpecificURLCredential(t *testing.T) {
+	broadCredential := config.Credential{
+		"type":  "nuget_feed",
+		"url":   "https://nuget.example.com/feed",
+		"token": "broad-token",
+	}
+	specificCredential := config.Credential{
+		"type":  "nuget_feed",
+		"url":   "https://nuget.example.com/feed/specific",
+		"token": "specific-token",
+	}
+	hostCredential := config.Credential{
+		"type":     "nuget_feed",
+		"host":     "nuget.example.com",
+		"username": "host-user",
+		"password": "host-password",
+	}
+
+	for _, credentials := range []config.Credentials{
+		{broadCredential, specificCredential, hostCredential},
+		{specificCredential, hostCredential, broadCredential},
+	} {
+		handler := newTestNugetFeedHandler(credentials)
+		req := httptest.NewRequestWithContext(
+			t.Context(),
+			http.MethodGet,
+			"https://nuget.example.com/feed/specific/package/index.json",
+			nil,
+		)
+		req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+		assertHasTokenAuth(t, req, "Bearer", "specific-token", "most specific URL credential")
+	}
+}
+
+func TestNugetFeedHandlerCanonicalURLKeys(t *testing.T) {
+	equivalentEncodedURL := "https://nuget.example.com/f%65ed"
+	equivalentPlainURL := "https://nuget.example.com/feed"
+	encodedSlashURL := "https://nuget.example.com/feed%2fencoded"
+	literalSlashURL := "https://nuget.example.com/feed/encoded"
+
+	assert.Equal(t, nugetCredentialURLKey(equivalentEncodedURL), nugetCredentialURLKey(equivalentPlainURL))
+	assert.Equal(t, nugetDiscoverySourceKey(equivalentEncodedURL), nugetDiscoverySourceKey(equivalentPlainURL))
+	assert.NotEqual(t, nugetCredentialURLKey(encodedSlashURL), nugetCredentialURLKey(literalSlashURL))
+	assert.NotEqual(t, nugetDiscoverySourceKey(encodedSlashURL), nugetDiscoverySourceKey(literalSlashURL))
+
+	equivalentHandler := newTestNugetFeedHandler(config.Credentials{
+		{"type": "nuget_feed", "url": equivalentEncodedURL, "token": "first-token"},
+		{"type": "nuget_feed", "url": equivalentPlainURL, "token": "second-token"},
+	})
+	require.Len(t, equivalentHandler.credentials, 1)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, equivalentPlainURL+"/package/index.json", nil)
+	req = handleRequestAndClose(equivalentHandler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "first-token", "first equivalent credential is retained")
+
+	distinctHandler := newTestNugetFeedHandler(config.Credentials{
+		{"type": "nuget_feed", "url": encodedSlashURL, "token": "encoded-token"},
+		{"type": "nuget_feed", "url": literalSlashURL, "token": "literal-token"},
+	})
+	require.Len(t, distinctHandler.credentials, 2)
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, encodedSlashURL+"/package/index.json", nil)
+	req = handleRequestAndClose(distinctHandler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "encoded-token", "encoded slash credential")
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, literalSlashURL+"/package/index.json", nil)
+	req = handleRequestAndClose(distinctHandler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "literal-token", "literal path separator credential")
+}
+
+func TestNugetFeedHandlerIgnoresUnusableStaticCredentials(t *testing.T) {
+	const credentialURL = "https://nuget.example.com/v3/index.json"
+	unusableCredential := config.Credential{
+		"type": "nuget_feed",
+		"url":  credentialURL,
+	}
+	usableCredential := config.Credential{
+		"type":  "nuget_feed",
+		"url":   credentialURL,
+		"token": "some-token",
+	}
+
+	var discoveryCalls atomic.Int32
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: nugetRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+			discoveryCalls.Add(1)
+			return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}, nil
+		}),
+	}
+	handler := NewNugetFeedHandler(config.Credentials{unusableCredential}, client)
+	assert.Empty(t, handler.credentials)
+	assert.Zero(t, discoveryCalls.Load())
+
+	for _, credentials := range []config.Credentials{
+		{unusableCredential, usableCredential},
+		{usableCredential, unusableCredential},
+	} {
+		handler = newTestNugetFeedHandler(credentials)
+		require.Len(t, handler.credentials, 1)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, credentialURL, nil)
+		req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+		assertHasTokenAuth(t, req, "Bearer", "some-token", "usable duplicate credential")
+	}
+}
+
+func TestNugetFeedHandlerConfiguredCredentialPrecedesDiscoveredCredential(t *testing.T) {
+	const configuredURL = "https://cdn.example.com/packages"
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: nugetRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Hostname() == "source.example.com" {
+				return nugetDiscoveryResponse(configuredURL), nil
+			}
+			return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}, nil
+		}),
+	}
+	handler := NewNugetFeedHandler(config.Credentials{
+		{"type": "nuget_feed", "url": "https://source.example.com/index.json", "token": "discovery-token"},
+		{"type": "nuget_feed", "url": configuredURL, "token": "configured-token"},
+	}, client)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, configuredURL+"/example/index.json", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "configured-token", "configured credential")
+}
+
+func TestNugetFeedHandlerUnusableCredentialDoesNotBlockDiscoveredCredential(t *testing.T) {
+	const resourceURL = "https://cdn.example.com/packages"
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: nugetRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+			return nugetDiscoveryResponse(resourceURL), nil
+		}),
+	}
+	handler := NewNugetFeedHandler(config.Credentials{
+		{"type": "nuget_feed", "url": resourceURL},
+		{"type": "nuget_feed", "url": "https://source.example.com/index.json", "token": "some-token"},
+	}, client)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, resourceURL+"/example/index.json", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "some-token", "discovered credential replacing unusable entry")
+}
+
+func TestNugetFeedHandlerLogsIgnoredDuplicateResourceURL(t *testing.T) {
+	const resourceURL = "https://shared.example.com/packages"
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: nugetRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+			return nugetDiscoveryResponse(resourceURL), nil
+		}),
+	}
+	var buf bytes.Buffer
+	testhelpers.CaptureStandardLog(t, &buf)
+	handler := NewNugetFeedHandler(config.Credentials{
+		{"type": "nuget_feed", "url": "https://first.example.com/index.json", "token": "first-token"},
+		{"type": "nuget_feed", "url": "https://second.example.com/index.json", "token": "second-token"},
+	}, client)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, resourceURL+"/example/index.json", nil)
+	req = handleRequestAndClose(handler, req, &goproxy.ProxyCtx{})
+	assertHasTokenAuth(t, req, "Bearer", "first-token", "first credential registered for shared resource")
+	assert.Contains(t, buf.String(), "skipping duplicate NuGet credential URL because it is already registered: "+resourceURL)
+}
+
 func TestNugetFeedHandlerDiscoversFeedsConcurrentlyInCredentialOrder(t *testing.T) {
 	firstRequestStarted := make(chan struct{})
 	secondRequestCompleted := make(chan struct{})
@@ -469,8 +648,8 @@ func TestNugetFeedHandlerDiscoversFeedsConcurrentlyInCredentialOrder(t *testing.
 	require.Len(t, handler.credentials, 4)
 	assert.Equal(t, []string{
 		"https://first.example.com/index.json",
-		"https://first-cdn.example.com/packages",
 		"https://second.example.com/index.json",
+		"https://first-cdn.example.com/packages",
 		"https://second-cdn.example.com/packages",
 	}, []string{
 		handler.credentials[0].url,
