@@ -3,10 +3,14 @@ package handlers
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
@@ -15,6 +19,12 @@ import (
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/testhelpers"
 )
+
+type nugetRoundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f nugetRoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestNugetFeedHandler(t *testing.T) {
 	dependabotToken := "123"
@@ -380,5 +390,90 @@ func TestNugetFeedHandlerProxyOnlyCredentials(t *testing.T) {
 		req = httptest.NewRequestWithContext(t.Context(), "GET", requestURL, nil)
 		req = handleRequestAndClose(handler, req, nil)
 		assertUnauthenticated(t, req, "automatic credential destination safety")
+	}
+}
+
+func TestNugetFeedHandlerDiscoversFeedsConcurrentlyInCredentialOrder(t *testing.T) {
+	firstRequestStarted := make(chan struct{})
+	secondRequestCompleted := make(chan struct{})
+	releaseFirstRequest := make(chan struct{})
+	var closeFirstStarted sync.Once
+	var closeSecondCompleted sync.Once
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: nugetRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Hostname() {
+			case "first.example.com":
+				closeFirstStarted.Do(func() { close(firstRequestStarted) })
+				<-releaseFirstRequest
+				return nugetDiscoveryResponse("https://first-cdn.example.com/packages"), nil
+			case "second.example.com":
+				closeSecondCompleted.Do(func() { close(secondRequestCompleted) })
+				return nugetDiscoveryResponse("https://second-cdn.example.com/packages"), nil
+			default:
+				return nil, fmt.Errorf("unexpected NuGet discovery host %s", req.URL.Hostname())
+			}
+		}),
+	}
+
+	handlerResult := make(chan *NugetFeedHandler, 1)
+	go func() {
+		handlerResult <- NewNugetFeedHandler(config.Credentials{
+			{
+				"type":  "nuget_feed",
+				"url":   "https://first.example.com/index.json",
+				"token": "first-token",
+			},
+			{
+				"type":  "nuget_feed",
+				"url":   "https://second.example.com/index.json",
+				"token": "second-token",
+			},
+		}, client)
+	}()
+
+	select {
+	case <-firstRequestStarted:
+	case <-time.After(time.Second):
+		close(releaseFirstRequest)
+		require.FailNow(t, "first NuGet discovery request did not start")
+	}
+	select {
+	case <-secondRequestCompleted:
+	case <-time.After(time.Second):
+		close(releaseFirstRequest)
+		require.FailNow(t, "second NuGet discovery request did not complete while the first was blocked")
+	}
+	close(releaseFirstRequest)
+
+	var handler *NugetFeedHandler
+	select {
+	case handler = <-handlerResult:
+	case <-time.After(time.Second):
+		require.FailNow(t, "NuGet feed handler construction did not complete")
+	}
+
+	require.Len(t, handler.credentials, 4)
+	assert.Equal(t, []string{
+		"https://first.example.com/index.json",
+		"https://first-cdn.example.com/packages",
+		"https://second.example.com/index.json",
+		"https://second-cdn.example.com/packages",
+	}, []string{
+		handler.credentials[0].url,
+		handler.credentials[1].url,
+		handler.credentials[2].url,
+		handler.credentials[3].url,
+	})
+}
+
+func nugetDiscoveryResponse(resourceURL string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(fmt.Sprintf(
+			`{"version":"3.0.0","resources":[{"@id":%q,"@type":"PackageBaseAddress/3.0.0"}]}`,
+			resourceURL,
+		))),
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -47,12 +48,23 @@ type nugetFeedCredentials struct {
 	proxyOnly bool
 }
 
+const nugetDiscoveryConcurrency = 8
+
+type nugetDiscoveryJob struct {
+	serviceIndexURL     string
+	staticCredential    nugetFeedCredentials
+	staticCredentialSet int
+	oidcCredential      *oidc.OIDCCredential
+}
+
 // NewNugetFeedHandler returns a new NugetFeedHandler.
 func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFeedHandler {
 	handler := NugetFeedHandler{
 		credentials:  []nugetFeedCredentials{},
 		oidcRegistry: oidc.NewOIDCRegistry(client),
 	}
+	staticCredentialSets := make([][]nugetFeedCredentials, 0)
+	discoveryJobs := make([]nugetDiscoveryJob, 0)
 
 	for _, cred := range creds {
 		if cred["type"] != "nuget_feed" {
@@ -75,53 +87,12 @@ func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFe
 		} else {
 			oidcCredential, _, ok := handler.oidcRegistry.Register(cred, []string{"url"}, "nuget feed")
 			if ok {
-				// Discover additional resource URLs from the nuget feed index.
 				if url != "" {
-					func() {
-						req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
-						if err != nil {
-							logging.RequestLogf(nil, "error creating http request (%s): %v", url, err)
-							return
-						}
-
-						if req.URL.Scheme != "https" {
-							logging.RequestLogf(nil, "refusing to discover nuget feed over non-https URL %s", url)
-							return
-						}
-
-						if !handler.oidcRegistry.TryAuth(req, nil) {
-							return
-						}
-
-						rawRsp, err := client.Do(req)
-						if err != nil {
-							logging.RequestLogf(nil, "error retrieving http response (%s): %v", url, err)
-							return
-						}
-						defer rawRsp.Body.Close()
-
-						body, err := io.ReadAll(rawRsp.Body)
-						if err != nil {
-							logging.RequestLogf(nil, "error reading http response body (%s): %v", url, err)
-							return
-						}
-
-						switch rawRsp.StatusCode {
-						case 401, 403:
-							logging.RequestLogf(nil, "unauthorized for nuget feed %s", url)
-							return
-						}
-
-						if rawRsp.StatusCode >= 400 {
-							logging.RequestLogf(nil, "unexpected http response %d for nuget feed %s", rawRsp.StatusCode, url)
-							return
-						}
-
-						urlsToAuthenticate := extraUrlsFromSourceResponse(body, url)
-						for _, discoveredURL := range urlsToAuthenticate {
-							handler.oidcRegistry.RegisterURL(discoveredURL, oidcCredential, "nuget resource")
-						}
-					}()
+					discoveryJobs = append(discoveryJobs, nugetDiscoveryJob{
+						serviceIndexURL:     url,
+						staticCredentialSet: -1,
+						oidcCredential:      oidcCredential,
+					})
 				}
 				continue
 			}
@@ -139,62 +110,128 @@ func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFe
 			password:  password,
 			proxyOnly: proxyOnly,
 		}
-		handler.credentials = append(handler.credentials, feedCred)
+		staticCredentialSet := len(staticCredentialSets)
+		staticCredentialSets = append(staticCredentialSets, []nugetFeedCredentials{feedCred})
 
 		// If the credentials are for a specific feed, we query the base url to find all the resources
 		// and authenticate them all
 		if !proxyOnly && url != "" {
 			logging.RequestLogf(nil, "fetching service index for nuget feed %s", url)
-			// Same closure pattern as the OIDC block above — ensures the
-			// HTTP response body is always closed via defer.
-			func() {
-				req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
-				if err != nil {
-					logging.RequestLogf(nil, "error creating http request (%s): %v", url, err)
-					return
-				}
-				authenticateNugetRequest(req, feedCred, nil)
-
-				rawRsp, err := client.Do(req)
-				if err != nil {
-					logging.RequestLogf(nil, "error retrieving http response (%s): %v", url, err)
-					return
-				}
-				defer rawRsp.Body.Close()
-
-				body, err := io.ReadAll(rawRsp.Body)
-				if err != nil {
-					logging.RequestLogf(nil, "error reading http response body (%s): %v", url, err)
-					return
-				}
-
-				switch rawRsp.StatusCode {
-				case 401, 403:
-					logging.RequestLogf(nil, "unauthorized for nuget feed %s", url)
-					return
-				}
-
-				if rawRsp.StatusCode >= 400 {
-					logging.RequestLogf(nil, "unexpected http response %d for nuget feed %s", rawRsp.StatusCode, url)
-					return
-				}
-
-				urlsToAuthenticate := extraUrlsFromSourceResponse(body, url)
-				for _, discoveredURL := range urlsToAuthenticate {
-					feedCred := nugetFeedCredentials{
-						url:      discoveredURL,
-						token:    token,
-						username: username,
-						password: password,
-					}
-					handler.credentials = append(handler.credentials, feedCred)
-					logging.RequestLogf(nil, "  added url to authentication list: %s", discoveredURL)
-				}
-			}()
+			discoveryJobs = append(discoveryJobs, nugetDiscoveryJob{
+				serviceIndexURL:     url,
+				staticCredential:    feedCred,
+				staticCredentialSet: staticCredentialSet,
+			})
 		}
 	}
 
+	discoveredURLs := discoverNugetFeedURLs(discoveryJobs, client, handler.oidcRegistry)
+	for i, job := range discoveryJobs {
+		if job.oidcCredential != nil {
+			for _, discoveredURL := range discoveredURLs[i] {
+				handler.oidcRegistry.RegisterURL(discoveredURL, job.oidcCredential, "nuget resource")
+			}
+			continue
+		}
+
+		for _, discoveredURL := range discoveredURLs[i] {
+			staticCredentialSets[job.staticCredentialSet] = append(
+				staticCredentialSets[job.staticCredentialSet],
+				nugetFeedCredentials{
+					url:      discoveredURL,
+					token:    job.staticCredential.token,
+					username: job.staticCredential.username,
+					password: job.staticCredential.password,
+				},
+			)
+			logging.RequestLogf(nil, "  added url to authentication list: %s", discoveredURL)
+		}
+	}
+	for _, credentialSet := range staticCredentialSets {
+		handler.credentials = append(handler.credentials, credentialSet...)
+	}
+
 	return &handler
+}
+
+func discoverNugetFeedURLs(
+	jobs []nugetDiscoveryJob,
+	client *http.Client,
+	oidcRegistry *oidc.OIDCRegistry,
+) [][]string {
+	results := make([][]string, len(jobs))
+	if len(jobs) == 0 {
+		return results
+	}
+
+	jobIndexes := make(chan int)
+	workerCount := min(nugetDiscoveryConcurrency, len(jobs))
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for jobIndex := range jobIndexes {
+				results[jobIndex] = discoverNugetFeedURLsForJob(jobs[jobIndex], client, oidcRegistry)
+			}
+		}()
+	}
+	for jobIndex := range jobs {
+		jobIndexes <- jobIndex
+	}
+	close(jobIndexes)
+	workers.Wait()
+
+	return results
+}
+
+func discoverNugetFeedURLsForJob(
+	job nugetDiscoveryJob,
+	client *http.Client,
+	oidcRegistry *oidc.OIDCRegistry,
+) []string {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, job.serviceIndexURL, nil)
+	if err != nil {
+		logging.RequestLogf(nil, "error creating http request (%s): %v", job.serviceIndexURL, err)
+		return nil
+	}
+
+	if job.oidcCredential != nil {
+		if req.URL.Scheme != "https" {
+			logging.RequestLogf(nil, "refusing to discover nuget feed over non-https URL %s", job.serviceIndexURL)
+			return nil
+		}
+		if !oidcRegistry.TryAuthCredential(req, nil, job.oidcCredential) {
+			return nil
+		}
+	} else {
+		authenticateNugetRequest(req, job.staticCredential, nil)
+	}
+
+	rawRsp, err := client.Do(req)
+	if err != nil {
+		logging.RequestLogf(nil, "error retrieving http response (%s): %v", job.serviceIndexURL, err)
+		return nil
+	}
+	defer rawRsp.Body.Close()
+
+	body, err := io.ReadAll(rawRsp.Body)
+	if err != nil {
+		logging.RequestLogf(nil, "error reading http response body (%s): %v", job.serviceIndexURL, err)
+		return nil
+	}
+
+	switch rawRsp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		logging.RequestLogf(nil, "unauthorized for nuget feed %s", job.serviceIndexURL)
+		return nil
+	}
+	if rawRsp.StatusCode >= http.StatusBadRequest {
+		logging.RequestLogf(nil, "unexpected http response %d for nuget feed %s", rawRsp.StatusCode, job.serviceIndexURL)
+		return nil
+	}
+
+	return extraUrlsFromSourceResponse(body, job.serviceIndexURL)
 }
 
 func extraUrlsFromSourceResponse(body []byte, url string) []string {
