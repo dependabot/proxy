@@ -297,6 +297,18 @@ func TestUrlsCanBeDeterminedFromNuGetFeeds(t *testing.T) {
 				]
 			}`,
 			[]string{"https://nuget.example.com/v3/query", "https://nuget.example.com/v3/unknown"}},
+		{"EmptyResponse",
+			"https://nuget.example.com/v3",
+			"",
+			[]string{}},
+		{"WhitespaceResponse",
+			"https://nuget.example.com/v3",
+			" \n\t",
+			[]string{}},
+		{"ShortUnknownResponse",
+			"https://nuget.example.com/v3",
+			"short",
+			[]string{}},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -466,6 +478,36 @@ func TestNugetFeedHandlerDiscoversFeedsConcurrentlyInCredentialOrder(t *testing.
 		handler.credentials[2].url,
 		handler.credentials[3].url,
 	})
+}
+
+func TestNugetFeedHandlerOnlyDiscoversFromOKResponses(t *testing.T) {
+	for _, statusCode := range []int{
+		http.StatusNoContent,
+		http.StatusResetContent,
+		http.StatusFound,
+	} {
+		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+			client := &http.Client{
+				Timeout: 5 * time.Second,
+				Transport: nugetRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+					response := nugetDiscoveryResponse("https://cdn.example.com/packages")
+					response.StatusCode = statusCode
+					return response, nil
+				}),
+			}
+
+			handler := NewNugetFeedHandler(config.Credentials{
+				{
+					"type":  "nuget_feed",
+					"url":   "https://nuget.example.com/index.json",
+					"token": "some-token",
+				},
+			}, client)
+
+			require.Len(t, handler.credentials, 1)
+			assert.Equal(t, "https://nuget.example.com/index.json", handler.credentials[0].url)
+		})
+	}
 }
 
 func nugetDiscoveryResponse(resourceURL string) *http.Response {

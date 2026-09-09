@@ -226,7 +226,7 @@ func discoverNugetFeedURLsForJob(
 		logging.RequestLogf(nil, "unauthorized for nuget feed %s", job.serviceIndexURL)
 		return nil
 	}
-	if rawRsp.StatusCode >= http.StatusBadRequest {
+	if rawRsp.StatusCode != http.StatusOK {
 		logging.RequestLogf(nil, "unexpected http response %d for nuget feed %s", rawRsp.StatusCode, job.serviceIndexURL)
 		return nil
 	}
@@ -237,6 +237,10 @@ func discoverNugetFeedURLsForJob(
 func extraUrlsFromSourceResponse(body []byte, url string) []string {
 	var urls []string
 	bodyString := strings.TrimSpace(string(body))
+	if bodyString == "" {
+		logging.RequestLogf(nil, "empty API response from NuGet feed %s", url)
+		return nil
+	}
 	bodyReader := bytes.NewReader(body)
 	switch {
 	case strings.HasPrefix(bodyString, "<"):
@@ -246,7 +250,7 @@ func extraUrlsFromSourceResponse(body []byte, url string) []string {
 		// JSON v3 API
 		urls = handleV3Response(bodyReader, url)
 	default:
-		logging.RequestLogf(nil, "unknown API response: %s...", bodyString[:10])
+		logging.RequestLogf(nil, "unknown API response: %.10s...", bodyString)
 	}
 
 	var result []string
