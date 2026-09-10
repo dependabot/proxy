@@ -73,6 +73,9 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 	proxy.OnRequest().DoFunc(logger.logRequest)
 	proxy.OnResponse().DoFunc(logger.logResponse)
 
+	egressAllowlistHandler := handlers.NewEgressAllowlistHandler(cfg, envSettings)
+	proxy.OnRequest().DoFunc(egressAllowlistHandler.HandleRequest)
+
 	nugetFeedHandler := handlers.NewNugetFeedHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(nugetFeedHandler.PrepareRequest)
 
