@@ -31,9 +31,9 @@ type EgressAllowlistHandler struct {
 
 // NewEgressAllowlistHandler builds the allowlist from the always-allowed GitHub
 // infrastructure domains, the union of every ecosystem's default registry hosts,
-// and the job's dynamic hosts (configured registries, backend-supplied domains,
-// and OIDC token-exchange endpoints derived from cfg.Credentials). The observe/
-// enforce toggles are driven by job experiments.
+// and the job's dynamic hosts (configured registries and OIDC token-exchange
+// endpoints derived from cfg.Credentials). The observe/enforce toggles are
+// driven by job experiments.
 func NewEgressAllowlistHandler(cfg *config.Config, env config.ProxyEnvSettings) *EgressAllowlistHandler {
 	allowed := append([]string(nil), githubInfraDomains...)
 	allowed = append(allowed, allEcosystemDomains...)

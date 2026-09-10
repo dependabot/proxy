@@ -49,23 +49,6 @@ func TestCredentialHosts_ConfiguredRegistriesAllowed(t *testing.T) {
 		"non-configured host must still be blocked")
 }
 
-func TestCredentialHosts_BackendSuppliedDomains(t *testing.T) {
-	creds := config.Credentials{
-		{
-			"type":     "npm_registry",
-			"registry": "https://npm.internal.example.com",
-			// Escape hatch: the registry redirects downloads to an unrelated CDN.
-			"domains": []any{"cdn.internal.example.com", ".assets.example.net"},
-		},
-	}
-	h := newEgressHandlerWithCreds(creds)
-
-	assert.Nil(t, egressResult(t, h, "https://cdn.internal.example.com/tarball"),
-		"backend-supplied domain must be allowed")
-	assert.Nil(t, egressResult(t, h, "https://a.assets.example.net/file"),
-		"backend-supplied leading-dot suffix must cover subdomains")
-}
-
 func TestOIDCExchangeHosts_Azure(t *testing.T) {
 	creds := config.Credentials{
 		{

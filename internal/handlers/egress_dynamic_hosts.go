@@ -42,23 +42,14 @@ func hostFromValue(v string) string {
 }
 
 // credentialHosts returns the hosts a job is explicitly configured to reach:
-// the host of every URL-bearing credential field, plus any backend-supplied
-// "domains" escape-hatch entries. These are inherently trusted for this job.
+// the host of every URL-bearing credential field. These are inherently trusted
+// for this job.
 func credentialHosts(creds config.Credentials) []string {
 	var hosts []string
 	for _, c := range creds {
 		for _, key := range credentialHostKeys {
 			if h := hostFromValue(c.GetString(key)); h != "" {
 				hosts = append(hosts, h)
-			}
-		}
-		// Backend-supplied escape hatch: an explicit list of domains that the
-		// proxy cannot otherwise derive (e.g. a registry that redirects
-		// downloads to an unrelated CDN host). Entries may be bare hosts or
-		// leading-dot suffix patterns; both are honoured by isAllowed.
-		for _, d := range c.GetListOfStrings("domains") {
-			if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
-				hosts = append(hosts, d)
 			}
 		}
 	}
@@ -104,8 +95,7 @@ func oidcExchangeHosts(creds config.Credentials) []string {
 }
 
 // dynamicHosts returns the deduplicated per-job hosts derived from the job's
-// credentials: configured registries, backend-supplied domains, and OIDC
-// token-exchange endpoints.
+// credentials: configured registries and OIDC token-exchange endpoints.
 func dynamicHosts(creds config.Credentials) []string {
 	seen := make(map[string]struct{})
 	var out []string
