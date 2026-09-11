@@ -3,9 +3,9 @@ package egress
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,10 +13,13 @@ import (
 	"github.com/dependabot/proxy/internal/config"
 )
 
-// mockAPIClient captures the payloads passed to RecordEgressHosts.
+// mockAPIClient captures the payloads passed to RecordEgressHosts. When err is
+// set, RecordEgressHosts fails (simulating an unavailable backend) but still
+// records the attempted payload.
 type mockAPIClient struct {
 	mutex    sync.Mutex
 	payloads []string
+	err      error
 }
 
 func (m *mockAPIClient) ReportMetrics(context.Context, string) error { return nil }
@@ -25,7 +28,19 @@ func (m *mockAPIClient) RecordEgressHosts(_ context.Context, data string) error 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	m.payloads = append(m.payloads, data)
-	return nil
+	return m.err
+}
+
+func (m *mockAPIClient) setErr(err error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.err = err
+}
+
+func (m *mockAPIClient) payloadCount() int {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	return len(m.payloads)
 }
 
 func (m *mockAPIClient) lastPayload() (string, bool) {
@@ -122,9 +137,63 @@ func TestCollectorStopBatchProcessFlushes(t *testing.T) {
 	c.StopBatchProcess()
 	c.StopBatchProcess() // idempotent
 
-	// Give the background goroutine a moment to flush on close.
-	require.Eventually(t, func() bool {
-		_, ok := apiClient.lastPayload()
-		return ok
-	}, time.Second, 10*time.Millisecond)
+	// StopBatchProcess blocks until the final flush completes, so the payload
+	// must already be present without any further waiting.
+	_, ok := apiClient.lastPayload()
+	assert.True(t, ok, "shutdown must wait for the final flush to post buffered hosts")
+}
+
+func TestCollectorRequeuesBatchOnFailure(t *testing.T) {
+	apiClient := &mockAPIClient{}
+	apiClient.setErr(errors.New("backend unavailable"))
+	c := newTestCollector("https://example.com", apiClient)
+	c.flushTicker.Stop()
+
+	c.RecordHost("registry.npmjs.org", true)
+	c.RecordHost("registry.npmjs.org", true)
+	c.flush() // fails, batch requeued
+
+	require.Equal(t, 1, apiClient.payloadCount(), "one failed attempt so far")
+
+	// Backend recovers; the retained observations are reported on the next flush.
+	apiClient.setErr(nil)
+	c.flush()
+
+	require.Equal(t, 2, apiClient.payloadCount(), "retained batch is retried after recovery")
+
+	payload, ok := apiClient.lastPayload()
+	require.True(t, ok)
+
+	var parsed struct {
+		Data []map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(payload), &parsed))
+	require.Len(t, parsed.Data, 1)
+	assert.Equal(t, "registry.npmjs.org", parsed.Data[0]["host"])
+	assert.Equal(t, float64(2), parsed.Data[0]["count"], "counts are preserved across the failed attempt")
+}
+
+func TestCollectorRequeueMergesWithNewObservations(t *testing.T) {
+	apiClient := &mockAPIClient{}
+	apiClient.setErr(errors.New("backend unavailable"))
+	c := newTestCollector("https://example.com", apiClient)
+	c.flushTicker.Stop()
+
+	c.RecordHost("registry.npmjs.org", true)
+	c.flush() // fails, requeued
+
+	// A new observation of the same host recorded after the failed send should
+	// be summed with the requeued count.
+	c.RecordHost("registry.npmjs.org", true)
+
+	apiClient.setErr(nil)
+	c.flush()
+
+	payload, _ := apiClient.lastPayload()
+	var parsed struct {
+		Data []map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(payload), &parsed))
+	require.Len(t, parsed.Data, 1)
+	assert.Equal(t, float64(2), parsed.Data[0]["count"])
 }

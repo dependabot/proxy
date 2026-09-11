@@ -43,6 +43,7 @@ type Collector struct {
 
 	flushTicker *time.Ticker
 	closeCh     chan struct{}
+	doneCh      chan struct{}
 	closeChOnce sync.Once
 }
 
@@ -56,6 +57,7 @@ func New(envSettings config.ProxyEnvSettings, apiClient apiclient.ClientInterfac
 		hosts:          make(map[hostKey]int),
 		flushTicker:    time.NewTicker(flushInterval),
 		closeCh:        make(chan struct{}),
+		doneCh:         make(chan struct{}),
 	}
 	go c.process()
 
@@ -79,6 +81,7 @@ func (c *Collector) RecordHost(host string, allowlisted bool) {
 }
 
 func (c *Collector) process() {
+	defer close(c.doneCh)
 	defer func() {
 		if r := recover(); r != nil {
 			logrus.Errorln("egress Collector process panicked:", r)
@@ -90,17 +93,21 @@ func (c *Collector) process() {
 		case <-c.flushTicker.C:
 			c.flush()
 		case <-c.closeCh:
+			c.flushTicker.Stop()
 			c.flush()
 			return
 		}
 	}
 }
 
-// StopBatchProcess stops the background flusher after a final flush.
+// StopBatchProcess stops the background flusher and blocks until it has
+// performed its final flush, so a shutting-down process does not exit before the
+// buffered hosts are posted. It is safe to call multiple times.
 func (c *Collector) StopBatchProcess() {
 	c.closeChOnce.Do(func() {
 		close(c.closeCh)
 	})
+	<-c.doneCh
 }
 
 // canReport avoids sending during smoke tests, where the api endpoint is empty.
@@ -114,13 +121,19 @@ func (c *Collector) flush() {
 		return
 	}
 
+	// Detach the current batch, but keep it so it can be requeued if the report
+	// fails. New observations recorded during the send accumulate in a fresh map.
 	c.mutex.Lock()
 	if len(c.hosts) == 0 {
 		c.mutex.Unlock()
 		return
 	}
-	records := make([]map[string]any, 0, len(c.hosts))
-	for key, count := range c.hosts {
+	batch := c.hosts
+	c.hosts = make(map[hostKey]int)
+	c.mutex.Unlock()
+
+	records := make([]map[string]any, 0, len(batch))
+	for key, count := range batch {
 		records = append(records, map[string]any{
 			"host":            key.host,
 			"allowlisted":     key.allowlisted,
@@ -128,11 +141,11 @@ func (c *Collector) flush() {
 			"package_manager": c.packageManager,
 		})
 	}
-	c.hosts = make(map[hostKey]int)
-	c.mutex.Unlock()
 
 	jsonData, err := json.Marshal(map[string]any{"data": records})
 	if err != nil {
+		// A marshaling failure is not transient, so dropping the batch avoids
+		// requeuing data that can never be sent.
 		logrus.Errorln("Error marshaling egress hosts data:", err)
 		return
 	}
@@ -143,7 +156,24 @@ func (c *Collector) flush() {
 	logrus.Info("Posting egress hosts to remote API endpoint")
 	if err := c.apiClient.RecordEgressHosts(ctx, string(jsonData)); err != nil {
 		logrus.Errorln("Error posting egress hosts data via api client:", err)
-	} else {
-		logrus.Infoln("Successfully posted egress hosts data via api client")
+		c.requeue(batch)
+		return
+	}
+	logrus.Infoln("Successfully posted egress hosts data via api client")
+}
+
+// requeue merges a failed batch back into the buffer so a transient backend
+// failure does not permanently discard observations. Counts are summed with any
+// observations recorded during the failed send, and the maxHosts cap still
+// bounds the number of distinct hosts retained.
+func (c *Collector) requeue(batch map[hostKey]int) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	for key, count := range batch {
+		if _, seen := c.hosts[key]; !seen && len(c.hosts) >= maxHosts {
+			continue
+		}
+		c.hosts[key] += count
 	}
 }
