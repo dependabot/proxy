@@ -22,6 +22,12 @@ type oidcHandler interface {
 	HandleRequest(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response)
 }
 
+type mockHttpRequest struct {
+	verb     string
+	url      string
+	response string
+}
+
 func TestOIDCURLsAreAuthenticated(t *testing.T) {
 	testTenantId := "12345678-1234-1234-1234-123456789012"
 	testClientId := "87654321-4321-4321-4321-210987654321"
@@ -31,8 +37,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 		provider           string
 		handlerFactory     func(creds config.Credentials) oidcHandler
 		credentials        config.Credentials
-		serviceIndexURL    string
-		resourceURL        string
+		urlMocks           []mockHttpRequest
 		expectedLogLines   []string
 		urlsToAuthenticate []string
 	}{
@@ -56,6 +61,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for cargo registry: https://cargo.example.com/packages",
 			},
@@ -77,6 +83,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for cargo registry: https://cargo.example.com/packages",
 			},
@@ -97,6 +104,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for cargo registry: https://jfrog.example.com/packages",
 			},
@@ -119,6 +127,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for cargo registry: https://cloudsmith.example.com",
 			},
@@ -139,6 +148,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for cargo registry: https://us-central1-cargo.pkg.dev/my-project/my-repo",
 			},
@@ -166,6 +176,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for composer repository: https://composer.example.com",
 			},
@@ -187,6 +198,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for composer repository: https://composer.example.com",
 			},
@@ -208,6 +220,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for composer repository: https://jfrog.example.com",
 			},
@@ -230,6 +243,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for composer repository: https://cloudsmith.example.com",
 			},
@@ -250,6 +264,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for composer repository: https://us-central1-composer.pkg.dev/my-project/my-repo",
 			},
@@ -278,6 +293,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for docker registry: https://docker.example.com",
 			},
@@ -299,6 +315,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for docker registry: https://docker.example.com",
 			},
@@ -319,6 +336,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for docker registry: https://jfrog.example.com/v2/dependabot",
 			},
@@ -341,6 +359,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for docker registry: https://cloudsmith.example.com",
 			},
@@ -361,6 +380,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for docker registry: https://us-central1-docker.pkg.dev",
 			},
@@ -388,6 +408,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for goproxy server: https://goproxy.example.com",
 			},
@@ -409,6 +430,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for goproxy server: goproxy.example.com",
 			},
@@ -429,6 +451,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for goproxy server: https://jfrog.example.com",
 			},
@@ -451,6 +474,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for goproxy server: https://cloudsmith.example.com",
 			},
@@ -471,6 +495,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for goproxy server: https://us-central1-go.pkg.dev/my-project/my-repo",
 			},
@@ -498,6 +523,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for helm registry: https://helm.example.com",
 			},
@@ -519,6 +545,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for helm registry: https://helm.example.com",
 			},
@@ -539,6 +566,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for helm registry: jfrog.example.com",
 			},
@@ -561,6 +589,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for helm registry: https://cloudsmith.example.com",
 			},
@@ -581,6 +610,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for helm registry: https://us-central1-helm.pkg.dev/my-project/my-repo",
 			},
@@ -608,6 +638,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for hex repository: https://hex.example.com",
 			},
@@ -629,6 +660,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for hex repository: https://hex.example.com",
 			},
@@ -649,6 +681,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for hex repository: https://jfrog.example.com",
 			},
@@ -671,6 +704,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for hex repository: https://cloudsmith.example.com",
 			},
@@ -691,6 +725,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for hex repository: https://us-central1-hex.pkg.dev/my-project/my-repo",
 			},
@@ -718,6 +753,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for maven repository: https://maven.example.com/packages",
 			},
@@ -739,6 +775,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for maven repository: https://maven.example.com/packages",
 			},
@@ -759,6 +796,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for maven repository: https://jfrog.example.com/packages",
 			},
@@ -781,6 +819,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for maven repository: https://cloudsmith.example.com",
 			},
@@ -801,6 +840,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for maven repository: https://us-central1-maven.pkg.dev/my-project/my-repo",
 			},
@@ -828,6 +868,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for npm registry: https://npm.example.com",
 			},
@@ -849,6 +890,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for npm registry: https://npm.example.com",
 			},
@@ -869,6 +911,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for npm registry: https://jfrog.example.com",
 			},
@@ -891,6 +934,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for npm registry: https://cloudsmith.example.com",
 			},
@@ -911,6 +955,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for npm registry: https://us-central1-npm.pkg.dev/my-project/my-repo",
 			},
@@ -938,10 +983,16 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
-			serviceIndexURL: "https://nuget.example.com/index.json",
-			resourceURL:     "https://nuget.example.com/v3/packages",
+			urlMocks: []mockHttpRequest{
+				{
+					verb:     "GET",
+					url:      "https://nuget.example.com/index.json",
+					response: `{"version":"3.0.0","resources":[{"@id":"https://nuget.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+				},
+			},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for nuget feed: https://nuget.example.com/index.json",
+				"registered aws OIDC credentials for nuget resource: https://nuget.example.com/v3/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://nuget.example.com/index.json",                          // base url
@@ -962,10 +1013,16 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
-			serviceIndexURL: "https://nuget.example.com/index.json",
-			resourceURL:     "https://nuget.example.com/v3/packages",
+			urlMocks: []mockHttpRequest{
+				{
+					verb:     "GET",
+					url:      "https://nuget.example.com/index.json",
+					response: `{"version":"3.0.0","resources":[{"@id":"https://nuget.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+				},
+			},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for nuget feed: https://nuget.example.com/index.json",
+				"registered azure OIDC credentials for nuget resource: https://nuget.example.com/v3/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://nuget.example.com/index.json",                          // base url
@@ -985,10 +1042,16 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
-			serviceIndexURL: "https://jfrog.example.com/index.json",
-			resourceURL:     "https://jfrog.example.com/v3/packages",
+			urlMocks: []mockHttpRequest{
+				{
+					verb:     "GET",
+					url:      "https://jfrog.example.com/index.json",
+					response: `{"version":"3.0.0","resources":[{"@id":"https://jfrog.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+				},
+			},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for nuget feed: https://jfrog.example.com/index.json",
+				"registered jfrog OIDC credentials for nuget resource: https://jfrog.example.com/v3/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://jfrog.example.com/index.json",                          // base url
@@ -1010,10 +1073,16 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
-			serviceIndexURL: "https://cloudsmith.example.com/v3/index.json",
-			resourceURL:     "https://cloudsmith.example.com/v3/packages",
+			urlMocks: []mockHttpRequest{
+				{
+					verb:     "GET",
+					url:      "https://cloudsmith.example.com/v3/index.json",
+					response: `{"version":"3.0.0","resources":[{"@id":"https://cloudsmith.example.com/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+				},
+			},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for nuget feed: https://cloudsmith.example.com/v3/index.json",
+				"registered cloudsmith OIDC credentials for nuget resource: https://cloudsmith.example.com/v3/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://cloudsmith.example.com/v3/index.json",                       // base url
@@ -1033,10 +1102,16 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
-			serviceIndexURL: "https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
-			resourceURL:     "https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages",
+			urlMocks: []mockHttpRequest{
+				{
+					verb:     "GET",
+					url:      "https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
+					response: `{"version":"3.0.0","resources":[{"@id":"https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages","@type":"PackageBaseAddress/3.0.0"}]}`,
+				},
+			},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for nuget feed: https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",
+				"registered gcp OIDC credentials for nuget resource: https://us-central1-nuget.pkg.dev/my-project/my-repo/v3/packages",
 			},
 			urlsToAuthenticate: []string{
 				"https://us-central1-nuget.pkg.dev/my-project/my-repo/index.json",                          // base url
@@ -1063,6 +1138,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for pub repository: https://pub.example.com",
 			},
@@ -1084,6 +1160,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for pub repository: https://pub.example.com",
 			},
@@ -1104,6 +1181,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for pub repository: https://jfrog.example.com",
 			},
@@ -1126,6 +1204,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for pub repository: https://cloudsmith.example.com",
 			},
@@ -1146,6 +1225,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for pub repository: https://us-central1-pub.pkg.dev/my-project/my-repo",
 			},
@@ -1173,6 +1253,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for python index: https://python.example.com",
 			},
@@ -1194,6 +1275,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for python index: https://python.example.com",
 			},
@@ -1214,6 +1296,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for python index: https://jfrog.example.com",
 			},
@@ -1236,6 +1319,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for python index: https://cloudsmith.example.com",
 			},
@@ -1256,6 +1340,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for python index: https://us-central1-python.pkg.dev/my-project/my-repo/",
 			},
@@ -1283,6 +1368,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for rubygems server: https://rubygems.example.com",
 			},
@@ -1304,6 +1390,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for rubygems server: https://rubygems.example.com",
 			},
@@ -1325,6 +1412,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for rubygems server: https://jfrog.example.com",
 			},
@@ -1348,6 +1436,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for rubygems server: https://cloudsmith.example.com",
 			},
@@ -1369,6 +1458,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for rubygems server: https://us-central1-ruby.pkg.dev/my-project/my-repo",
 			},
@@ -1396,6 +1486,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"domain-owner": "9876543210",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered aws OIDC credentials for terraform registry: https://terraform.example.com",
 			},
@@ -1417,6 +1508,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"client-id": testClientId,
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered azure OIDC credentials for terraform registry: https://terraform.example.com",
 			},
@@ -1437,6 +1529,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"jfrog-oidc-provider-name": "proxy-test",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered jfrog OIDC credentials for terraform registry: https://jfrog.example.com",
 			},
@@ -1459,6 +1552,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"audience":     "my-audience",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered cloudsmith OIDC credentials for terraform registry: https://cloudsmith.example.com",
 			},
@@ -1479,6 +1573,7 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				},
 			},
+			urlMocks: []mockHttpRequest{},
 			expectedLogLines: []string{
 				"registered gcp OIDC credentials for terraform registry: https://us-central1-terraform.pkg.dev/my-project/my-repo",
 			},
@@ -1491,6 +1586,12 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 		t.Run(fmt.Sprintf("%s - %s", tc.name, tc.provider), func(t *testing.T) {
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
+
+			// mock URLs
+			for _, mockReq := range tc.urlMocks {
+				httpmock.RegisterResponder(mockReq.verb, mockReq.url,
+					httpmock.NewStringResponder(200, mockReq.response))
+			}
 
 			// mock GitHub OIDC token request
 			tokenUrl := "https://token.actions.example.com" //nolint:gosec // test URL
@@ -1559,13 +1660,6 @@ func TestOIDCURLsAreAuthenticated(t *testing.T) {
 			var buf bytes.Buffer
 			testhelpers.CaptureStandardLog(t, &buf)
 			handler := tc.handlerFactory(tc.credentials)
-			if tc.serviceIndexURL != "" {
-				nugetHandler, ok := handler.(*NugetFeedHandler)
-				if !assert.True(t, ok, "handler with a service index should be a NuGet handler") {
-					return
-				}
-				discoverNugetFeed(t, nugetHandler, tc.serviceIndexURL, http.StatusOK, nugetV3Response(tc.resourceURL))
-			}
 			logContents := buf.String()
 
 			// check expected log lines
