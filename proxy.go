@@ -17,6 +17,7 @@ import (
 	"github.com/dependabot/proxy/internal/cache"
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/dialer"
+	"github.com/dependabot/proxy/internal/egress"
 	"github.com/dependabot/proxy/internal/handlers"
 	"github.com/dependabot/proxy/internal/metrics"
 )
@@ -59,6 +60,7 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 
 	apiClient := apiclient.New(envSettings.APIEndpoint, envSettings.JobToken, envSettings.JobID, apiclient.WithTransport(transport))
 	metricsClient := metrics.New(envSettings, apiClient)
+	egressCollector := egress.New(envSettings, apiClient)
 
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Tr = transport
@@ -73,7 +75,7 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 	proxy.OnRequest().DoFunc(logger.logRequest)
 	proxy.OnResponse().DoFunc(logger.logResponse)
 
-	egressAllowlistHandler := handlers.NewEgressAllowlistHandler(cfg, envSettings)
+	egressAllowlistHandler := handlers.NewEgressAllowlistHandler(cfg, envSettings, egressCollector)
 	proxy.OnRequest().DoFunc(egressAllowlistHandler.HandleRequest)
 
 	enableCache := os.Getenv("PROXY_CACHE") == "true"
@@ -156,6 +158,7 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 		metricsClient:   metricsClient,
 		Close: func() error {
 			metricsClient.StopBatchProcess()
+			egressCollector.StopBatchProcess()
 			if cacher != nil {
 				cacher.Statistics()
 				return cacher.WriteToDisk()

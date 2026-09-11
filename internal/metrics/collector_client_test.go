@@ -19,6 +19,12 @@ func (c *MockAPIClient) ReportMetrics(context.Context, string) error {
 	return nil
 }
 
+// Mock the RecordEgressHosts method
+func (c *MockAPIClient) RecordEgressHosts(context.Context, string) error {
+	// Mock logic or simply return nil to simulate success
+	return nil
+}
+
 func createTestClient() *CollectorClient {
 
 	envSettings := config.ProxyEnvSettings{

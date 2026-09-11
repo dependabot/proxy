@@ -42,6 +42,7 @@ type Client struct {
 
 type ClientInterface interface {
 	ReportMetrics(ctx context.Context, metricsData string) error
+	RecordEgressHosts(ctx context.Context, egressData string) error
 }
 
 // Ensure Client implements ClientInterface
@@ -156,6 +157,22 @@ func (c *Client) ReportMetrics(ctx context.Context, metricsData string) (err err
 
 	// Submit JSON:
 	rsp, err := c.doRequest(ctx, "POST", metricErrorURL, metricsData)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, rsp.Body.Close())
+	}()
+	return nil
+}
+
+// RecordEgressHosts sends the outbound hosts observed during the job to the
+// server, which forwards them to Splunk/Kusto for egress-allowlist tuning.
+func (c *Client) RecordEgressHosts(ctx context.Context, egressData string) (err error) {
+	egressHostsURL := c.newURL("/update_jobs/%s/record_egress_hosts", c.jobID)
+
+	// Submit JSON:
+	rsp, err := c.doRequest(ctx, "POST", egressHostsURL, egressData)
 	if err != nil {
 		return err
 	}
