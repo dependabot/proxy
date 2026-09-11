@@ -97,8 +97,15 @@ func CreateOIDCCredential(cred config.Credential, client *http.Client) (*OIDCCre
 	clientID := cred.GetString("client-id")
 
 	// jfrog values
-	feedUrl := cred.GetString("url")
-	jfrogOidcProviderName := cred.GetString("jfrog-oidc-provider-name")
+	feedUrl := getFirstString(cred, "url", "registry")
+	jfrogOidcProviderName := getFirstString(cred, "jfrog-oidc-provider-name", "oidc-provider-name")
+	jfrogAudience := getFirstString(cred, "audience", "oidc-audience")
+	jfrogIdentityMappingName := getFirstString(
+		cred,
+		"identity-mapping-name",
+		"oidc-identity-mapping-name",
+		"jfrog-oidc-identity-mapping-name",
+	)
 
 	// aws values
 	awsRegion := cred.GetString("aws-region")
@@ -133,8 +140,18 @@ func CreateOIDCCredential(cred config.Credential, client *http.Client) (*OIDCCre
 			JFrogURL:     fmt.Sprintf("%s://%s", jfrogUrlParsed.Scheme, jfrogUrlParsed.Host),
 			ProviderName: jfrogOidcProviderName,
 			// optional
-			Audience:            cred.GetString("audience"),
-			IdentityMappingName: cred.GetString("identity-mapping-name"),
+			Audience:            jfrogAudience,
+			IdentityMappingName: jfrogIdentityMappingName,
+		}
+
+		func getFirstString(cred config.Credential, keys ...string) string {
+			for _, key := range keys {
+				if value := cred.GetString(key); value != "" {
+					return value
+				}
+			}
+
+			return ""
 		}
 	case awsRegion != "" && accountID != "" && roleName != "" && domain != "" && domainOwner != "":
 		audience := cred.GetString("audience")
