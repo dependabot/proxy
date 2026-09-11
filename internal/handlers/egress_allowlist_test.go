@@ -11,7 +11,7 @@ import (
 )
 
 func newEgressHandler(observe, enforce bool, packageManager string) *EgressAllowlistHandler {
-	return NewEgressAllowlistHandler(egressCfg(observe, enforce), config.ProxyEnvSettings{PackageManager: packageManager})
+	return NewEgressAllowlistHandler(egressCfg(observe, enforce), config.ProxyEnvSettings{PackageManager: packageManager}, nil)
 }
 
 // egressCfg builds a Config whose experiments toggle the egress observe/enforce
@@ -30,7 +30,7 @@ func egressCfg(observe, enforce bool) *config.Config {
 func newEgressHandlerWithCreds(creds config.Credentials) *EgressAllowlistHandler {
 	cfg := egressCfg(false, true)
 	cfg.Credentials = creds
-	return NewEgressAllowlistHandler(cfg, config.ProxyEnvSettings{})
+	return NewEgressAllowlistHandler(cfg, config.ProxyEnvSettings{}, nil)
 }
 
 // egressResult runs HandleRequest and returns the response (nil means allowed).
@@ -127,6 +127,42 @@ func TestEgressAllowlist_SuffixEntryAllowsSubdomain(t *testing.T) {
 
 	assert.Nil(t, egressResult(t, h, "https://us.gcr.io/v2/project/image"), "provider-controlled subdomain allowed")
 	assert.Nil(t, egressResult(t, h, "https://europe-docker.pkg.dev/v2/project/image"), "artifact registry subdomain allowed")
+}
+
+// fakeRecorder records the hosts passed to RecordHost for assertions.
+type fakeRecorder struct {
+	hosts []recordedHost
+}
+
+type recordedHost struct {
+	host        string
+	allowlisted bool
+}
+
+func (r *fakeRecorder) RecordHost(host string, allowlisted bool) {
+	r.hosts = append(r.hosts, recordedHost{host: host, allowlisted: allowlisted})
+}
+
+func TestEgressAllowlist_RecordsObservedHosts(t *testing.T) {
+	recorder := &fakeRecorder{}
+	h := NewEgressAllowlistHandler(egressCfg(true, false), config.ProxyEnvSettings{}, recorder)
+
+	egressResult(t, h, "https://registry.npmjs.org/left-pad")
+	egressResult(t, h, "https://evil.com/steal")
+
+	assert.Equal(t, []recordedHost{
+		{host: "registry.npmjs.org", allowlisted: true},
+		{host: "evil.com", allowlisted: false},
+	}, recorder.hosts)
+}
+
+func TestEgressAllowlist_DoesNotRecordWhenDisabled(t *testing.T) {
+	recorder := &fakeRecorder{}
+	h := NewEgressAllowlistHandler(egressCfg(false, false), config.ProxyEnvSettings{}, recorder)
+
+	egressResult(t, h, "https://evil.com/steal")
+
+	assert.Empty(t, recorder.hosts, "fail-open mode records nothing")
 }
 
 func TestEgressAllowlist_UnknownOrEmptyPackageManagerStillGetsUnion(t *testing.T) {

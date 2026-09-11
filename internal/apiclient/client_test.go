@@ -79,6 +79,30 @@ func TestClient_ReportMetrics_Success(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestClient_RecordEgressHosts_Success(t *testing.T) {
+	egressData := []map[string]any{
+		{"host": "registry.npmjs.org", "allowlisted": true, "count": 3, "package_manager": "npm_and_yarn"},
+		{"host": "evil.com", "allowlisted": false, "count": 1, "package_manager": "npm_and_yarn"},
+	}
+	expectedBody, err := json.Marshal(map[string]any{"data": egressData})
+	require.NoError(t, err)
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/update_jobs/1234/record_egress_hosts", r.URL.Path)
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.JSONEq(t, string(expectedBody), string(body))
+	}))
+	defer s.Close()
+
+	client := apiclient.New(s.URL, jobToken, jobID)
+
+	err = client.RecordEgressHosts(context.Background(), string(expectedBody))
+	require.NoError(t, err)
+}
+
 func TestClient_ReportMetrics_Error(t *testing.T) {
 	var requestCount int64
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
