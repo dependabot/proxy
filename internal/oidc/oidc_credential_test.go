@@ -188,9 +188,9 @@ func TestTryCreateOIDCCredential(t *testing.T) {
 		{
 			"jfrog with org-level aliases",
 			config.Credential{
-				"registry":                          "https://jfrog.example.com/artifactory/api/npm/my-feed",
-				"oidc-provider-name":                "some-provider",
-				"oidc-audience":                     "test-audience",
+				"registry":                         "https://jfrog.example.com/artifactory/api/npm/my-feed",
+				"oidc-provider-name":               "some-provider",
+				"oidc-audience":                    "test-audience",
 				"jfrog-oidc-identity-mapping-name": "test-mapping",
 			},
 			&JFrogOIDCParameters{
