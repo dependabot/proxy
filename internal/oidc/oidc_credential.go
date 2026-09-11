@@ -143,16 +143,6 @@ func CreateOIDCCredential(cred config.Credential, client *http.Client) (*OIDCCre
 			Audience:            jfrogAudience,
 			IdentityMappingName: jfrogIdentityMappingName,
 		}
-
-		func getFirstString(cred config.Credential, keys ...string) string {
-			for _, key := range keys {
-				if value := cred.GetString(key); value != "" {
-					return value
-				}
-			}
-
-			return ""
-		}
 	case awsRegion != "" && accountID != "" && roleName != "" && domain != "" && domainOwner != "":
 		audience := cred.GetString("audience")
 		if audience == "" {
@@ -197,6 +187,16 @@ func CreateOIDCCredential(cred config.Credential, client *http.Client) (*OIDCCre
 		parameters: parameters,
 		httpClient: client,
 	}, nil
+}
+
+func getFirstString(cred config.Credential, keys ...string) string {
+	for _, key := range keys {
+		if value := cred.GetString(key); value != "" {
+			return value
+		}
+	}
+
+	return ""
 }
 
 // GetOrRefreshOIDCToken gets a cached token or fetches a new one if expired
