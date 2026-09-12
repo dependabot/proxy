@@ -1,7 +1,6 @@
 export PROXY_IMAGE=dependabot/proxy
 export TESTS_IMAGE=dependabot/proxy-builder-tests
 export REMOTE_IMAGE=ghcr.io/dependabot/proxy
-export DEFAULT_BRANCH=refs/heads/main
 
 function docker_build() {
   [[ -n "$SKIP_BUILD" ]] && return
