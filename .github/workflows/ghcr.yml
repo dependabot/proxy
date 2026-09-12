@@ -38,15 +38,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image by digest
+      - name: Set version tag
+        run: |
+          VERSION="v2.0.$(date -u +%Y%m%d%H%M%S)"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Build and push image
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
+          push: true
+          tags: |
+            ${{ env.REMOTE_IMAGE }}:${{ env.VERSION }}
+            ${{ env.REMOTE_IMAGE }}:latest
           platforms: linux/amd64
           build-args: GIT_COMMIT=${{ github.sha }}
           cache-to: type=inline
-          outputs: type=image,name=${{ env.REMOTE_IMAGE }},push-by-digest=true,name-canonical=true,push=true,oci-mediatypes=false
+          outputs: type=image,oci-mediatypes=false
           # Generate signed provenance separately without changing the image manifest.
           provenance: false
           sbom: false
@@ -63,19 +72,12 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
-      - name: Publish image and Git tags
+      - name: Create Git tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          VERSION="v2.0.$(date -u +%Y%m%d%H%M%S)"
-          docker buildx imagetools create \
-            --prefer-index=false \
-            --tag "${REMOTE_IMAGE}:${VERSION}" \
-            --tag "${REMOTE_IMAGE}:latest" \
-            "${REMOTE_IMAGE}@${IMAGE_DIGEST}"
-
           gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
             -f "ref=refs/tags/${VERSION}" \
             -f "sha=${GITHUB_SHA}" \

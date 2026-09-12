@@ -13,9 +13,10 @@ To build and run the proxy, you need to have the following installed:
 ## Image provenance
 
 The `main` publish workflow builds `ghcr.io/dependabot/proxy` for `linux/amd64`.
-It pushes the image by digest and publishes GitHub build provenance to GitHub and GHCR before assigning release tags.
-Each publication creates a `v2.0.YYYYMMDDHHMMSS` image tag and updates `latest`.
-The matching Git tag points to the source commit.
+The build pushes a `v2.0.YYYYMMDDHHMMSS` image tag and updates `latest`.
+The workflow then publishes signed build provenance for the image digest to GitHub and GHCR.
+After attestation succeeds, it creates the matching Git tag at the source commit.
+If attestation fails, the image tags remain published and the workflow fails.
 
 To verify an image, replace the placeholders with its digest and the expected source commit:
 
