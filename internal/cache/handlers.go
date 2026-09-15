@@ -399,10 +399,10 @@ func (d *DB) WriteToDisk() error {
 }
 
 // TeeReadCloser is an io.TeeReader that also closes, and calls the callback after all streams are closed.
-// The callback is only called if the reader was consumed to EOF and there were no errors closing the reader.
-// This is so that if the connection is severed, the client stops reading, or the file is corrupted we don't
-// cache. If there's a problem with the writer, it finishes reading still and skips the callback. That way if
-// the disk is full we don't cache but the read is successful.
+// The callback is only called if the reader was consumed to EOF, or the expected length was read, and there
+// were no errors closing the reader or writer. This is so that if the connection is severed, the client stops
+// reading, the file is corrupted, or the cache file fails to close, we don't cache. If the response is closed
+// before completion, or the writer fails, onIncomplete is called so partial cache files can be removed.
 func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, expectedLength int64, callback func(), onIncomplete func()) io.ReadCloser {
 	return &teeReader{
 		r:              r,
@@ -410,7 +410,6 @@ func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, expectedLength int64, call
 		expectedLength: expectedLength,
 		callback:       callback,
 		onIncomplete:   onIncomplete,
-		readToEOF:      expectedLength == 0,
 	}
 }
 
@@ -432,7 +431,7 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 	defer t.mu.Unlock()
 
 	if t.closed {
-		return 0, os.ErrClosed
+		return 0, http.ErrBodyReadAfterClose
 	}
 
 	n, err = t.r.Read(p)
