@@ -326,7 +326,7 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 
-	resp.Body = TeeReadCloser(resp.Body, f, func() {
+	resp.Body = TeeReadCloser(resp.Body, f, resp.ContentLength, func() {
 		d.Lock()
 		defer d.Unlock()
 
@@ -403,24 +403,28 @@ func (d *DB) WriteToDisk() error {
 // This is so that if the connection is severed, the client stops reading, or the file is corrupted we don't
 // cache. If there's a problem with the writer, it finishes reading still and skips the callback. That way if
 // the disk is full we don't cache but the read is successful.
-func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, callback func(), onIncomplete func()) io.ReadCloser {
+func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, expectedLength int64, callback func(), onIncomplete func()) io.ReadCloser {
 	return &teeReader{
-		r:            r,
-		w:            w,
-		callback:     callback,
-		onIncomplete: onIncomplete,
+		r:              r,
+		w:              w,
+		expectedLength: expectedLength,
+		callback:       callback,
+		onIncomplete:   onIncomplete,
+		readToEOF:      expectedLength == 0,
 	}
 }
 
 type teeReader struct {
-	mu           sync.Mutex
-	r            io.ReadCloser
-	w            io.WriteCloser
-	callback     func()
-	onIncomplete func()
-	writeErr     error
-	readToEOF    bool
-	closed       bool
+	mu             sync.Mutex
+	r              io.ReadCloser
+	w              io.WriteCloser
+	expectedLength int64
+	bytesRead      int64
+	callback       func()
+	onIncomplete   func()
+	writeErr       error
+	readToEOF      bool
+	closed         bool
 }
 
 func (t *teeReader) Read(p []byte) (n int, err error) {
@@ -428,7 +432,7 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 	defer t.mu.Unlock()
 
 	if t.closed {
-		return 0, io.ErrClosedPipe
+		return 0, os.ErrClosed
 	}
 
 	n, err = t.r.Read(p)
@@ -440,6 +444,10 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 		if err != nil {
 			t.writeErr = err
 			return n, nil
+		}
+		t.bytesRead += int64(m)
+		if t.expectedLength >= 0 && t.bytesRead >= t.expectedLength {
+			t.readToEOF = true
 		}
 		n = m
 	}
@@ -460,17 +468,9 @@ func (t *teeReader) Close() error {
 	if writerErr != nil {
 		logrus.Warnln("Failed to close cache file:", writerErr.Error())
 	}
-	if readerErr != nil {
+	if readerErr != nil || t.writeErr != nil || writerErr != nil || !t.readToEOF {
 		t.markIncomplete()
 		return readerErr
-	}
-	if t.writeErr != nil || writerErr != nil {
-		t.markIncomplete()
-		return nil
-	}
-	if !t.readToEOF {
-		t.markIncomplete()
-		return nil
 	}
 	t.callback()
 	return nil
