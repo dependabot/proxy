@@ -326,7 +326,11 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 
-	resp.Body = TeeReadCloser(resp.Body, f, resp.ContentLength, func() {
+	expectedLength := int64(-1)
+	if resp.ContentLength > 0 {
+		expectedLength = resp.ContentLength
+	}
+	resp.Body = TeeReadCloser(resp.Body, f, expectedLength, func() {
 		d.Lock()
 		defer d.Unlock()
 
@@ -429,13 +433,15 @@ type teeReader struct {
 
 func (t *teeReader) Read(p []byte) (n int, err error) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	if t.closed {
+		t.mu.Unlock()
 		return 0, http.ErrBodyReadAfterClose
 	}
+	t.mu.Unlock()
 
 	n, err = t.r.Read(p)
+
+	t.mu.Lock()
 	if errors.Is(err, io.EOF) {
 		t.readToEOF = true
 	} else if err != nil && t.readErr == nil {
@@ -443,14 +449,24 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 	}
 	if n > 0 {
 		t.bytesRead += int64(n)
+		if t.expectedLength >= 0 {
+			switch {
+			case t.bytesRead == t.expectedLength:
+				t.readToEOF = true
+			case t.bytesRead > t.expectedLength && t.readErr == nil:
+				t.readErr = fmt.Errorf("read %d bytes, expected %d", t.bytesRead, t.expectedLength)
+			}
+		}
 	}
-	if t.expectedLength >= 0 && t.bytesRead >= t.expectedLength {
-		t.readToEOF = true
-	}
-	if n > 0 && t.writeErr == nil {
+	shouldWrite := n > 0 && t.writeErr == nil && !t.closed
+	t.mu.Unlock()
+
+	if shouldWrite {
 		m, err := t.w.Write(p[:n])
 		if err != nil {
+			t.mu.Lock()
 			t.writeErr = err
+			t.mu.Unlock()
 			return n, nil
 		}
 		n = m
@@ -460,25 +476,32 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 
 func (t *teeReader) Close() error {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	if t.closed {
+		t.mu.Unlock()
 		return nil
 	}
 	t.closed = true
+	t.mu.Unlock()
 
 	readerErr := t.r.Close()
 	writerErr := t.w.Close()
 	if writerErr != nil {
 		logrus.Warnln("Failed to close cache file:", writerErr.Error())
 	}
-	if !t.isComplete(readerErr, writerErr) {
-		if t.onIncomplete != nil {
-			t.onIncomplete()
+
+	t.mu.Lock()
+	complete := t.isComplete(readerErr, writerErr)
+	callback := t.callback
+	onIncomplete := t.onIncomplete
+	t.mu.Unlock()
+
+	if !complete {
+		if onIncomplete != nil {
+			onIncomplete()
 		}
 		return readerErr
 	}
-	t.callback()
+	callback()
 	return nil
 }
 

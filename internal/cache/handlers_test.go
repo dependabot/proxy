@@ -776,6 +776,28 @@ func TestTeeReadCloser(t *testing.T) {
 		assert.True(t, writeCloser.WasCloseCalled)
 	})
 
+	t.Run("declared length mismatch is not cached", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := io.NopCloser(strings.NewReader("hello"))
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, 2, callback, onIncomplete)
+
+		data, err := io.ReadAll(tee)
+		require.NoError(t, err)
+		assert.Equal(t, "hello", string(data))
+		assert.NoError(t, tee.Close())
+		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
 	t.Run("known zero length completes after read", func(t *testing.T) {
 		writeCloser := &BufferWithClose{}
 		readCloser := io.NopCloser(strings.NewReader(""))
