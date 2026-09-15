@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -423,7 +424,7 @@ type teeReader struct {
 
 func (t *teeReader) Read(p []byte) (n int, err error) {
 	n, err = t.r.Read(p)
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		t.readToEOF = true
 	}
 	if n > 0 && t.writeErr == nil {
@@ -446,25 +447,25 @@ func (t *teeReader) Close() error {
 	readerErr := t.r.Close()
 	writerErr := t.w.Close()
 	if readerErr != nil {
-		if t.onIncomplete != nil {
-			t.onIncomplete()
-		}
+		t.markIncomplete()
 		return readerErr
 	}
 	if t.writeErr != nil || writerErr != nil {
-		if t.onIncomplete != nil {
-			t.onIncomplete()
-		}
+		t.markIncomplete()
 		return nil
 	}
 	if !t.readToEOF {
-		if t.onIncomplete != nil {
-			t.onIncomplete()
-		}
+		t.markIncomplete()
 		return nil
 	}
 	t.callback()
 	return nil
+}
+
+func (t *teeReader) markIncomplete() {
+	if t.onIncomplete != nil {
+		t.onIncomplete()
+	}
 }
 
 // WasResponseCached returns true if the response was cached.
