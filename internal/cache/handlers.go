@@ -415,10 +415,7 @@ func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, expectedLength int64, call
 	}
 }
 
-var errCacheBodyClosedDuringRead = errors.New("cache body closed during read")
-
 type teeReader struct {
-	mu             sync.Mutex
 	r              io.ReadCloser
 	w              io.WriteCloser
 	expectedLength int64
@@ -432,24 +429,16 @@ type teeReader struct {
 }
 
 func (t *teeReader) Read(p []byte) (n int, err error) {
-	t.mu.Lock()
 	if t.closed {
-		t.mu.Unlock()
 		return 0, http.ErrBodyReadAfterClose
 	}
-	t.mu.Unlock()
 
 	n, err = t.r.Read(p)
 
-	t.mu.Lock()
-	closed := t.closed
 	if errors.Is(err, io.EOF) {
 		t.readToEOF = true
 	} else if err != nil && t.readErr == nil {
 		t.readErr = err
-	}
-	if closed && n > 0 && t.readErr == nil {
-		t.readErr = errCacheBodyClosedDuringRead
 	}
 	if n > 0 {
 		t.bytesRead += int64(n)
@@ -462,19 +451,14 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 			}
 		}
 	}
-	shouldWrite := n > 0 && t.writeErr == nil && !closed
-	t.mu.Unlock()
-
-	if shouldWrite {
+	if n > 0 && t.writeErr == nil {
 		m, writeErr := t.w.Write(p[:n])
 		if writeErr != nil || m != n {
-			t.mu.Lock()
 			if writeErr != nil {
 				t.writeErr = writeErr
 			} else {
 				t.writeErr = io.ErrShortWrite
 			}
-			t.mu.Unlock()
 			return n, err
 		}
 	}
@@ -482,13 +466,10 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 }
 
 func (t *teeReader) Close() error {
-	t.mu.Lock()
 	if t.closed {
-		t.mu.Unlock()
 		return nil
 	}
 	t.closed = true
-	t.mu.Unlock()
 
 	readerErr := t.r.Close()
 	writerErr := t.w.Close()
@@ -496,11 +477,9 @@ func (t *teeReader) Close() error {
 		logrus.Warnln("Failed to close cache file:", writerErr.Error())
 	}
 
-	t.mu.Lock()
 	complete := t.isComplete(readerErr, writerErr)
 	callback := t.callback
 	onIncomplete := t.onIncomplete
-	t.mu.Unlock()
 
 	if !complete {
 		if onIncomplete != nil {
