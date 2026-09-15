@@ -618,6 +618,28 @@ func TestTeeReadCloser(t *testing.T) {
 		assert.True(t, writeCloser.WasCloseCalled)
 	})
 
+	t.Run("completed read can be closed more than once", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := io.NopCloser(strings.NewReader("hello"))
+		callbackCalls := 0
+		incompleteCalls := 0
+		callback := func() {
+			callbackCalls++
+		}
+		onIncomplete := func() {
+			incompleteCalls++
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, callback, onIncomplete)
+
+		data, err := io.ReadAll(tee)
+		require.NoError(t, err)
+		assert.Equal(t, "hello", string(data))
+		require.NoError(t, tee.Close())
+		require.NoError(t, tee.Close())
+		assert.Equal(t, 1, callbackCalls)
+		assert.Zero(t, incompleteCalls)
+	})
+
 	t.Run("when the writer fails", func(t *testing.T) {
 		writeCloser := &BufferWithClose{
 			ErrorToReturn: errors.New("out of memory"),

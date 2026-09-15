@@ -418,6 +418,7 @@ type teeReader struct {
 	onIncomplete func()
 	writeErr     error
 	readToEOF    bool
+	closed       bool
 }
 
 func (t *teeReader) Read(p []byte) (n int, err error) {
@@ -437,6 +438,11 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 }
 
 func (t *teeReader) Close() error {
+	if t.closed {
+		return nil
+	}
+	t.closed = true
+
 	readerErr := t.r.Close()
 	writerErr := t.w.Close()
 	if readerErr != nil {
