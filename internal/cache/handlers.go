@@ -443,9 +443,9 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 	}
 	if n > 0 {
 		t.bytesRead += int64(n)
-		if t.expectedLength >= 0 && t.bytesRead >= t.expectedLength {
-			t.readToEOF = true
-		}
+	}
+	if t.expectedLength >= 0 && t.bytesRead >= t.expectedLength {
+		t.readToEOF = true
 	}
 	if n > 0 && t.writeErr == nil {
 		m, err := t.w.Write(p[:n])
@@ -472,7 +472,7 @@ func (t *teeReader) Close() error {
 	if writerErr != nil {
 		logrus.Warnln("Failed to close cache file:", writerErr.Error())
 	}
-	if readerErr != nil || t.readErr != nil || t.writeErr != nil || writerErr != nil || !t.readToEOF {
+	if !t.isComplete(readerErr, writerErr) {
 		if t.onIncomplete != nil {
 			t.onIncomplete()
 		}
@@ -480,6 +480,13 @@ func (t *teeReader) Close() error {
 	}
 	t.callback()
 	return nil
+}
+
+func (t *teeReader) isComplete(readerErr, writerErr error) bool {
+	// Only upstream read/close errors should be returned to the caller. Cache
+	// writer errors still invalidate the entry, but should not fail an otherwise
+	// successful proxied response.
+	return readerErr == nil && t.readErr == nil && t.writeErr == nil && writerErr == nil && t.readToEOF
 }
 
 // WasResponseCached returns true if the response was cached.

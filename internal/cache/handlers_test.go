@@ -776,6 +776,28 @@ func TestTeeReadCloser(t *testing.T) {
 		assert.True(t, writeCloser.WasCloseCalled)
 	})
 
+	t.Run("known zero length completes after read", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := io.NopCloser(strings.NewReader(""))
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, 0, callback, onIncomplete)
+
+		data, err := io.ReadAll(tee)
+		require.NoError(t, err)
+		assert.Empty(t, data)
+		assert.NoError(t, tee.Close())
+		assert.True(t, callbackWasCalled)
+		assert.False(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
 	t.Run("read error is not cached even after expected length", func(t *testing.T) {
 		writeCloser := &BufferWithClose{}
 		readCloser := &errorAfterReadCloser{
