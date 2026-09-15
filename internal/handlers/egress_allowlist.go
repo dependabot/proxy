@@ -15,9 +15,12 @@ import (
 // Experiment flags (job experiments) that toggle egress filtering. They are
 // independent: observe logs non-allowlisted hosts, enforce drops them with a
 // 403. Both default off (fail-open) when absent.
+//
+// The keys are dash-cased to match the job-details payload: the API serializes
+// experiments through the JSON:API adapter, whose default key transform is dash.
 const (
-	egressObserveExperiment = "proxy_egress_observe"
-	egressEnforceExperiment = "proxy_egress_enforce"
+	egressObserveExperiment = "proxy-egress-observe"
+	egressEnforceExperiment = "proxy-egress-enforce"
 )
 
 // egressHostMetric is the metric emitted for every observed outbound host. The
