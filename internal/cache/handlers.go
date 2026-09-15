@@ -326,11 +326,7 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 
-	expectedLength := int64(-1)
-	if resp.ContentLength > 0 || resp.Header.Get("Content-Length") != "" {
-		expectedLength = resp.ContentLength
-	}
-	resp.Body = TeeReadCloser(resp.Body, f, expectedLength, func() {
+	resp.Body = TeeReadCloser(resp.Body, f, resp.ContentLength, func() {
 		d.Lock()
 		defer d.Unlock()
 
@@ -417,6 +413,8 @@ func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, expectedLength int64, call
 	}
 }
 
+var errCacheBodyClosedDuringRead = errors.New("cache body closed during read")
+
 type teeReader struct {
 	mu             sync.Mutex
 	r              io.ReadCloser
@@ -442,10 +440,14 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 	n, err = t.r.Read(p)
 
 	t.mu.Lock()
+	closed := t.closed
 	if errors.Is(err, io.EOF) {
 		t.readToEOF = true
 	} else if err != nil && t.readErr == nil {
 		t.readErr = err
+	}
+	if closed && n > 0 && t.readErr == nil {
+		t.readErr = errCacheBodyClosedDuringRead
 	}
 	if n > 0 {
 		t.bytesRead += int64(n)
@@ -458,7 +460,7 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 			}
 		}
 	}
-	shouldWrite := n > 0 && t.writeErr == nil && !t.closed
+	shouldWrite := n > 0 && t.writeErr == nil && !closed
 	t.mu.Unlock()
 
 	if shouldWrite {
@@ -499,6 +501,9 @@ func (t *teeReader) Close() error {
 		if onIncomplete != nil {
 			onIncomplete()
 		}
+		// Cache writer errors invalidate only the cache entry; return the
+		// upstream close error, if any, so response delivery is not failed by a
+		// cache persistence problem.
 		return readerErr
 	}
 	callback()
@@ -506,9 +511,8 @@ func (t *teeReader) Close() error {
 }
 
 func (t *teeReader) isComplete(readerErr, writerErr error) bool {
-	// Only upstream read/close errors should be returned to the caller. Cache
-	// writer errors still invalidate the entry, but should not fail an otherwise
-	// successful proxied response.
+	// A cache entry is complete only when the source body fully completed and
+	// every read, write, and close operation involved in persisting it succeeded.
 	return readerErr == nil && t.readErr == nil && t.writeErr == nil && writerErr == nil && t.readToEOF
 }
 

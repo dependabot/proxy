@@ -100,9 +100,10 @@ func TestCache(t *testing.T) {
 
 		body := `{"hello":"world"}`
 		resp = &http.Response{
-			Request:    req,
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Request:       req,
+			StatusCode:    200,
+			Body:          io.NopCloser(bytes.NewBufferString(body)),
+			ContentLength: -1,
 		}
 		resp = cacher.OnResponse(resp, proxyCtx)
 		result, _ := io.ReadAll(resp.Body)
@@ -402,9 +403,10 @@ func TestCache_MissingCacheFileIsNotCountedAsHit(t *testing.T) {
 	}
 	require.Nil(t, resp)
 	resp = &http.Response{
-		Request:    missReq,
-		StatusCode: http.StatusOK,
-		Body:       io.NopCloser(bytes.NewBufferString("hello")),
+		Request:       missReq,
+		StatusCode:    http.StatusOK,
+		Body:          io.NopCloser(bytes.NewBufferString("hello")),
+		ContentLength: -1,
 	}
 	resp = cacher.OnResponse(resp, missCtx)
 	_, _ = io.ReadAll(resp.Body)
