@@ -345,6 +345,10 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		}
 
 		d.cacheDB[key] = entry
+	}, func() {
+		if err := os.Remove(f.Name()); err != nil && !os.IsNotExist(err) {
+			logrus.Warnln("Failed to remove incomplete cache file:", err.Error())
+		}
 	})
 	return resp
 }
@@ -394,27 +398,33 @@ func (d *DB) WriteToDisk() error {
 }
 
 // TeeReadCloser is an io.TeeReader that also closes, and calls the callback after all streams are closed.
-// The callback is only called if there were no errors closing the reader. This is so that if
-// the connection is severed or the file is corrupted we don't cache. If there's a problem with the writer,
-// it finishes reading still and skips the callback. That way if the disk is full we don't cache but
-// the read is successful.
-func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, callback func()) io.ReadCloser {
+// The callback is only called if the reader was consumed to EOF and there were no errors closing the reader.
+// This is so that if the connection is severed, the client stops reading, or the file is corrupted we don't
+// cache. If there's a problem with the writer, it finishes reading still and skips the callback. That way if
+// the disk is full we don't cache but the read is successful.
+func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, callback func(), onIncomplete func()) io.ReadCloser {
 	return &teeReader{
-		r:        r,
-		w:        w,
-		callback: callback,
+		r:            r,
+		w:            w,
+		callback:     callback,
+		onIncomplete: onIncomplete,
 	}
 }
 
 type teeReader struct {
-	r        io.ReadCloser
-	w        io.WriteCloser
-	callback func()
-	writeErr error
+	r            io.ReadCloser
+	w            io.WriteCloser
+	callback     func()
+	onIncomplete func()
+	writeErr     error
+	readToEOF    bool
 }
 
 func (t *teeReader) Read(p []byte) (n int, err error) {
 	n, err = t.r.Read(p)
+	if err == io.EOF {
+		t.readToEOF = true
+	}
 	if n > 0 && t.writeErr == nil {
 		m, err := t.w.Write(p[:n])
 		if err != nil {
@@ -433,6 +443,12 @@ func (t *teeReader) Close() error {
 		return err
 	}
 	if t.writeErr != nil {
+		return nil
+	}
+	if !t.readToEOF {
+		if t.onIncomplete != nil {
+			t.onIncomplete()
+		}
 		return nil
 	}
 	t.callback()
