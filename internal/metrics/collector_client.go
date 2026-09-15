@@ -134,9 +134,13 @@ func (c *CollectorClient) SendMetric(name string, metricType string, value float
 	c.BufferMutex.Lock()
 	defer c.BufferMutex.Unlock()
 
-	// Check for existing metric and aggregate if possible
+	// Check for existing metric and aggregate if possible. Metrics are only
+	// aggregated when their name, type, AND tags all match, so distinct tag
+	// sets (e.g. different request_host values) are kept as separate series
+	// rather than being merged under whichever series was buffered first.
 	for i, existingMetric := range c.MetricsBuffer {
-		if existingMetric["metric"] == prefixedName && existingMetric["type"] == metricType {
+		existingTags, _ := existingMetric["tags"].(map[string]string)
+		if existingMetric["metric"] == prefixedName && existingMetric["type"] == metricType && maps.Equal(existingTags, combinedTags) {
 			if metricType == "increment" {
 				if existingValue, ok := existingMetric["value"].(float64); ok {
 					c.MetricsBuffer[i]["value"] = existingValue + value
@@ -154,6 +158,15 @@ func (c *CollectorClient) SendMetric(name string, metricType string, value float
 				return nil
 			}
 		}
+	}
+
+	// Bound the number of distinct series buffered between flushes. High
+	// cardinality tags (e.g. raw request_host from the egress handler) could
+	// otherwise grow the buffer without limit. Once the cap is reached, drop new
+	// series until the next flush clears the buffer; series already buffered
+	// continue to aggregate above.
+	if len(c.MetricsBuffer) >= c.MaxBufferSize {
+		return nil
 	}
 
 	// Create new metric data

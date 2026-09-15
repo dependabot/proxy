@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
 )
@@ -129,40 +130,57 @@ func TestEgressAllowlist_SuffixEntryAllowsSubdomain(t *testing.T) {
 	assert.Nil(t, egressResult(t, h, "https://europe-docker.pkg.dev/v2/project/image"), "artifact registry subdomain allowed")
 }
 
-// fakeRecorder records the hosts passed to RecordHost for assertions.
-type fakeRecorder struct {
-	hosts []recordedHost
+// fakeMetricSender captures the metrics emitted by the egress handler.
+type fakeMetricSender struct {
+	metrics []sentMetric
 }
 
-type recordedHost struct {
-	host        string
-	allowlisted bool
+type sentMetric struct {
+	name string
+	tags map[string]string
 }
 
-func (r *fakeRecorder) RecordHost(host string, allowlisted bool) {
-	r.hosts = append(r.hosts, recordedHost{host: host, allowlisted: allowlisted})
+func (s *fakeMetricSender) SendMetric(name string, _ string, _ float64, additionalTags map[string]string) error {
+	s.metrics = append(s.metrics, sentMetric{name: name, tags: additionalTags})
+	return nil
 }
 
 func TestEgressAllowlist_RecordsObservedHosts(t *testing.T) {
-	recorder := &fakeRecorder{}
-	h := NewEgressAllowlistHandler(egressCfg(true, false), config.ProxyEnvSettings{}, recorder)
+	sender := &fakeMetricSender{}
+	h := NewEgressAllowlistHandler(egressCfg(true, false), config.ProxyEnvSettings{}, sender)
 
 	egressResult(t, h, "https://registry.npmjs.org/left-pad")
 	egressResult(t, h, "https://evil.com/steal")
 
-	assert.Equal(t, []recordedHost{
-		{host: "registry.npmjs.org", allowlisted: true},
-		{host: "evil.com", allowlisted: false},
-	}, recorder.hosts)
+	assert.Equal(t, []sentMetric{
+		{name: egressHostMetric, tags: map[string]string{"request_host": "registry.npmjs.org", "allowlisted": "true"}},
+		{name: egressHostMetric, tags: map[string]string{"request_host": "evil.com", "allowlisted": "false"}},
+	}, sender.metrics)
+}
+
+// TestEgressAllowlist_RecordsEnforceBlockedHosts verifies that a host blocked in
+// enforce mode is still recorded, since the observation happens before the 403
+// short-circuits the request chain.
+func TestEgressAllowlist_RecordsEnforceBlockedHosts(t *testing.T) {
+	sender := &fakeMetricSender{}
+	h := NewEgressAllowlistHandler(egressCfg(false, true), config.ProxyEnvSettings{}, sender)
+
+	resp := egressResult(t, h, "https://evil.com/steal")
+	require.NotNil(t, resp, "enforce blocks the host")
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+
+	assert.Equal(t, []sentMetric{
+		{name: egressHostMetric, tags: map[string]string{"request_host": "evil.com", "allowlisted": "false"}},
+	}, sender.metrics, "blocked host is recorded despite the 403")
 }
 
 func TestEgressAllowlist_DoesNotRecordWhenDisabled(t *testing.T) {
-	recorder := &fakeRecorder{}
-	h := NewEgressAllowlistHandler(egressCfg(false, false), config.ProxyEnvSettings{}, recorder)
+	sender := &fakeMetricSender{}
+	h := NewEgressAllowlistHandler(egressCfg(false, false), config.ProxyEnvSettings{}, sender)
 
 	egressResult(t, h, "https://evil.com/steal")
 
-	assert.Empty(t, recorder.hosts, "fail-open mode records nothing")
+	assert.Empty(t, sender.metrics, "fail-open mode records nothing")
 }
 
 func TestEgressAllowlist_UnknownOrEmptyPackageManagerStillGetsUnion(t *testing.T) {

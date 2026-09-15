@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
 )
@@ -15,12 +16,6 @@ type MockAPIClient struct{}
 
 // Mock the ReportMetrics method
 func (c *MockAPIClient) ReportMetrics(context.Context, string) error {
-	// Mock logic or simply return nil to simulate success
-	return nil
-}
-
-// Mock the RecordEgressHosts method
-func (c *MockAPIClient) RecordEgressHosts(context.Context, string) error {
 	// Mock logic or simply return nil to simulate success
 	return nil
 }
@@ -85,6 +80,52 @@ func TestSendResponseCountMetric(t *testing.T) {
 	assert.Equal(t, "false", tags["grouped_update"])
 	assert.Equal(t, "200", tags["response_code"])
 	assert.Equal(t, "example.com", tags["request_host"])
+}
+
+func TestSendMetricSeparatesDistinctTags(t *testing.T) {
+	// Metrics with the same name and type but different tags (e.g. different
+	// request_host values) must be kept as separate series, not merged under the
+	// first one buffered.
+	client := createTestClient()
+	client.MetricsBuffer = make([]map[string]any, 0)
+
+	require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "a.example.com"}))
+	require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "b.example.com"}))
+	require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "a.example.com"}))
+
+	require.Len(t, client.MetricsBuffer, 2, "distinct hosts stay in separate series")
+
+	counts := map[string]float64{}
+	for _, metric := range client.MetricsBuffer {
+		tags := metric["tags"].(map[string]string)
+		counts[tags["request_host"]] = metric["value"].(float64)
+	}
+	assert.Equal(t, 2.0, counts["a.example.com"], "same host aggregates")
+	assert.Equal(t, 1.0, counts["b.example.com"], "other host not merged in")
+}
+
+func TestSendMetricCapsDistinctSeries(t *testing.T) {
+	// Once the buffer reaches MaxBufferSize distinct series, new series are
+	// dropped (bounding cardinality) while existing series keep aggregating.
+	client := createTestClient()
+	client.MetricsBuffer = make([]map[string]any, 0)
+	client.MaxBufferSize = 2
+
+	require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "a"}))
+	require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "b"}))
+	require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "c"}))
+	// Existing series still aggregates past the cap.
+	require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "a"}))
+
+	require.Len(t, client.MetricsBuffer, 2, "buffer is capped at MaxBufferSize distinct series")
+
+	counts := map[string]float64{}
+	for _, metric := range client.MetricsBuffer {
+		tags := metric["tags"].(map[string]string)
+		counts[tags["request_host"]] = metric["value"].(float64)
+	}
+	assert.Equal(t, 2.0, counts["a"], "existing series keeps aggregating after the cap")
+	assert.NotContains(t, counts, "c", "new series dropped once capped")
 }
 
 func TestFlushBuffer(t *testing.T) {
