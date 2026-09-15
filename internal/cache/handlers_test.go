@@ -578,13 +578,13 @@ func Test_key(t *testing.T) {
 type BufferWithClose struct {
 	bytes.Buffer
 	WasCloseCalled bool
-	ErrorToReturn  error
+	WriteError     error
 	CloseError     error
 }
 
 func (b *BufferWithClose) Write(p []byte) (n int, err error) {
-	if b.ErrorToReturn != nil {
-		return 0, b.ErrorToReturn
+	if b.WriteError != nil {
+		return 0, b.WriteError
 	}
 	return b.Buffer.Write(p)
 }
@@ -642,7 +642,7 @@ func TestTeeReadCloser(t *testing.T) {
 
 	t.Run("when the writer fails", func(t *testing.T) {
 		writeCloser := &BufferWithClose{
-			ErrorToReturn: errors.New("out of memory"),
+			WriteError: errors.New("out of memory"),
 		}
 		readCloser := io.NopCloser(strings.NewReader("hello"))
 		callbackWasCalled := false

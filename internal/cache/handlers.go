@@ -413,6 +413,7 @@ func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, callback func(), onIncompl
 }
 
 type teeReader struct {
+	mu           sync.Mutex
 	r            io.ReadCloser
 	w            io.WriteCloser
 	callback     func()
@@ -423,6 +424,13 @@ type teeReader struct {
 }
 
 func (t *teeReader) Read(p []byte) (n int, err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.closed {
+		return 0, io.ErrClosedPipe
+	}
+
 	n, err = t.r.Read(p)
 	if errors.Is(err, io.EOF) {
 		t.readToEOF = true
@@ -439,6 +447,9 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 }
 
 func (t *teeReader) Close() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	if t.closed {
 		return nil
 	}
@@ -446,6 +457,9 @@ func (t *teeReader) Close() error {
 
 	readerErr := t.r.Close()
 	writerErr := t.w.Close()
+	if writerErr != nil {
+		logrus.Warnln("Failed to close cache file:", writerErr.Error())
+	}
 	if readerErr != nil {
 		t.markIncomplete()
 		return readerErr
