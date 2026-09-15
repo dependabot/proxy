@@ -327,7 +327,7 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 	}
 
 	expectedLength := int64(-1)
-	if resp.ContentLength > 0 {
+	if resp.ContentLength > 0 || resp.Header.Get("Content-Length") != "" {
 		expectedLength = resp.ContentLength
 	}
 	resp.Body = TeeReadCloser(resp.Body, f, expectedLength, func() {
@@ -462,12 +462,12 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 	t.mu.Unlock()
 
 	if shouldWrite {
-		m, err := t.w.Write(p[:n])
-		if err != nil {
+		m, writeErr := t.w.Write(p[:n])
+		if writeErr != nil {
 			t.mu.Lock()
-			t.writeErr = err
+			t.writeErr = writeErr
 			t.mu.Unlock()
-			return n, nil
+			return n, err
 		}
 		n = m
 	}
