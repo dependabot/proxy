@@ -399,10 +399,12 @@ func (d *DB) WriteToDisk() error {
 }
 
 // TeeReadCloser is an io.TeeReader that also closes, and calls the callback after all streams are closed.
-// The callback is only called if the reader was consumed to EOF, or the expected length was read, and there
-// were no errors closing the reader or writer. This is so that if the connection is severed, the client stops
-// reading, the file is corrupted, or the cache file fails to close, we don't cache. If the response is closed
-// before completion, or the writer fails, onIncomplete is called so partial cache files can be removed.
+// The callback is only called if the reader was consumed to EOF, or a non-negative expectedLength was read,
+// and there were no errors closing the reader or writer. A negative expectedLength means the body must reach
+// EOF to be complete. Reading more than expectedLength invalidates the cache entry. This is so that if the
+// connection is severed, the client stops reading, the file is corrupted, or the cache file fails to close, we
+// don't cache. If the response is closed before completion, or the writer fails, onIncomplete is called so
+// partial cache files can be removed.
 func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, expectedLength int64, callback func(), onIncomplete func()) io.ReadCloser {
 	return &teeReader{
 		r:              r,
@@ -465,13 +467,16 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 
 	if shouldWrite {
 		m, writeErr := t.w.Write(p[:n])
-		if writeErr != nil {
+		if writeErr != nil || m != n {
 			t.mu.Lock()
-			t.writeErr = writeErr
+			if writeErr != nil {
+				t.writeErr = writeErr
+			} else {
+				t.writeErr = io.ErrShortWrite
+			}
 			t.mu.Unlock()
 			return n, err
 		}
-		n = m
 	}
 	return
 }

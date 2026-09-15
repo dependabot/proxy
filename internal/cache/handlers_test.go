@@ -614,6 +614,17 @@ func (e *errorAfterReadCloser) Close() error {
 	return nil
 }
 
+type shortWriteCloser struct {
+	BufferWithClose
+}
+
+func (s *shortWriteCloser) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	return s.BufferWithClose.Write(p[:len(p)-1])
+}
+
 func TestTeeReadCloser(t *testing.T) {
 	t.Run("reads, writes, and calls the callback", func(t *testing.T) {
 		writeCloser := &BufferWithClose{}
@@ -664,6 +675,28 @@ func TestTeeReadCloser(t *testing.T) {
 		writeCloser := &BufferWithClose{
 			WriteError: errors.New("out of memory"),
 		}
+		readCloser := io.NopCloser(strings.NewReader("hello"))
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, -1, callback, onIncomplete)
+
+		data, err := io.ReadAll(tee)
+		assert.NoError(t, err)
+		assert.Equal(t, "hello", string(data))
+		assert.NoError(t, tee.Close())
+		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("when the writer writes too few bytes", func(t *testing.T) {
+		writeCloser := &shortWriteCloser{}
 		readCloser := io.NopCloser(strings.NewReader("hello"))
 		callbackWasCalled := false
 		incompleteWasCalled := false
