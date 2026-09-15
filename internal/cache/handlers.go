@@ -439,15 +439,17 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 	if errors.Is(err, io.EOF) {
 		t.readToEOF = true
 	}
+	if n > 0 {
+		t.bytesRead += int64(n)
+		if t.expectedLength >= 0 && t.bytesRead >= t.expectedLength {
+			t.readToEOF = true
+		}
+	}
 	if n > 0 && t.writeErr == nil {
 		m, err := t.w.Write(p[:n])
 		if err != nil {
 			t.writeErr = err
 			return n, nil
-		}
-		t.bytesRead += int64(m)
-		if t.expectedLength >= 0 && t.bytesRead >= t.expectedLength {
-			t.readToEOF = true
 		}
 		n = m
 	}
@@ -469,17 +471,13 @@ func (t *teeReader) Close() error {
 		logrus.Warnln("Failed to close cache file:", writerErr.Error())
 	}
 	if readerErr != nil || t.writeErr != nil || writerErr != nil || !t.readToEOF {
-		t.markIncomplete()
+		if t.onIncomplete != nil {
+			t.onIncomplete()
+		}
 		return readerErr
 	}
 	t.callback()
 	return nil
-}
-
-func (t *teeReader) markIncomplete() {
-	if t.onIncomplete != nil {
-		t.onIncomplete()
-	}
 }
 
 // WasResponseCached returns true if the response was cached.
