@@ -2,9 +2,11 @@ package metrics
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,11 +107,12 @@ func TestSendMetricSeparatesDistinctTags(t *testing.T) {
 }
 
 func TestSendMetricCapsDistinctSeries(t *testing.T) {
-	// Once the buffer reaches MaxBufferSize distinct series, new series are
-	// dropped (bounding cardinality) while existing series keep aggregating.
+	// Once a metric name reaches MaxSeriesPerMetric distinct series, new series
+	// for it are dropped (bounding cardinality) while existing series keep
+	// aggregating.
 	client := createTestClient()
 	client.MetricsBuffer = make([]map[string]any, 0)
-	client.MaxBufferSize = 2
+	client.MaxSeriesPerMetric = 2
 
 	require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "a"}))
 	require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "b"}))
@@ -117,7 +120,7 @@ func TestSendMetricCapsDistinctSeries(t *testing.T) {
 	// Existing series still aggregates past the cap.
 	require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "a"}))
 
-	require.Len(t, client.MetricsBuffer, 2, "buffer is capped at MaxBufferSize distinct series")
+	require.Len(t, client.MetricsBuffer, 2, "buffer is capped at MaxSeriesPerMetric distinct series")
 
 	counts := map[string]float64{}
 	for _, metric := range client.MetricsBuffer {
@@ -126,6 +129,86 @@ func TestSendMetricCapsDistinctSeries(t *testing.T) {
 	}
 	assert.Equal(t, 2.0, counts["a"], "existing series keeps aggregating after the cap")
 	assert.NotContains(t, counts, "c", "new series dropped once capped")
+}
+
+func TestSendMetricCapDoesNotStarveOtherMetrics(t *testing.T) {
+	// The distinct-series cap is applied per metric name, so a flood of
+	// high-cardinality egress observations must not crowd ordinary
+	// request/response metrics out of the buffer.
+	client := createTestClient()
+	client.MetricsBuffer = make([]map[string]any, 0)
+	client.MaxSeriesPerMetric = 5
+
+	require.NoError(t, client.SendMetric("http_response_count", "increment", 1, map[string]string{"response_code": "200", "request_host": "api.github.com"}))
+
+	// Far more distinct egress hosts than the per-metric cap.
+	for i := 0; i < 50; i++ {
+		require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": fmt.Sprintf("host-%d.example.com", i)}))
+	}
+
+	// A later ordinary metric must still be recorded, not dropped.
+	require.NoError(t, client.SendMetric("http_response_count", "increment", 1, map[string]string{"response_code": "500", "request_host": "api.github.com"}))
+
+	egress, responses := 0, 0
+	for _, metric := range client.MetricsBuffer {
+		switch metric["metric"] {
+		case "dependabot.job_proxy.egress_host":
+			egress++
+		case "dependabot.job_proxy.http_response_count":
+			responses++
+		}
+	}
+	assert.Equal(t, 5, egress, "egress series capped at MaxSeriesPerMetric")
+	assert.Equal(t, 2, responses, "ordinary metrics are not starved by egress cardinality")
+}
+
+func TestFlushBufferResetsSizeEstimate(t *testing.T) {
+	// Draining the buffer must reset the running size estimate. Otherwise it
+	// accumulates across flushes and eventually trips the payload-size branch in
+	// SendMetric.
+	client := createTestClient()
+	client.MetricsBuffer = make([]map[string]any, 0)
+
+	for round := 0; round < 5; round++ {
+		for i := 0; i < 10; i++ {
+			require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": fmt.Sprintf("r%d-h%d.example.com", round, i)}))
+		}
+		require.Positive(t, client.estimatedBufferSize)
+
+		client.flushBuffer()
+
+		require.Empty(t, client.MetricsBuffer, "buffer drained on flush")
+		require.Equal(t, 0, client.estimatedBufferSize, "size estimate resets when the buffer drains")
+	}
+}
+
+func TestSendMetricFlushesAtPayloadLimitWithoutDeadlock(t *testing.T) {
+	// Reaching the payload-size limit must flush the buffer and start a fresh
+	// payload without deadlocking (the size-triggered flush must not re-acquire
+	// BufferMutex while SendMetric already holds it).
+	client := createTestClient()
+	client.MetricsBuffer = make([]map[string]any, 0)
+
+	require.NoError(t, client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "seed.example.com"}))
+	// Force the next series to exceed the payload-size limit.
+	client.estimatedBufferSize = MaxPayloadSize
+
+	done := make(chan error, 1)
+	go func() {
+		done <- client.SendMetric("egress_host", "increment", 1, map[string]string{"request_host": "overflow.example.com"})
+	}()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("SendMetric deadlocked when the payload-size flush triggered")
+	}
+
+	require.Len(t, client.MetricsBuffer, 1, "oversize flush drained the buffer before adding the new series")
+	tags := client.MetricsBuffer[0]["tags"].(map[string]string)
+	require.Equal(t, "overflow.example.com", tags["request_host"])
+	require.Less(t, client.estimatedBufferSize, MaxPayloadSize, "size estimate reset after the flush")
 }
 
 func TestFlushBuffer(t *testing.T) {
