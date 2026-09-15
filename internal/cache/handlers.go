@@ -437,15 +437,15 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 }
 
 func (t *teeReader) Close() error {
-	err := t.r.Close()
-	_ = t.w.Close()
-	if err != nil {
+	readerErr := t.r.Close()
+	writerErr := t.w.Close()
+	if readerErr != nil {
 		if t.onIncomplete != nil {
 			t.onIncomplete()
 		}
-		return err
+		return readerErr
 	}
-	if t.writeErr != nil {
+	if t.writeErr != nil || writerErr != nil {
 		if t.onIncomplete != nil {
 			t.onIncomplete()
 		}

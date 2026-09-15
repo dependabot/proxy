@@ -579,6 +579,7 @@ type BufferWithClose struct {
 	bytes.Buffer
 	WasCloseCalled bool
 	ErrorToReturn  error
+	CloseError     error
 }
 
 func (b *BufferWithClose) Write(p []byte) (n int, err error) {
@@ -590,7 +591,7 @@ func (b *BufferWithClose) Write(p []byte) (n int, err error) {
 
 func (b *BufferWithClose) Close() error {
 	b.WasCloseCalled = true
-	return b.ErrorToReturn
+	return b.CloseError
 }
 
 func TestTeeReadCloser(t *testing.T) {
@@ -641,11 +642,35 @@ func TestTeeReadCloser(t *testing.T) {
 		assert.True(t, writeCloser.WasCloseCalled)
 	})
 
+	t.Run("when the writer close fails", func(t *testing.T) {
+		writeCloser := &BufferWithClose{
+			CloseError: errors.New("failed to flush cache file"),
+		}
+		readCloser := io.NopCloser(strings.NewReader("hello"))
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, callback, onIncomplete)
+
+		data, err := io.ReadAll(tee)
+		require.NoError(t, err)
+		assert.Equal(t, "hello", string(data))
+		assert.NoError(t, tee.Close())
+		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
 	t.Run("when the reader close fails", func(t *testing.T) {
 		writeCloser := &BufferWithClose{}
 		readCloser := &BufferWithClose{
-			Buffer:        *bytes.NewBufferString("hello"),
-			ErrorToReturn: errors.New("connection closed unexpectedly"),
+			Buffer:     *bytes.NewBufferString("hello"),
+			CloseError: errors.New("connection closed unexpectedly"),
 		}
 		callbackWasCalled := false
 		incompleteWasCalled := false
