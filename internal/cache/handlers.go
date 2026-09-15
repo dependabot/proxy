@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -325,7 +326,7 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 
-	resp.Body = TeeReadCloser(resp.Body, f, func() {
+	resp.Body = TeeReadCloser(resp.Body, f, resp.ContentLength, func() {
 		d.Lock()
 		defer d.Unlock()
 
@@ -345,6 +346,10 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		}
 
 		d.cacheDB[key] = entry
+	}, func() {
+		if err := os.Remove(f.Name()); err != nil && !os.IsNotExist(err) {
+			logrus.Warnln("Failed to remove incomplete cache file:", err.Error())
+		}
 	})
 	return resp
 }
@@ -394,49 +399,105 @@ func (d *DB) WriteToDisk() error {
 }
 
 // TeeReadCloser is an io.TeeReader that also closes, and calls the callback after all streams are closed.
-// The callback is only called if there were no errors closing the reader. This is so that if
-// the connection is severed or the file is corrupted we don't cache. If there's a problem with the writer,
-// it finishes reading still and skips the callback. That way if the disk is full we don't cache but
-// the read is successful.
-func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, callback func()) io.ReadCloser {
+// The callback is only called if the reader was consumed to EOF, or a non-negative expectedLength was read,
+// and there were no errors closing the reader or writer. A negative expectedLength means the body must reach
+// EOF to be complete. Reading more than expectedLength invalidates the cache entry. This is so that if the
+// connection is severed, the client stops reading, the file is corrupted, or the cache file fails to close, we
+// don't cache. If the response is closed before completion, or the writer fails, onIncomplete is called so
+// partial cache files can be removed.
+func TeeReadCloser(r io.ReadCloser, w io.WriteCloser, expectedLength int64, callback func(), onIncomplete func()) io.ReadCloser {
 	return &teeReader{
-		r:        r,
-		w:        w,
-		callback: callback,
+		r:              r,
+		w:              w,
+		expectedLength: expectedLength,
+		callback:       callback,
+		onIncomplete:   onIncomplete,
 	}
 }
 
 type teeReader struct {
-	r        io.ReadCloser
-	w        io.WriteCloser
-	callback func()
-	writeErr error
+	r              io.ReadCloser
+	w              io.WriteCloser
+	expectedLength int64
+	bytesRead      int64
+	callback       func()
+	onIncomplete   func()
+	readErr        error
+	writeErr       error
+	readToEOF      bool
+	closed         bool
 }
 
 func (t *teeReader) Read(p []byte) (n int, err error) {
+	if t.closed {
+		return 0, http.ErrBodyReadAfterClose
+	}
+
 	n, err = t.r.Read(p)
-	if n > 0 && t.writeErr == nil {
-		m, err := t.w.Write(p[:n])
-		if err != nil {
-			t.writeErr = err
-			return n, nil
+
+	if errors.Is(err, io.EOF) {
+		t.readToEOF = true
+	} else if err != nil && t.readErr == nil {
+		t.readErr = err
+	}
+	if n > 0 {
+		t.bytesRead += int64(n)
+		if t.expectedLength >= 0 {
+			switch {
+			case t.bytesRead == t.expectedLength:
+				t.readToEOF = true
+			case t.bytesRead > t.expectedLength && t.readErr == nil:
+				t.readErr = fmt.Errorf("read %d bytes, expected %d", t.bytesRead, t.expectedLength)
+			}
 		}
-		n = m
+	}
+	if n > 0 && t.writeErr == nil {
+		m, writeErr := t.w.Write(p[:n])
+		if writeErr != nil || m != n {
+			if writeErr != nil {
+				t.writeErr = writeErr
+			} else {
+				t.writeErr = io.ErrShortWrite
+			}
+			return n, err
+		}
 	}
 	return
 }
 
 func (t *teeReader) Close() error {
-	err := t.r.Close()
-	_ = t.w.Close()
-	if err != nil {
-		return err
-	}
-	if t.writeErr != nil {
+	if t.closed {
 		return nil
 	}
-	t.callback()
+	t.closed = true
+
+	readerErr := t.r.Close()
+	writerErr := t.w.Close()
+	if writerErr != nil {
+		logrus.Warnln("Failed to close cache file:", writerErr.Error())
+	}
+
+	complete := t.isComplete(readerErr, writerErr)
+	callback := t.callback
+	onIncomplete := t.onIncomplete
+
+	if !complete {
+		if onIncomplete != nil {
+			onIncomplete()
+		}
+		// Cache writer errors invalidate only the cache entry; return the
+		// upstream close error, if any, so response delivery is not failed by a
+		// cache persistence problem.
+		return readerErr
+	}
+	callback()
 	return nil
+}
+
+func (t *teeReader) isComplete(readerErr, writerErr error) bool {
+	// A cache entry is complete only when the source body fully completed and
+	// every read, write, and close operation involved in persisting it succeeded.
+	return readerErr == nil && t.readErr == nil && t.writeErr == nil && writerErr == nil && t.readToEOF
 }
 
 // WasResponseCached returns true if the response was cached.

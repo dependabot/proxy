@@ -100,9 +100,10 @@ func TestCache(t *testing.T) {
 
 		body := `{"hello":"world"}`
 		resp = &http.Response{
-			Request:    req,
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Request:       req,
+			StatusCode:    200,
+			Body:          io.NopCloser(bytes.NewBufferString(body)),
+			ContentLength: -1,
 		}
 		resp = cacher.OnResponse(resp, proxyCtx)
 		result, _ := io.ReadAll(resp.Body)
@@ -131,6 +132,37 @@ func TestCache(t *testing.T) {
 		resp = cacher.OnResponse(resp, proxyCtx)
 		require.NoError(t, resp.Body.Close())
 		assert.Len(t, cacher.cacheDB, 1)
+	})
+
+	t.Run("Incomplete read is not cached", func(t *testing.T) {
+		req := httptest.NewRequestWithContext(t.Context(), "GET", URL+"/partial", nil)
+		proxyCtx := &goproxy.ProxyCtx{
+			Req: req,
+		}
+
+		_, resp := cacher.OnRequest(req, proxyCtx)
+		if resp != nil {
+			require.NoError(t, resp.Body.Close())
+		}
+		assert.Nil(t, resp)
+
+		resp = &http.Response{
+			Request:       req,
+			StatusCode:    200,
+			Body:          io.NopCloser(bytes.NewBufferString("partial response body")),
+			ContentLength: -1,
+		}
+		resp = cacher.OnResponse(resp, proxyCtx)
+		buf := make([]byte, 7)
+		_, err := resp.Body.Read(buf)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+
+		_, resp = cacher.OnRequest(req, &goproxy.ProxyCtx{Req: req})
+		if resp != nil {
+			require.NoError(t, resp.Body.Close())
+		}
+		assert.Nil(t, resp, "incomplete response must not be served from cache")
 	})
 }
 
@@ -371,9 +403,10 @@ func TestCache_MissingCacheFileIsNotCountedAsHit(t *testing.T) {
 	}
 	require.Nil(t, resp)
 	resp = &http.Response{
-		Request:    missReq,
-		StatusCode: http.StatusOK,
-		Body:       io.NopCloser(bytes.NewBufferString("hello")),
+		Request:       missReq,
+		StatusCode:    http.StatusOK,
+		Body:          io.NopCloser(bytes.NewBufferString("hello")),
+		ContentLength: -1,
 	}
 	resp = cacher.OnResponse(resp, missCtx)
 	_, _ = io.ReadAll(resp.Body)
@@ -548,19 +581,48 @@ func Test_key(t *testing.T) {
 type BufferWithClose struct {
 	bytes.Buffer
 	WasCloseCalled bool
-	ErrorToReturn  error
+	WriteError     error
+	CloseError     error
 }
 
 func (b *BufferWithClose) Write(p []byte) (n int, err error) {
-	if b.ErrorToReturn != nil {
-		return 0, b.ErrorToReturn
+	if b.WriteError != nil {
+		return 0, b.WriteError
 	}
 	return b.Buffer.Write(p)
 }
 
 func (b *BufferWithClose) Close() error {
 	b.WasCloseCalled = true
-	return b.ErrorToReturn
+	return b.CloseError
+}
+
+type errorAfterReadCloser struct {
+	reader *strings.Reader
+	err    error
+}
+
+func (e *errorAfterReadCloser) Read(p []byte) (int, error) {
+	n, readErr := e.reader.Read(p)
+	if n > 0 {
+		return n, e.err
+	}
+	return n, readErr
+}
+
+func (e *errorAfterReadCloser) Close() error {
+	return nil
+}
+
+type shortWriteCloser struct {
+	BufferWithClose
+}
+
+func (s *shortWriteCloser) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	return s.BufferWithClose.Write(p[:len(p)-1])
 }
 
 func TestTeeReadCloser(t *testing.T) {
@@ -568,10 +630,14 @@ func TestTeeReadCloser(t *testing.T) {
 		writeCloser := &BufferWithClose{}
 		readCloser := io.NopCloser(strings.NewReader("hello"))
 		callbackWasCalled := false
+		incompleteWasCalled := false
 		callback := func() {
 			callbackWasCalled = true
 		}
-		tee := TeeReadCloser(readCloser, writeCloser, callback)
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, -1, callback, onIncomplete)
 
 		data, err := io.ReadAll(tee)
 		assert.NoError(t, err)
@@ -579,25 +645,239 @@ func TestTeeReadCloser(t *testing.T) {
 		assert.Equal(t, "hello", writeCloser.String())
 		assert.NoError(t, tee.Close())
 		assert.True(t, callbackWasCalled)
+		assert.False(t, incompleteWasCalled)
 		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("completed read can be closed more than once", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := io.NopCloser(strings.NewReader("hello"))
+		callbackCalls := 0
+		incompleteCalls := 0
+		callback := func() {
+			callbackCalls++
+		}
+		onIncomplete := func() {
+			incompleteCalls++
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, -1, callback, onIncomplete)
+
+		data, err := io.ReadAll(tee)
+		require.NoError(t, err)
+		assert.Equal(t, "hello", string(data))
+		require.NoError(t, tee.Close())
+		require.NoError(t, tee.Close())
+		assert.Equal(t, 1, callbackCalls)
+		assert.Zero(t, incompleteCalls)
 	})
 
 	t.Run("when the writer fails", func(t *testing.T) {
 		writeCloser := &BufferWithClose{
-			ErrorToReturn: errors.New("out of memory"),
+			WriteError: errors.New("out of memory"),
 		}
 		readCloser := io.NopCloser(strings.NewReader("hello"))
 		callbackWasCalled := false
+		incompleteWasCalled := false
 		callback := func() {
 			callbackWasCalled = true
 		}
-		tee := TeeReadCloser(readCloser, writeCloser, callback)
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, -1, callback, onIncomplete)
 
 		data, err := io.ReadAll(tee)
 		assert.NoError(t, err)
 		assert.Equal(t, "hello", string(data))
 		assert.NoError(t, tee.Close())
 		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("when the writer writes too few bytes", func(t *testing.T) {
+		writeCloser := &shortWriteCloser{}
+		readCloser := io.NopCloser(strings.NewReader("hello"))
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, -1, callback, onIncomplete)
+
+		data, err := io.ReadAll(tee)
+		assert.NoError(t, err)
+		assert.Equal(t, "hello", string(data))
+		assert.NoError(t, tee.Close())
+		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("when the writer close fails", func(t *testing.T) {
+		writeCloser := &BufferWithClose{
+			CloseError: errors.New("failed to flush cache file"),
+		}
+		readCloser := io.NopCloser(strings.NewReader("hello"))
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, -1, callback, onIncomplete)
+
+		data, err := io.ReadAll(tee)
+		require.NoError(t, err)
+		assert.Equal(t, "hello", string(data))
+		assert.NoError(t, tee.Close())
+		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("when the reader close fails", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := &BufferWithClose{
+			Buffer:     *bytes.NewBufferString("hello"),
+			CloseError: errors.New("connection closed unexpectedly"),
+		}
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, -1, callback, onIncomplete)
+
+		_, err := io.ReadAll(tee)
+		require.NoError(t, err)
+		require.Error(t, tee.Close())
+		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("when closed before EOF", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := io.NopCloser(strings.NewReader("hello"))
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, -1, callback, onIncomplete)
+
+		buf := make([]byte, 2)
+		n, err := tee.Read(buf)
+		require.NoError(t, err)
+		assert.Equal(t, 2, n)
+		assert.NoError(t, tee.Close())
+		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("known length can complete before EOF read", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := io.NopCloser(strings.NewReader("hello"))
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, 2, callback, onIncomplete)
+
+		buf := make([]byte, 2)
+		n, err := tee.Read(buf)
+		require.NoError(t, err)
+		assert.Equal(t, 2, n)
+		assert.NoError(t, tee.Close())
+		assert.True(t, callbackWasCalled)
+		assert.False(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("declared length mismatch is not cached", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := io.NopCloser(strings.NewReader("hello"))
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, 2, callback, onIncomplete)
+
+		data, err := io.ReadAll(tee)
+		require.NoError(t, err)
+		assert.Equal(t, "hello", string(data))
+		assert.NoError(t, tee.Close())
+		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("known zero length completes after read", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := io.NopCloser(strings.NewReader(""))
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, 0, callback, onIncomplete)
+
+		data, err := io.ReadAll(tee)
+		require.NoError(t, err)
+		assert.Empty(t, data)
+		assert.NoError(t, tee.Close())
+		assert.True(t, callbackWasCalled)
+		assert.False(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("read error is not cached even after expected length", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := &errorAfterReadCloser{
+			reader: strings.NewReader("hello"),
+			err:    errors.New("unexpected read failure"),
+		}
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, 2, callback, onIncomplete)
+
+		buf := make([]byte, 2)
+		n, err := tee.Read(buf)
+		require.Error(t, err)
+		assert.Equal(t, 2, n)
+		assert.NoError(t, tee.Close())
+		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
 		assert.True(t, writeCloser.WasCloseCalled)
 	})
 }
