@@ -595,6 +595,23 @@ func (b *BufferWithClose) Close() error {
 	return b.CloseError
 }
 
+type errorAfterReadCloser struct {
+	reader *strings.Reader
+	err    error
+}
+
+func (e *errorAfterReadCloser) Read(p []byte) (int, error) {
+	n, readErr := e.reader.Read(p)
+	if n > 0 {
+		return n, e.err
+	}
+	return n, readErr
+}
+
+func (e *errorAfterReadCloser) Close() error {
+	return nil
+}
+
 func TestTeeReadCloser(t *testing.T) {
 	t.Run("reads, writes, and calls the callback", func(t *testing.T) {
 		writeCloser := &BufferWithClose{}
@@ -756,6 +773,32 @@ func TestTeeReadCloser(t *testing.T) {
 		assert.NoError(t, tee.Close())
 		assert.True(t, callbackWasCalled)
 		assert.False(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("read error is not cached even after expected length", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := &errorAfterReadCloser{
+			reader: strings.NewReader("hello"),
+			err:    errors.New("unexpected read failure"),
+		}
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, 2, callback, onIncomplete)
+
+		buf := make([]byte, 2)
+		n, err := tee.Read(buf)
+		require.Error(t, err)
+		assert.Equal(t, 2, n)
+		assert.NoError(t, tee.Close())
+		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
 		assert.True(t, writeCloser.WasCloseCalled)
 	})
 }

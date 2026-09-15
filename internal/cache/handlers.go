@@ -421,6 +421,7 @@ type teeReader struct {
 	bytesRead      int64
 	callback       func()
 	onIncomplete   func()
+	readErr        error
 	writeErr       error
 	readToEOF      bool
 	closed         bool
@@ -437,6 +438,8 @@ func (t *teeReader) Read(p []byte) (n int, err error) {
 	n, err = t.r.Read(p)
 	if errors.Is(err, io.EOF) {
 		t.readToEOF = true
+	} else if err != nil && t.readErr == nil {
+		t.readErr = err
 	}
 	if n > 0 {
 		t.bytesRead += int64(n)
@@ -469,7 +472,7 @@ func (t *teeReader) Close() error {
 	if writerErr != nil {
 		logrus.Warnln("Failed to close cache file:", writerErr.Error())
 	}
-	if readerErr != nil || t.writeErr != nil || writerErr != nil || !t.readToEOF {
+	if readerErr != nil || t.readErr != nil || t.writeErr != nil || writerErr != nil || !t.readToEOF {
 		if t.onIncomplete != nil {
 			t.onIncomplete()
 		}
