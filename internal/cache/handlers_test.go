@@ -623,16 +623,45 @@ func TestTeeReadCloser(t *testing.T) {
 		}
 		readCloser := io.NopCloser(strings.NewReader("hello"))
 		callbackWasCalled := false
+		incompleteWasCalled := false
 		callback := func() {
 			callbackWasCalled = true
 		}
-		tee := TeeReadCloser(readCloser, writeCloser, callback, nil)
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, callback, onIncomplete)
 
 		data, err := io.ReadAll(tee)
 		assert.NoError(t, err)
 		assert.Equal(t, "hello", string(data))
 		assert.NoError(t, tee.Close())
 		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
+		assert.True(t, writeCloser.WasCloseCalled)
+	})
+
+	t.Run("when the reader close fails", func(t *testing.T) {
+		writeCloser := &BufferWithClose{}
+		readCloser := &BufferWithClose{
+			Buffer:        *bytes.NewBufferString("hello"),
+			ErrorToReturn: errors.New("connection closed unexpectedly"),
+		}
+		callbackWasCalled := false
+		incompleteWasCalled := false
+		callback := func() {
+			callbackWasCalled = true
+		}
+		onIncomplete := func() {
+			incompleteWasCalled = true
+		}
+		tee := TeeReadCloser(readCloser, writeCloser, callback, onIncomplete)
+
+		_, err := io.ReadAll(tee)
+		require.NoError(t, err)
+		require.Error(t, tee.Close())
+		assert.False(t, callbackWasCalled)
+		assert.True(t, incompleteWasCalled)
 		assert.True(t, writeCloser.WasCloseCalled)
 	})
 

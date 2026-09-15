@@ -440,9 +440,15 @@ func (t *teeReader) Close() error {
 	err := t.r.Close()
 	_ = t.w.Close()
 	if err != nil {
+		if t.onIncomplete != nil {
+			t.onIncomplete()
+		}
 		return err
 	}
 	if t.writeErr != nil {
+		if t.onIncomplete != nil {
+			t.onIncomplete()
+		}
 		return nil
 	}
 	if !t.readToEOF {
