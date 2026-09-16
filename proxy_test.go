@@ -69,7 +69,7 @@ func TestProxyEgressAllowlistEnforceBlocks(t *testing.T) {
 
 	cfg := &config.Config{
 		CA:          testProxyConfig.CA,
-		Experiments: config.Experiments{"proxy_egress_enforce": true},
+		Experiments: config.Experiments{"proxy-egress-enforce": true},
 	}
 	env := config.ProxyEnvSettings{PackageManager: "npm_and_yarn"}
 	client, proxy := testProxyServerWithEnv(t, env, cfg, nil, upstream.Certificate())
@@ -99,7 +99,7 @@ func TestProxyEgressAllowlistObserveAllows(t *testing.T) {
 
 	cfg := &config.Config{
 		CA:          testProxyConfig.CA,
-		Experiments: config.Experiments{"proxy_egress_observe": true},
+		Experiments: config.Experiments{"proxy-egress-observe": true},
 	}
 	env := config.ProxyEnvSettings{PackageManager: "npm_and_yarn"}
 	client, proxy := testProxyServerWithEnv(t, env, cfg, nil, upstream.Certificate())

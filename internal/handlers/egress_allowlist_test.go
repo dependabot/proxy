@@ -45,6 +45,28 @@ func egressResult(t *testing.T, h *EgressAllowlistHandler, rawURL string) *http.
 	return resp
 }
 
+// TestEgressAllowlist_DashCasedExperimentKeys guards the dash/underscore key
+// contract with the API. The API serializes experiments through the JSON:API
+// adapter (default key transform: dash), so the observe/enforce flags arrive in
+// the job-details payload as "proxy-egress-observe"/"proxy-egress-enforce". The
+// constants must match those literal keys, otherwise the flags never activate.
+func TestEgressAllowlist_DashCasedExperimentKeys(t *testing.T) {
+	require.Equal(t, "proxy-egress-observe", egressObserveExperiment)
+	require.Equal(t, "proxy-egress-enforce", egressEnforceExperiment)
+
+	experiments := config.Experiments{
+		"proxy-egress-observe": true,
+		"proxy-egress-enforce": false,
+	}
+	assert.True(t, experiments.Enabled("proxy-egress-observe"), "dash-keyed observe flag is enabled")
+	assert.False(t, experiments.Enabled("proxy-egress-enforce"))
+	assert.False(t, experiments.Enabled("proxy_egress_observe"), "underscore key does not match the forwarded dash key")
+
+	// A handler built from the dash-keyed payload logs but does not block.
+	h := NewEgressAllowlistHandler(&config.Config{Experiments: experiments}, config.ProxyEnvSettings{}, nil)
+	assert.Nil(t, egressResult(t, h, "https://evil.com/steal"), "observe mode allows the request through")
+}
+
 func TestEgressAllowlist_FailOpenWhenDisabled(t *testing.T) {
 	h := newEgressHandler(false, false, "npm_and_yarn")
 
