@@ -34,9 +34,6 @@ gh attestation verify "oci://ghcr.io/dependabot/proxy@${IMAGE_DIGEST}" \
 The publication summary includes the digest, source commit and attestation link.
 Add `--bundle-from-oci` to retrieve the attestation from GHCR instead of the GitHub API.
 
-These attestations cover newly built container images. The workflow does not backfill historical images.
-Runtime verification in the CLI and Action, and attestations for the native CodeQL archives, are separate work.
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
