@@ -61,6 +61,85 @@ func TestProxyHTTPRequest(t *testing.T) {
 	assert.Equal(t, 200, rsp.StatusCode)
 }
 
+func TestNormaliseHost(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		host string
+		want string
+	}{
+		{name: "spoofed host", url: "https://EXAMPLE.com/path", host: "api.dependabot.com", want: "example.com"},
+		{name: "default port", url: "https://EXAMPLE.com:443/path", host: "example.com", want: "example.com:443"},
+		{name: "custom port", url: "https://EXAMPLE.com:8443/path", host: "example.com", want: "example.com:8443"},
+		{name: "IPv6", url: "https://[::1]:8443/path", host: "api.dependabot.com", want: "[::1]:8443"},
+		{name: "HTTP", url: "http://EXAMPLE.com:8080/path", host: "api.dependabot.com", want: "example.com:8080"},
+		{name: "empty host", url: "https://EXAMPLE.com/path", want: "example.com"},
+		{name: "matching host", url: "https://EXAMPLE.com/path", host: "EXAMPLE.com", want: "example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.url, nil)
+			req.Host = tt.host
+
+			got, resp := normaliseHost(req, nil)
+
+			assert.Same(t, req, got)
+			assert.Nil(t, resp)
+			assert.Equal(t, tt.want, req.URL.Host)
+			assert.Equal(t, tt.want, req.Host)
+		})
+	}
+}
+
+func TestProxyDependabotAPIHost(t *testing.T) {
+	t.Setenv("PROXY_CACHE", "false")
+	const jobToken = "test-job-token"
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Received-Host", r.Host)
+		w.Header().Set("Received-Authorization", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	upstreamURL, err := url.Parse(upstream.URL)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name          string
+		apiEndpoint   string
+		host          string
+		authorization string
+	}{
+		{name: "API request", apiEndpoint: upstream.URL, host: upstreamURL.Host, authorization: jobToken},
+		{name: "spoofed API host", apiEndpoint: "https://api.dependabot.example", host: "api.dependabot.example"},
+		{name: "unrelated destination", apiEndpoint: "https://api.dependabot.example", host: upstreamURL.Host},
+		{name: "spoofed metadata host", apiEndpoint: "https://api.dependabot.example", host: metadataAPIHost},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := config.ProxyEnvSettings{APIEndpoint: tt.apiEndpoint, JobToken: jobToken}
+			client, proxy := testProxyServerWithEnv(t, env, testProxyConfig, nil, upstream.Certificate())
+			closeOnCleanup(t, proxy)
+			t.Cleanup(client.CloseIdleConnections)
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL+"/update_jobs/123/details", nil)
+			require.NoError(t, err)
+			req.Host = tt.host
+
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, resp.Body.Close())
+			}()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.Equal(t, upstreamURL.Host, resp.Header.Get("Received-Host"))
+			assert.Equal(t, tt.authorization, resp.Header.Get("Received-Authorization"))
+		})
+	}
+}
+
 func TestProxyEgressAllowlistEnforceBlocks(t *testing.T) {
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -491,16 +570,16 @@ func TestMetadataAPIRestriction(t *testing.T) {
 			host: "",
 		},
 		{
-			url:  "http://www.example.com",
-			host: "METADATA.google.internal",
+			url:  "http://metadata.google.internal:80",
+			host: "metadata.google.internal:80",
 		},
 		{
-			url:  "http://127.0.0.1:0/path",
-			host: "metadata.google.internal",
+			url:  "https://metadata.google.internal:443/path",
+			host: "example.com",
 		},
 		{
-			url:  "https://127.0.0.1:0/path",
-			host: "metadata.google.internal",
+			url:  "https://metadata.google.internal:8443/path",
+			host: "example.com",
 		},
 	}
 	for _, tc := range testCases {
