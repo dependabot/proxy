@@ -4,22 +4,87 @@ on: # yamllint disable-line rule:truthy
     branches:
       - main
 
+env:
+  REMOTE_IMAGE: ghcr.io/dependabot/proxy
+
 permissions: {}
 
 jobs:
   publish:
     name: Build and publish Docker images
     runs-on: ubuntu-latest
+    if: github.repository == 'dependabot/proxy'
 
     permissions:
       contents: write
       packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
 
     steps:
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Publish Docker
-        run: script/cibuild-publish-ghcr
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set version tag
+        run: |
+          VERSION="v2.0.$(date -u +%Y%m%d%H%M%S)"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REMOTE_IMAGE }}:${{ env.VERSION }}
+            ${{ env.REMOTE_IMAGE }}:latest
+          platforms: linux/amd64
+          build-args: GIT_COMMIT=${{ github.sha }}
+          cache-to: type=inline
+          outputs: type=image,oci-mediatypes=false
+          # Generate signed provenance separately without changing the image manifest.
+          provenance: false
+          sbom: false
+
+      - name: Require image digest
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: ': "${IMAGE_DIGEST:?Build returned no image digest}"'
+
+      - name: Generate artifact attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.REMOTE_IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Create Git tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/tags/${VERSION}" \
+            -f "sha=${GITHUB_SHA}" \
+            --silent
+
+          {
+            printf 'Published `%s:%s` and `%s:latest`\n\n' "$REMOTE_IMAGE" "$VERSION" "$REMOTE_IMAGE"
+            printf 'Digest: `%s`\n\n' "$IMAGE_DIGEST"
+            printf 'Source commit: `%s`\n\n' "$GITHUB_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
