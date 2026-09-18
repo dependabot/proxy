@@ -4,17 +4,16 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strings"
-
-	"github.com/elazarl/goproxy"
 
 	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/helpers"
+	"github.com/elazarl/goproxy"
 )
 
 // DependabotAPIHandler injects the job token into requests to the Dependabot API
 type DependabotAPIHandler struct {
-	dependabotAPIHost string
-	credentials       string
+	dependabotAPIURL string
+	credentials      string
 }
 
 // NewDependabotAPIHandler constructs a new DependabotAPIHandler
@@ -26,8 +25,8 @@ func NewDependabotAPIHandler(envSettings config.ProxyEnvSettings) *DependabotAPI
 	}
 
 	handler := DependabotAPIHandler{
-		dependabotAPIHost: strings.ToLower(apiUrl.Host),
-		credentials:       envSettings.JobToken,
+		dependabotAPIURL: apiUrl.String(),
+		credentials:      envSettings.JobToken,
 	}
 
 	return &handler
@@ -39,7 +38,7 @@ func (h *DependabotAPIHandler) HandleRequest(req *http.Request, proxyCtx *goprox
 		return req, nil
 	}
 
-	if strings.ToLower(req.Host) != h.dependabotAPIHost {
+	if !helpers.UrlMatchesRequest(req, h.dependabotAPIURL, false) {
 		return req, nil
 	}
 

@@ -174,7 +174,8 @@ func handleForbidden(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Respo
 
 func normaliseHost(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	req.URL.Host = strings.ToLower(req.URL.Host)
-	req.Host = strings.ToLower(req.Host)
+	// Credential checks and upstream virtual-host routing must agree with the dial destination.
+	req.Host = req.URL.Host
 	return req, nil
 }
 
@@ -183,7 +184,7 @@ const (
 )
 
 func blockMetadataAPIHosts(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-	if req.Host == metadataAPIHost || req.URL.Host == metadataAPIHost {
+	if req.URL.Hostname() == metadataAPIHost {
 		return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, "Forbidden")
 	}
 	return req, nil
