@@ -3,6 +3,7 @@ package handlers
 import (
 	_ "embed"
 	"fmt"
+	"path"
 	"slices"
 
 	"gopkg.in/yaml.v3"
@@ -18,6 +19,7 @@ var egressDefaultsYAML []byte
 // egressDefaults is the parsed representation of egress_allowlist_defaults.yaml.
 type egressDefaults struct {
 	GithubInfraDomains      []string            `yaml:"github_infra_domains"`
+	SharedRegistryDomains   []string            `yaml:"shared_registry_domains"`
 	EcosystemDefaultDomains map[string][]string `yaml:"ecosystem_default_domains"`
 }
 
@@ -25,6 +27,12 @@ var (
 	// githubInfraDomains are the GitHub/Dependabot infrastructure domains that
 	// are always allowed, regardless of ecosystem.
 	githubInfraDomains []string
+
+	// sharedRegistryDomains are third-party registry/artifact providers that
+	// serve many ecosystems at once (e.g. JFrog, CodeArtifact, Azure Artifacts).
+	// They are applied to every job, like allEcosystemDomains, but are kept in a
+	// separate list because they do not belong to any single ecosystem.
+	sharedRegistryDomains []string
 
 	// ecosystemDefaultDomains maps each Dependabot ecosystem to the public
 	// registry/CDN hosts it needs. Retained for provenance/documentation; the
@@ -47,6 +55,7 @@ func init() {
 	}
 
 	githubInfraDomains = defaults.GithubInfraDomains
+	sharedRegistryDomains = defaults.SharedRegistryDomains
 	ecosystemDefaultDomains = defaults.EcosystemDefaultDomains
 
 	seen := make(map[string]struct{})
@@ -60,4 +69,24 @@ func init() {
 		}
 	}
 	slices.Sort(allEcosystemDomains)
+
+	// Fail fast on malformed glob patterns in the embedded defaults rather than
+	// silently never-matching them at request time.
+	validateGlobDefaults(githubInfraDomains)
+	validateGlobDefaults(sharedRegistryDomains)
+	validateGlobDefaults(allEcosystemDomains)
+}
+
+// validateGlobDefaults panics if any glob entry is not a valid path.Match
+// pattern. path.Match only reports a bad pattern once it reaches the malformed
+// token, so we match against a non-empty string to force full evaluation.
+func validateGlobDefaults(entries []string) {
+	for _, entry := range entries {
+		if !isGlobPattern(entry) {
+			continue
+		}
+		if _, err := path.Match(entry, "example.com"); err != nil {
+			panic(fmt.Sprintf("invalid glob in egress_allowlist_defaults.yaml: %q: %v", entry, err))
+		}
+	}
 }
