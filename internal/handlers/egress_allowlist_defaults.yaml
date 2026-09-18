@@ -1,12 +1,22 @@
 # Egress allowlist default domains.
 #
-# Matching convention (see EgressAllowlistHandler): a leading dot (".github.com")
-# matches that domain and any subdomain, while an entry without a leading dot
-# ("storage.googleapis.com") matches only that exact host. Prefer exact hosts.
-# Use the leading-dot form only for domains whose subdomains are entirely
-# provider-controlled and never user-creatable, so that user-controlled
-# subdomains — e.g. object-storage buckets reachable as
+# Matching convention (see EgressAllowlistHandler): an entry may be one of three
+# forms.
+#   - Leading dot (".github.com"): matches that domain and any subdomain.
+#   - Glob pattern (contains "*", "?" or a "[...]" character class): matched
+#     against the whole host with path.Match. "*" spans dots, so it matches any
+#     subdomain depth. Glob values that begin with "*" or "[" MUST be quoted,
+#     otherwise YAML reads them as an alias or a flow sequence.
+#   - Plain entry ("storage.googleapis.com"): matches only that exact host.
+# Prefer exact hosts. Use the leading-dot or glob forms only for domains whose
+# matched components are entirely provider-controlled and never user-creatable,
+# so that user-controlled names — e.g. object-storage buckets reachable as
 # <bucket>.storage.googleapis.com — cannot be abused as an exfiltration channel.
+# In particular, a broad glob over a shared, multi-tenant storage domain (e.g.
+# "*.blob.core.windows.net") is unsafe because an attacker can register a name
+# that matches it; keep the fixed, non-registerable parts of the pattern (like
+# the "vsblobprod" infix or the ".dkr.ecr.*.amazonaws.com" suffix) as tight as
+# possible.
 
 # github_infra_domains are the GitHub and Dependabot infrastructure domains that
 # are always allowed. Their subdomains are entirely GitHub-controlled (api.,
@@ -19,12 +29,79 @@ github_infra_domains:
   - .ghe.com
   - ghcr.io
 
+# shared_registry_domains are third-party registry / artifact-hosting providers
+# that serve many ecosystems at once (JFrog, AWS CodeArtifact, Azure Artifacts,
+# Cloudsmith, MyGet, etc.), plus self-hosted registries seen across jobs. They
+# are applied to every job like the ecosystem defaults, but are grouped here
+# because they do not belong to any single ecosystem. Glob entries are scoped to
+# the provider's fixed, non-registerable host components.
+shared_registry_domains:
+  - "*.jfrog.io"
+  - "*.jfrog.org"
+  # JFrog Artifactory Online download backends: fixed, JFrog-owned S3 buckets
+  # (shared regional buckets, plus dedicated-instance buckets). Listed as exact
+  # hosts, not a glob, because the "jfrog-prod/-shared-/-dedicated-/-main"
+  # tokens are not a reserved AWS namespace, so a glob over the multi-tenant
+  # s3.amazonaws.com domain could be satisfied by an attacker-registered bucket.
+  # These *.jfrog.io registries redirect here.
+  - jfrog-prod-apne1-shared-tokyo-main.s3.amazonaws.com
+  - jfrog-prod-aps1-shared-mumbai-main.s3.amazonaws.com
+  - jfrog-prod-apse2-shared-sydney-main.s3.amazonaws.com
+  - jfrog-prod-euc1-shared-frankfurt-main.s3.amazonaws.com
+  - jfrog-prod-euw1-shared-ireland-main.s3.amazonaws.com
+  - jfrog-prod-euw2-shared-london-main.s3.amazonaws.com
+  - jfrog-prod-use1-shared-virginia-main.s3.amazonaws.com
+  - jfrog-prod-usw2-shared-oregon-main.s3.amazonaws.com
+  - jfrog-prod-use1-dedicated-virginia-main.s3.amazonaws.com
+  - "*.pkgs.visualstudio.com"
+  - pkgs.dev.azure.com
+  - "*.cloudsmith.io"
+  - "*.myget.org"
+  - "*.bintray.com"
+  - "*.fury.io"
+  - "*.buf.dev"
+  - jitpack.io
+  # AWS CodeArtifact repository endpoints: <domain>-<account>.d.codeartifact.<region>.amazonaws.com
+  - "*-[0-9]*.d.codeartifact.*.amazonaws.com"
+  # Public JVM (Maven/Gradle/sbt) repositories used across many jobs.
+  - repo.spring.io
+  - services.gradle.org
+  - plugins-artifacts.gradle.org
+  - repository.jboss.org
+  - oss.sonatype.org
+  - repository.apache.org
+  - central.sonatype.com
+  - clojars.org
+  - repo.clojars.org
+  - repo.jenkins-ci.org
+  - repo.papermc.io
+  - repo.codemc.io
+  - repo.codemc.org
+  - hub.spigotmc.org
+  - repo.extendedclip.com
+  - repo.helpch.at
+  - maven.anypoint.mulesoft.com
+  - maven.pkg.jetbrains.space
+  - packages.jetbrains.team
+  # Public package mirrors that serve several ecosystems.
+  - mirrors.aliyun.com
+  - maven.aliyun.com
+  - repo.huaweicloud.com
+  - mirror.nju.edu.cn
+  # Private Packagist (Composer) hosting.
+  - packagist.com
+  - repo.packagist.com
+  # Self-hosted / organization registries observed across jobs.
+  - artifactory.internal.cba
+  - artifacts.we.decodeinsurance.de
+
 # ecosystem_default_domains lists the public registry and CDN hosts each
 # Dependabot ecosystem needs. The map is kept keyed by ecosystem for provenance
 # and documentation, but the handler applies the UNION of all values to every
 # job (it does not partition by PACKAGE_MANAGER). Entries are exact hosts unless
-# a leading dot is present. Object-storage hosts (storage.googleapis.com) are
-# intentionally exact so user-created buckets under them are not allowlisted.
+# a leading dot or glob pattern is present. Object-storage hosts
+# (storage.googleapis.com) are intentionally exact so user-created buckets under
+# them are not allowlisted.
 #
 # Every registered Dependabot ecosystem has an entry. An empty list means the
 # ecosystem reaches only GitHub/Dependabot infrastructure or plain git (covered
@@ -37,37 +114,65 @@ ecosystem_default_domains:
   npm_and_yarn:
     - registry.npmjs.org
     - registry.yarnpkg.com
+    - repo.yarnpkg.com
     - jsr.io
     - registry.bower.io
+    - registry.npmjs.com
+    - registry.npmmirror.com
+    - cdn.npmmirror.com
+    - npm.flatt.tech
+    - registry.npm.ouryahoo.com
+    - npm.fontawesome.com
+    - cdn.sheetjs.com
   bun:
     - registry.npmjs.org
     - registry.yarnpkg.com
+    - repo.yarnpkg.com
     - jsr.io
     - registry.bower.io
+    - registry.npmjs.com
+    - registry.npmmirror.com
+    - cdn.npmmirror.com
+    - npm.flatt.tech
+    - registry.npm.ouryahoo.com
+    - npm.fontawesome.com
+    - cdn.sheetjs.com
   pip:
     - pypi.org
     - pypi.python.org
     - files.pythonhosted.org
     - pythonhosted.org
+    - download.pytorch.org
+    - pypi.nvidia.com
+    - pypi.tuna.tsinghua.edu.cn
   uv:
     - pypi.org
     - pypi.python.org
     - files.pythonhosted.org
     - pythonhosted.org
+    - download.pytorch.org
+    - pypi.nvidia.com
+    - pypi.tuna.tsinghua.edu.cn
   bundler:
     - rubygems.org
     - index.rubygems.org
     - gems.rubygems.org
+    - rails-assets.org
+    - gem.coop
   maven:
     - repo.maven.apache.org
     - repo1.maven.org
     - plugins.gradle.org
     - dl.google.com
+    - maven.google.com
+    - packages.confluent.io
   gradle:
     - repo.maven.apache.org
     - repo1.maven.org
     - plugins.gradle.org
     - dl.google.com
+    - maven.google.com
+    - packages.confluent.io
   sbt:
     - repo1.maven.org
     - repo.maven.apache.org
@@ -76,28 +181,48 @@ ecosystem_default_domains:
     - crates.io
     - static.crates.io
     - index.crates.io
+    - rsproxy.cn
   composer:
     - repo.packagist.org
     - packagist.org
+    - packages.drupal.org
+    - wpackagist.org
+    - repo.wp-packages.org
+    - asset-packagist.org
+    - cdn.asset-packagist.org
   go_modules:
     - proxy.golang.org
     - sum.golang.org
     - storage.googleapis.com
+    - .googlesource.com
+    - nodejs.org
   docker: &docker_registries
     - registry-1.docker.io
     - auth.docker.io
     - index.docker.io
     - registry.hub.docker.com
+    - hub.docker.com
     - production.cloudflare.docker.com
     - ghcr.io
     - mcr.microsoft.com
     - quay.io
     - public.ecr.aws
+    - lscr.io
     - .gcr.io
     - .pkg.dev
+    # AWS Elastic Container Registry: <account-id>.dkr.ecr.<region>.amazonaws.com
+    - "[0-9]*.dkr.ecr.*.amazonaws.com"
   docker_compose: *docker_registries
   nuget:
     - api.nuget.org
+    - www.nuget.org
+    - globalcdn.nuget.org
+    - nugetregistryv2prod.blob.core.windows.net
+    # NuGet download CDN backends (Azure Blob / Azure DevOps artifact storage).
+    # Scoped to the "vsblobprod" infix and ".vsblob." label, which are not
+    # user-registerable, rather than the shared parent storage domains.
+    - "*vsblobprod*.blob.core.windows.net"
+    - "*.vsblob.vsassets.io"
   dotnet_sdk:
     - api.nuget.org
   hex:

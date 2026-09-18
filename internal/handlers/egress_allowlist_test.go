@@ -152,6 +152,130 @@ func TestEgressAllowlist_SuffixEntryAllowsSubdomain(t *testing.T) {
 	assert.Nil(t, egressResult(t, h, "https://europe-docker.pkg.dev/v2/project/image"), "artifact registry subdomain allowed")
 }
 
+func TestEgressAllowlist_GlobMatchesScopedStorageHosts(t *testing.T) {
+	// "*vsblobprod*.blob.core.windows.net" is a glob entry scoped to the
+	// non-user-registerable "vsblobprod" infix, so real NuGet/pip CDN backends
+	// match, but an arbitrary storage account under the shared parent domain
+	// (and a name lacking the infix) must still be blocked.
+	h := newEgressHandler(false, true, "nuget")
+
+	assert.Nil(t, egressResult(t, h, "https://ajhvsblobprodcus363.blob.core.windows.net/pkg.nupkg"), "vsblobprod CDN backend allowed")
+	assert.Nil(t, egressResult(t, h, "https://ajhvsblobprodcus363.vsblob.vsassets.io/pkg"), "vsassets artifact backend allowed")
+	assert.Nil(t, egressResult(t, h, "https://nugetregistryv2prod.blob.core.windows.net/pkg"), "exact CDN host allowed")
+
+	for _, blocked := range []string{
+		"https://attacker.blob.core.windows.net/loot",             // shared parent must not be wildcarded
+		"https://nugetregistryv2prodx.blob.core.windows.net/loot", // exact entry does not extend to lookalikes
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "unscoped storage host must be blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
+func TestEgressAllowlist_GlobScopedFixedComponentsRejectSpoofs(t *testing.T) {
+	h := newEgressHandler(false, true, "docker")
+
+	// ECR: only a numeric account label (the "[0-9]*" component) is allowed.
+	assert.Nil(t, egressResult(t, h, "https://089022728777.dkr.ecr.us-east-1.amazonaws.com/v2/image"), "numeric ECR account allowed")
+	resp := egressResult(t, h, "https://evil.dkr.ecr.us-east-1.amazonaws.com/v2/image")
+	if assert.NotNil(t, resp, "non-numeric ECR account label must be blocked") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	}
+
+	// CodeArtifact endpoints carry a "-<account>" numeric suffix on the domain label.
+	assert.Nil(t, egressResult(t, h, "https://my-repo-123456789012.d.codeartifact.us-east-1.amazonaws.com/npm/pkg"), "codeartifact endpoint allowed")
+}
+
+func TestEgressAllowlist_SharedRegistryDomainsAllowed(t *testing.T) {
+	// Shared third-party registry providers are applied to every job regardless
+	// of package manager.
+	h := newEgressHandler(false, true, "maven")
+
+	for _, allowed := range []string{
+		"https://mycompany.jfrog.io/artifactory/repo",
+		"https://mycompany.cloudsmith.io/owner/repo",
+		"https://myorg.pkgs.visualstudio.com/_packaging/feed",
+		"https://pkgs.dev.azure.com/org/_packaging/feed",
+		"https://myfeed.myget.org/F/feed/api",
+		"https://jitpack.io/com/example/lib",
+		"https://artifactory.internal.cba/repo",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "shared registry host allowed: "+allowed)
+	}
+}
+
+func TestEgressAllowlist_JFrogS3BucketsAllowedButSharedS3Blocked(t *testing.T) {
+	h := newEgressHandler(false, true, "maven")
+
+	// JFrog-owned regional buckets are exact entries and must be allowed.
+	for _, allowed := range []string{
+		"https://jfrog-prod-euw1-shared-ireland-main.s3.amazonaws.com/artifact",
+		"https://jfrog-prod-usw2-shared-oregon-main.s3.amazonaws.com/artifact",
+		"https://jfrog-prod-use1-shared-virginia-main.s3.amazonaws.com/artifact",
+		"https://jfrog-prod-use1-dedicated-virginia-main.s3.amazonaws.com/artifact",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "JFrog S3 bucket allowed: "+allowed)
+	}
+
+	// The shared S3 namespace must stay blocked: neither an attacker bucket that
+	// mimics the JFrog token shape (virtual-hosted) nor path-style access to the
+	// bare endpoint may be allowed.
+	for _, blocked := range []string{
+		"https://jfrog-prod-evil-shared-x-main.s3.amazonaws.com/loot",
+		"https://jfrog-prod-evil-dedicated-x-main.s3.amazonaws.com/loot",
+		"https://attacker-bucket.s3.amazonaws.com/loot",
+		"https://s3.amazonaws.com/attacker-bucket/loot",
+		"https://s3-us-west-2.amazonaws.com/attacker-bucket/loot",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "shared S3 host must be blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
+func TestEgressAllowlist_NewExactDomainsAllowed(t *testing.T) {
+	h := newEgressHandler(false, true, "npm_and_yarn")
+
+	for _, allowed := range []string{
+		"https://registry.npmmirror.com/left-pad",
+		"https://cdn.npmmirror.com/left-pad/-/left-pad.tgz",
+		"https://registry.npmjs.com/left-pad",
+		"https://maven.google.com/androidx/pkg.pom",
+		"https://packages.drupal.org/8/packages.json",
+		"https://packages.confluent.io/maven/pkg.jar",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "new exact host allowed: "+allowed)
+	}
+}
+
+func TestEgressAllowlist_PublicRegistriesAllowed(t *testing.T) {
+	// A representative sample of the curated public registry/CDN/mirror hosts.
+	// These are provider-controlled public infrastructure, applied to every job.
+	h := newEgressHandler(false, true, "maven")
+
+	for _, allowed := range []string{
+		"https://repo.spring.io/artifactory/repo",
+		"https://oss.sonatype.org/content/repositories/snapshots",
+		"https://repository.apache.org/content/groups/public",
+		"https://clojars.org/repo",
+		"https://download.pytorch.org/whl/torch.whl",
+		"https://pypi.nvidia.com/simple",
+		"https://mirrors.aliyun.com/pypi/simple",
+		"https://www.nuget.org/api/v2/package",
+		"https://hub.docker.com/v2/repositories/library/nginx",
+		"https://lscr.io/v2/linuxserver/image",
+		"https://wpackagist.org/packages.json",
+		"https://go.googlesource.com/tools",
+		"https://android.googlesource.com/platform",
+		"https://nodejs.org/dist/index.json",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "public registry host allowed: "+allowed)
+	}
+}
+
 // fakeMetricSender captures the metrics emitted by the egress handler.
 type fakeMetricSender struct {
 	metrics []sentMetric
