@@ -12,11 +12,15 @@
 # matched components are entirely provider-controlled and never user-creatable,
 # so that user-controlled names — e.g. object-storage buckets reachable as
 # <bucket>.storage.googleapis.com — cannot be abused as an exfiltration channel.
-# In particular, a broad glob over a shared, multi-tenant storage domain (e.g.
-# "*.blob.core.windows.net") is unsafe because an attacker can register a name
-# that matches it; keep the fixed, non-registerable parts of the pattern (like
-# the "vsblobprod" infix or the ".dkr.ecr.*.amazonaws.com" suffix) as tight as
-# possible.
+# In particular, a glob over a shared, multi-tenant storage domain is unsafe
+# whenever any matched label is attacker-choosable. This includes broad forms
+# like "*.blob.core.windows.net" AND infix forms like "*vsblobprod*.blob.core.
+# windows.net": an Azure storage account name is a customer-chosen lowercase
+# alphanumeric string, so an attacker can register a name containing "vsblobprod".
+# Only glob a component the provider actually reserves — e.g. the exactly-12-digit
+# AWS account id and the ".dkr.ecr.*.amazonaws.com" service suffix. Any glob over
+# unreserved shared storage (see the NuGet CDN entries) is a known, accepted
+# exposure documented at its call site, not a pattern to copy.
 
 # github_infra_domains are the GitHub and Dependabot infrastructure domains that
 # are always allowed. Their subdomains are entirely GitHub-controlled (api.,
@@ -30,20 +34,26 @@ github_infra_domains:
   - ghcr.io
 
 # shared_registry_domains are third-party registry / artifact-hosting providers
-# that serve many ecosystems at once (JFrog, AWS CodeArtifact, Azure Artifacts,
-# Cloudsmith, MyGet, etc.), plus self-hosted registries seen across jobs. They
-# are applied to every job like the ecosystem defaults, but are grouped here
-# because they do not belong to any single ecosystem. Glob entries are scoped to
-# the provider's fixed, non-registerable host components.
+# that serve many ecosystems at once (AWS CodeArtifact, Azure Artifacts, etc.),
+# plus public JVM repositories and mirrors seen across jobs. They are applied to
+# every job like the ecosystem defaults, but are grouped here because they do not
+# belong to any single ecosystem.
+#
+# NOTE: providers whose subdomain is a customer-chosen tenant name — e.g.
+# <tenant>.jfrog.io, <org>.pkgs.visualstudio.com, <org>.cloudsmith.io,
+# <feed>.myget.org — are deliberately NOT wildcarded here: a global "*.<provider>"
+# wildcard would allow an attacker-provisioned tenant. When a job actually uses
+# such a registry it is added exactly, per job, via the credential-derived
+# dynamic hosts. The same applies to single-organization private registries
+# (artifactory.*, nexus.*, etc.), which are covered by the job's own credentials.
 shared_registry_domains:
-  - "*.jfrog.io"
-  - "*.jfrog.org"
   # JFrog Artifactory Online download backends: fixed, JFrog-owned S3 buckets
   # (shared regional buckets, plus dedicated-instance buckets). Listed as exact
   # hosts, not a glob, because the "jfrog-prod/-shared-/-dedicated-/-main"
   # tokens are not a reserved AWS namespace, so a glob over the multi-tenant
   # s3.amazonaws.com domain could be satisfied by an attacker-registered bucket.
-  # These *.jfrog.io registries redirect here.
+  # A job's own <tenant>.jfrog.io registry is added exactly via dynamic hosts;
+  # these are the storage backends those registries redirect to.
   - jfrog-prod-apne1-shared-tokyo-main.s3.amazonaws.com
   - jfrog-prod-aps1-shared-mumbai-main.s3.amazonaws.com
   - jfrog-prod-apse2-shared-sydney-main.s3.amazonaws.com
@@ -53,16 +63,14 @@ shared_registry_domains:
   - jfrog-prod-use1-shared-virginia-main.s3.amazonaws.com
   - jfrog-prod-usw2-shared-oregon-main.s3.amazonaws.com
   - jfrog-prod-use1-dedicated-virginia-main.s3.amazonaws.com
-  - "*.pkgs.visualstudio.com"
   - pkgs.dev.azure.com
-  - "*.cloudsmith.io"
-  - "*.myget.org"
-  - "*.bintray.com"
-  - "*.fury.io"
-  - "*.buf.dev"
   - jitpack.io
-  # AWS CodeArtifact repository endpoints: <domain>-<account>.d.codeartifact.<region>.amazonaws.com
-  - "*-[0-9]*.d.codeartifact.*.amazonaws.com"
+  # AWS CodeArtifact repository endpoints:
+  # <domain>-<account-id>.d.codeartifact.<region>.amazonaws.com
+  # The account id is exactly 12 digits; matching all 12 (rather than "[0-9]*",
+  # which is one digit followed by anything) keeps the pattern from accepting an
+  # arbitrary label such as "repo-1evil.d.codeartifact...".
+  - "*-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].d.codeartifact.*.amazonaws.com"
   # Public JVM (Maven/Gradle/sbt) repositories used across many jobs.
   - repo.spring.io
   - services.gradle.org
@@ -91,9 +99,6 @@ shared_registry_domains:
   # Private Packagist (Composer) hosting.
   - packagist.com
   - repo.packagist.com
-  # Self-hosted / organization registries observed across jobs.
-  - artifactory.internal.cba
-  - artifacts.we.decodeinsurance.de
 
 # ecosystem_default_domains lists the public registry and CDN hosts each
 # Dependabot ecosystem needs. The map is kept keyed by ecosystem for provenance
@@ -210,17 +215,28 @@ ecosystem_default_domains:
     - lscr.io
     - .gcr.io
     - .pkg.dev
-    # AWS Elastic Container Registry: <account-id>.dkr.ecr.<region>.amazonaws.com
-    - "[0-9]*.dkr.ecr.*.amazonaws.com"
+    # AWS Elastic Container Registry:
+    # <account-id>.dkr.ecr.<region>.amazonaws.com
+    # The account id is exactly 12 digits; match all 12 rather than "[0-9]*"
+    # so a non-numeric label (e.g. "evil.dkr.ecr...") cannot satisfy it.
+    - "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].dkr.ecr.*.amazonaws.com"
   docker_compose: *docker_registries
   nuget:
     - api.nuget.org
     - www.nuget.org
     - globalcdn.nuget.org
+    # Exact, provider-owned storage backend (the account name is globally unique
+    # and already taken by NuGet, so it cannot be spoofed).
     - nugetregistryv2prod.blob.core.windows.net
-    # NuGet download CDN backends (Azure Blob / Azure DevOps artifact storage).
-    # Scoped to the "vsblobprod" infix and ".vsblob." label, which are not
-    # user-registerable, rather than the shared parent storage domains.
+    # NuGet download CDN backends (Azure Blob / Azure DevOps artifact storage),
+    # scoped to the "vsblobprod" infix / ".vsblob." label rather than the shared
+    # parent storage domains.
+    #
+    # RISK: these are NOT fully safe. An Azure storage account name is a
+    # customer-chosen 3-24 char lowercase-alphanumeric string, so "vsblobprod"
+    # is not a namespace Azure reserves — turning the shared multi-tenant storage into a
+    # possible exfiltration destination. They are retained only
+    # because NuGet restores rely on these rotating CDN hosts.
     - "*vsblobprod*.blob.core.windows.net"
     - "*.vsblob.vsassets.io"
   dotnet_sdk:

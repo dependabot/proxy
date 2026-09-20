@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -152,16 +153,21 @@ func TestEgressAllowlist_SuffixEntryAllowsSubdomain(t *testing.T) {
 	assert.Nil(t, egressResult(t, h, "https://europe-docker.pkg.dev/v2/project/image"), "artifact registry subdomain allowed")
 }
 
-func TestEgressAllowlist_GlobMatchesScopedStorageHosts(t *testing.T) {
-	// "*vsblobprod*.blob.core.windows.net" is a glob entry scoped to the
-	// non-user-registerable "vsblobprod" infix, so real NuGet/pip CDN backends
-	// match, but an arbitrary storage account under the shared parent domain
-	// (and a name lacking the infix) must still be blocked.
+func TestEgressAllowlist_NuGetStorageBackendsAllowed(t *testing.T) {
+	// NuGet's per-region Azure Blob / Azure DevOps CDN backends are allowlisted
+	// via the "*vsblobprod*" / ".vsblob." globs. These are a KNOWN, accepted
+	// exposure (the account label is attacker-choosable), documented in the YAML.
+	// The shared parent domain must still not be wildcarded, and the exact entry
+	// must not extend to lookalikes.
 	h := newEgressHandler(false, true, "nuget")
 
-	assert.Nil(t, egressResult(t, h, "https://ajhvsblobprodcus363.blob.core.windows.net/pkg.nupkg"), "vsblobprod CDN backend allowed")
-	assert.Nil(t, egressResult(t, h, "https://ajhvsblobprodcus363.vsblob.vsassets.io/pkg"), "vsassets artifact backend allowed")
-	assert.Nil(t, egressResult(t, h, "https://nugetregistryv2prod.blob.core.windows.net/pkg"), "exact CDN host allowed")
+	for _, allowed := range []string{
+		"https://ajhvsblobprodcus363.blob.core.windows.net/pkg.nupkg", // vsblobprod CDN backend
+		"https://ajhvsblobprodcus363.vsblob.vsassets.io/pkg",          // vsassets artifact backend
+		"https://nugetregistryv2prod.blob.core.windows.net/pkg",       // exact CDN host
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "nuget storage backend allowed: "+allowed)
+	}
 
 	for _, blocked := range []string{
 		"https://attacker.blob.core.windows.net/loot",             // shared parent must not be wildcarded
@@ -177,32 +183,90 @@ func TestEgressAllowlist_GlobMatchesScopedStorageHosts(t *testing.T) {
 func TestEgressAllowlist_GlobScopedFixedComponentsRejectSpoofs(t *testing.T) {
 	h := newEgressHandler(false, true, "docker")
 
-	// ECR: only a numeric account label (the "[0-9]*" component) is allowed.
-	assert.Nil(t, egressResult(t, h, "https://089022728777.dkr.ecr.us-east-1.amazonaws.com/v2/image"), "numeric ECR account allowed")
-	resp := egressResult(t, h, "https://evil.dkr.ecr.us-east-1.amazonaws.com/v2/image")
-	if assert.NotNil(t, resp, "non-numeric ECR account label must be blocked") {
-		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	// ECR: only an exactly-12-digit numeric account label is allowed.
+	assert.Nil(t, egressResult(t, h, "https://089022728777.dkr.ecr.us-east-1.amazonaws.com/v2/image"), "12-digit ECR account allowed")
+	for _, blocked := range []string{
+		"https://evil.dkr.ecr.us-east-1.amazonaws.com/v2/image",          // non-numeric label
+		"https://12345.dkr.ecr.us-east-1.amazonaws.com/v2/image",         // too few digits
+		"https://1234567890123.dkr.ecr.us-east-1.amazonaws.com/v2/image", // too many digits
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "malformed ECR account label must be blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
 	}
 
-	// CodeArtifact endpoints carry a "-<account>" numeric suffix on the domain label.
+	// CodeArtifact endpoints carry a "-<12-digit-account>" suffix on the domain label.
 	assert.Nil(t, egressResult(t, h, "https://my-repo-123456789012.d.codeartifact.us-east-1.amazonaws.com/npm/pkg"), "codeartifact endpoint allowed")
+	for _, blocked := range []string{
+		"https://repo-1evil.d.codeartifact.us-east-1.amazonaws.com/npm/pkg", // account is not 12 digits
+		"https://repo-12345.d.codeartifact.us-east-1.amazonaws.com/npm/pkg", // too few digits
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "malformed CodeArtifact account label must be blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
 }
 
 func TestEgressAllowlist_SharedRegistryDomainsAllowed(t *testing.T) {
-	// Shared third-party registry providers are applied to every job regardless
-	// of package manager.
+	// Shared third-party infrastructure with fixed, provider-owned hosts is
+	// applied to every job regardless of package manager.
 	h := newEgressHandler(false, true, "maven")
 
 	for _, allowed := range []string{
-		"https://mycompany.jfrog.io/artifactory/repo",
-		"https://mycompany.cloudsmith.io/owner/repo",
-		"https://myorg.pkgs.visualstudio.com/_packaging/feed",
 		"https://pkgs.dev.azure.com/org/_packaging/feed",
-		"https://myfeed.myget.org/F/feed/api",
 		"https://jitpack.io/com/example/lib",
-		"https://artifactory.internal.cba/repo",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "shared registry host allowed: "+allowed)
+	}
+}
+
+func TestEgressAllowlist_CustomerTenantProvidersAreNotGloballyAllowed(t *testing.T) {
+	// Providers whose subdomain is a customer-chosen tenant name must NOT be
+	// globally wildcarded: a global "*.<provider>" would allow an attacker-
+	// provisioned tenant. They are only reachable when a job is configured to
+	// use one (added exactly via credential-derived dynamic hosts).
+	h := newEgressHandler(false, true, "maven")
+
+	for _, blocked := range []string{
+		"https://attacker.jfrog.io/artifactory/repo",
+		"https://attacker.pkgs.visualstudio.com/_packaging/feed",
+		"https://attacker.cloudsmith.io/owner/repo",
+		"https://attacker.myget.org/F/feed/api",
+		"https://artifactory.internal.cba/repo",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "customer-tenant provider must not be globally allowed: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+
+	// When the job is configured to use one, the exact host is allowed via the
+	// credential-derived dynamic hosts.
+	configured := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "maven_repository", "url": "https://mycompany.jfrog.io/artifactory/repo"},
+	})
+	assert.Nil(t, egressResult(t, configured, "https://mycompany.jfrog.io/artifactory/repo"),
+		"configured JFrog tenant allowed exactly via dynamic hosts")
+	resp := egressResult(t, configured, "https://attacker.jfrog.io/artifactory/repo")
+	if assert.NotNil(t, resp, "a different tenant is still blocked") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	}
+}
+
+// TestEgressAllowlist_DynamicHostsMatchedExactly guards against a
+// credential-derived host being treated as a glob pattern. A configured value
+// containing glob metacharacters (e.g. "https://*.com") must match nothing
+// rather than open enforcement for every ".com" host.
+func TestEgressAllowlist_DynamicHostsMatchedExactly(t *testing.T) {
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "maven_repository", "url": "https://*.com/repo"},
+	})
+
+	resp := egressResult(t, h, "https://evil.com/steal")
+	if assert.NotNil(t, resp, "a glob-shaped credential host must not become a wildcard") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	}
 }
 
@@ -380,6 +444,34 @@ func TestEgressAllowlist_AdditionalEcosystemsAllowDefaults(t *testing.T) {
 	for pkgManager, target := range cases {
 		h := newEgressHandler(false, true, pkgManager)
 		assert.Nilf(t, egressResult(t, h, target), "%s default host should be allowed", pkgManager)
+	}
+}
+
+func TestValidateGlobPattern(t *testing.T) {
+	valid := []string{
+		"*.example.com",
+		"*-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].d.codeartifact.*.amazonaws.com",
+		"[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].dkr.ecr.*.amazonaws.com",
+		"[a-z0-9]*.example.com",
+		"host?.example.com",
+		"[^x]host.example.com",
+	}
+	for _, p := range valid {
+		assert.NoErrorf(t, validateGlobPattern(p), "expected %q to be a valid glob", p)
+		// path.Match must agree it is a well-formed pattern (no ErrBadPattern).
+		_, err := path.Match(p, "probe.example.com")
+		assert.NoErrorf(t, err, "path.Match disagrees on validity of %q", p)
+	}
+
+	invalid := []string{
+		"foo*bar[", // unterminated class after a literal path.Match never reaches
+		"[",        // bare unterminated class
+		"[]",       // empty class
+		"a[b-",     // range with missing high bound / unterminated
+		"pre[abc",  // unterminated class with content
+	}
+	for _, p := range invalid {
+		assert.Errorf(t, validateGlobPattern(p), "expected %q to be rejected", p)
 	}
 }
 

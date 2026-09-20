@@ -43,8 +43,15 @@ type MetricSender interface {
 type EgressAllowlistHandler struct {
 	observe bool
 	enforce bool
+	// allowed are the trusted, embedded defaults. Entries may use the leading-
+	// dot suffix or glob forms and are matched with hostMatchesAllowlistEntry.
 	allowed []string
-	metrics MetricSender
+	// dynamicHosts are the per-job hosts derived from the job's credentials.
+	// They are matched EXACTLY only: credential values are not trusted to be
+	// glob-free, so treating them as patterns (e.g. a configured "https://*.com")
+	// would silently disable enforcement for every matching destination.
+	dynamicHosts []string
+	metrics      MetricSender
 }
 
 // NewEgressAllowlistHandler builds the allowlist from the always-allowed GitHub
@@ -58,13 +65,13 @@ func NewEgressAllowlistHandler(cfg *config.Config, env config.ProxyEnvSettings, 
 	allowed := append([]string(nil), githubInfraDomains...)
 	allowed = append(allowed, sharedRegistryDomains...)
 	allowed = append(allowed, allEcosystemDomains...)
-	allowed = append(allowed, dynamicHosts(cfg.Credentials)...)
 
 	return &EgressAllowlistHandler{
-		observe: cfg.Experiments.Enabled(egressObserveExperiment),
-		enforce: cfg.Experiments.Enabled(egressEnforceExperiment),
-		allowed: allowed,
-		metrics: metricSender,
+		observe:      cfg.Experiments.Enabled(egressObserveExperiment),
+		enforce:      cfg.Experiments.Enabled(egressEnforceExperiment),
+		allowed:      allowed,
+		dynamicHosts: dynamicHosts(cfg.Credentials),
+		metrics:      metricSender,
 	}
 }
 
@@ -116,6 +123,14 @@ func (h *EgressAllowlistHandler) isAllowed(host string) bool {
 	host = strings.TrimSuffix(host, ".")
 	for _, entry := range h.allowed {
 		if hostMatchesAllowlistEntry(host, entry) {
+			return true
+		}
+	}
+	// Per-job credential hosts are matched exactly only (never as globs or
+	// subdomain suffixes), so an untrusted credential value cannot widen the
+	// allowlist beyond the exact host the job was configured to reach.
+	for _, entry := range h.dynamicHosts {
+		if helpers.AreHostnamesEqual(host, entry) {
 			return true
 		}
 	}
