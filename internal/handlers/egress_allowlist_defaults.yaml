@@ -63,11 +63,15 @@ ecosystem_default_domains:
     - repo1.maven.org
     - plugins.gradle.org
     - dl.google.com
+    - maven.google.com
+    - repo.broadcom.com
   gradle:
     - repo.maven.apache.org
     - repo1.maven.org
     - plugins.gradle.org
     - dl.google.com
+    - maven.google.com
+    - repo.broadcom.com
   sbt:
     - repo1.maven.org
     - repo.maven.apache.org
@@ -83,12 +87,22 @@ ecosystem_default_domains:
     - proxy.golang.org
     - sum.golang.org
     - storage.googleapis.com
+    # Google-controlled Go source/module hosts and public module vanity-import
+    # domains (each serves a fixed "go-import" host, not a user-creatable name).
+    - go.googlesource.com
+    - golang.org
+    - google.golang.org
+    - go.opentelemetry.io
+    - gopkg.in
+    - go.yaml.in
   docker: &docker_registries
     - registry-1.docker.io
     - auth.docker.io
     - index.docker.io
     - registry.hub.docker.com
+    - hub.docker.com
     - production.cloudflare.docker.com
+    - production.cloudfront.docker.com
     - ghcr.io
     - mcr.microsoft.com
     - quay.io
@@ -100,6 +114,9 @@ ecosystem_default_domains:
     - api.nuget.org
   dotnet_sdk:
     - api.nuget.org
+    # Official Microsoft .NET SDK/runtime build hosts.
+    - builds.dotnet.microsoft.com
+    - ci.dot.net
   hex:
     - repo.hex.pm
     - hex.pm
@@ -133,15 +150,41 @@ ecosystem_default_domains:
   nix:
     - channels.nixos.org
   devcontainers: *docker_registries
-  # helm pulls OCI charts from container registries, so it shares the docker set
-  # (chart-repo HTTP registries are still supplied per job via credentials).
-  helm: *docker_registries
+  # helm pulls OCI charts from container registries (the docker set) and also
+  # fetches from common public HTTP chart repositories. It is spelled out
+  # explicitly (rather than aliasing the docker set) so the public chart repos
+  # can be added. Additional private chart repos are still supplied per job via
+  # credentials.
+  helm:
+    # OCI chart registries (mirrors the docker set above).
+    - registry-1.docker.io
+    - auth.docker.io
+    - index.docker.io
+    - registry.hub.docker.com
+    - hub.docker.com
+    - production.cloudflare.docker.com
+    - production.cloudfront.docker.com
+    - ghcr.io
+    - mcr.microsoft.com
+    - quay.io
+    - public.ecr.aws
+    - .gcr.io
+    - .pkg.dev
+    # Public HTTP chart repositories. The GitHub Pages hosts are exact (a
+    # specific org's pages), never a "*.github.io" wildcard.
+    - charts.bitnami.com
+    - charts.jetstack.io
+    - prometheus-community.github.io
+    - grafana.github.io
+    - jaegertracing.github.io
   # GitHub-hosted or per-job configured; covered by github_infra_domains / git.
   # Note: additional per-job dependencies (e.g. pre_commit hooks that install
   # from other ecosystems) are covered because the handler applies the union of
   # ALL ecosystem hosts to every job, not just the job's own package manager.
   github_actions: []
   submodules: []
-  swift: []
+  # swift builds may also resolve CocoaPods dependencies.
+  swift:
+    - cocoapods.org
   vcpkg: []
   pre_commit: []
