@@ -259,6 +259,42 @@ func TestEgressAllowlist_AdditionalEcosystemsAllowDefaults(t *testing.T) {
 	}
 }
 
+func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
+	// Newly added public, provider/project-controlled hosts. The handler applies
+	// the union of all ecosystem defaults, so any package manager may reach them.
+	h := newEgressHandler(false, true, "docker")
+
+	for _, allowed := range []string{
+		"https://hub.docker.com/v2/repositories/library/nginx",
+		"https://production.cloudfront.docker.com/registry-v2/blob",
+		"https://go.googlesource.com/tools",
+		"https://golang.org/x/tools",
+		"https://google.golang.org/grpc",
+		"https://go.opentelemetry.io/otel",
+		"https://gopkg.in/yaml.v3",
+		"https://go.yaml.in/yaml/v3",
+		"https://maven.google.com/androidx/pkg.pom",
+		"https://repo.broadcom.com/artifactory/repo",
+		"https://builds.dotnet.microsoft.com/dotnet/Sdk/x.zip",
+		"https://ci.dot.net/public/dotnet/x.nupkg",
+		"https://charts.bitnami.com/bitnami/index.yaml",
+		"https://charts.jetstack.io/charts/cert-manager.tgz",
+		"https://prometheus-community.github.io/helm-charts/index.yaml",
+		"https://grafana.github.io/helm-charts/index.yaml",
+		"https://jaegertracing.github.io/helm-charts/index.yaml",
+		"https://cocoapods.org/pods/AFNetworking",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "added host should be allowed: "+allowed)
+	}
+
+	// A user-controlled GitHub Pages host that is NOT one of the exact chart
+	// repos must still be blocked (no "*.github.io" wildcard was introduced).
+	resp := egressResult(t, h, "https://attacker.github.io/loot")
+	if assert.NotNil(t, resp, "arbitrary github.io host must be blocked") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	}
+}
+
 func TestEgressDefaults_LoadedFromYAML(t *testing.T) {
 	assert.NotEmpty(t, githubInfraDomains, "github infra domains loaded from YAML")
 	assert.NotEmpty(t, ecosystemDefaultDomains, "ecosystem map loaded from YAML")
