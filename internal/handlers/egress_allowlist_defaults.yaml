@@ -1,12 +1,31 @@
 # Egress allowlist default domains.
 #
-# Matching convention (see EgressAllowlistHandler): a leading dot (".github.com")
-# matches that domain and any subdomain, while an entry without a leading dot
-# ("storage.googleapis.com") matches only that exact host. Prefer exact hosts.
-# Use the leading-dot form only for domains whose subdomains are entirely
-# provider-controlled and never user-creatable, so that user-controlled
-# subdomains — e.g. object-storage buckets reachable as
+# Matching convention (see EgressAllowlistHandler): an entry may be one of three
+# forms.
+#   - Leading dot (".github.com"): matches that domain and any subdomain.
+#   - Glob pattern (contains "*", "?" or a "[...]" character class): matched
+#     against the whole host with path.Match. "*" spans dots, so it matches any
+#     subdomain depth. Glob values that begin with "*" or "[" MUST be quoted,
+#     otherwise YAML reads them as an alias or a flow sequence.
+#   - Plain entry ("storage.googleapis.com"): matches only that exact host.
+# Prefer exact hosts. Use the leading-dot or glob forms only for domains whose
+# matched components are entirely provider-controlled and never user-creatable,
+# so that user-controlled names — e.g. object-storage buckets reachable as
 # <bucket>.storage.googleapis.com — cannot be abused as an exfiltration channel.
+# In particular, a glob over a shared, multi-tenant storage domain is unsafe
+# whenever any matched label is attacker-choosable. This includes broad forms
+# like "*.blob.core.windows.net" AND infix forms like "*vsblobprod*.blob.core.
+# windows.net": an Azure storage account name is a customer-chosen lowercase
+# alphanumeric string, so an attacker can register a name containing "vsblobprod".
+# The same reasoning rules out globbing shared multi-tenant compute/registry
+# namespaces even when a component looks "fixed": a 12-digit AWS account id
+# (e.g. "<id>.dkr.ecr.*.amazonaws.com" or CodeArtifact endpoints) matches every
+# AWS tenant, including an attacker's own account, so those are reached only via
+# the job's own credentials (dynamic hosts), never a default glob. Likewise a
+# path-style object store such as "storage.googleapis.com" is not allowlisted,
+# because it exposes every bucket. The only glob over unreserved shared storage
+# retained here is the NuGet CDN (see its entries), a known, accepted
+# exposure documented at its call site, not a pattern to copy.
 
 # github_infra_domains are the GitHub and Dependabot infrastructure domains that
 # are always allowed. Their subdomains are entirely GitHub-controlled (api.,
@@ -19,12 +38,80 @@ github_infra_domains:
   - .ghe.com
   - ghcr.io
 
+# shared_registry_domains are third-party registry / artifact-hosting providers
+# that serve many ecosystems at once (AWS CodeArtifact, Azure Artifacts, etc.),
+# plus public JVM repositories and mirrors seen across jobs. They are applied to
+# every job like the ecosystem defaults, but are grouped here because they do not
+# belong to any single ecosystem.
+#
+# NOTE: providers whose subdomain is a customer-chosen tenant name — e.g.
+# <tenant>.jfrog.io, <org>.pkgs.visualstudio.com, <org>.cloudsmith.io,
+# <feed>.myget.org — are deliberately NOT wildcarded here: a global "*.<provider>"
+# wildcard would allow an attacker-provisioned tenant. When a job actually uses
+# such a registry it is added exactly, per job, via the credential-derived
+# dynamic hosts. The same applies to single-organization private registries
+# (artifactory.*, nexus.*, etc.), which are covered by the job's own credentials.
+shared_registry_domains:
+  # JFrog Artifactory Online download backends: fixed, JFrog-owned S3 buckets
+  # (shared regional buckets, plus dedicated-instance buckets). Listed as exact
+  # hosts, not a glob, because the "jfrog-prod/-shared-/-dedicated-/-main"
+  # tokens are not a reserved AWS namespace, so a glob over the multi-tenant
+  # s3.amazonaws.com domain could be satisfied by an attacker-registered bucket.
+  # A job's own <tenant>.jfrog.io registry is added exactly via dynamic hosts;
+  # these are the storage backends those registries redirect to.
+  - jfrog-prod-apne1-shared-tokyo-main.s3.amazonaws.com
+  - jfrog-prod-aps1-shared-mumbai-main.s3.amazonaws.com
+  - jfrog-prod-apse2-shared-sydney-main.s3.amazonaws.com
+  - jfrog-prod-euc1-shared-frankfurt-main.s3.amazonaws.com
+  - jfrog-prod-euw1-shared-ireland-main.s3.amazonaws.com
+  - jfrog-prod-euw2-shared-london-main.s3.amazonaws.com
+  - jfrog-prod-use1-shared-virginia-main.s3.amazonaws.com
+  - jfrog-prod-usw2-shared-oregon-main.s3.amazonaws.com
+  - jfrog-prod-use1-dedicated-virginia-main.s3.amazonaws.com
+  - pkgs.dev.azure.com
+  - jitpack.io
+  # NOTE: AWS CodeArtifact endpoints
+  # (<domain>-<account-id>.d.codeartifact.<region>.amazonaws.com) are NOT
+  # allowlisted here. The account id is any 12-digit number, so a glob would
+  # match every AWS tenant's CodeArtifact — including an attacker's own account.
+  # A job's configured CodeArtifact repository is added exactly via dynamic hosts.
+  # Public JVM (Maven/Gradle/sbt) repositories used across many jobs.
+  - repo.spring.io
+  - services.gradle.org
+  - plugins-artifacts.gradle.org
+  - repository.jboss.org
+  - oss.sonatype.org
+  - repository.apache.org
+  - central.sonatype.com
+  - clojars.org
+  - repo.clojars.org
+  - repo.jenkins-ci.org
+  - repo.papermc.io
+  - repo.codemc.io
+  - repo.codemc.org
+  - hub.spigotmc.org
+  - repo.extendedclip.com
+  - repo.helpch.at
+  - maven.anypoint.mulesoft.com
+  - maven.pkg.jetbrains.space
+  - packages.jetbrains.team
+  # Public package mirrors that serve several ecosystems.
+  - mirrors.aliyun.com
+  - maven.aliyun.com
+  - repo.huaweicloud.com
+  - mirror.nju.edu.cn
+  # Private Packagist (Composer) hosting.
+  - packagist.com
+  - repo.packagist.com
+
 # ecosystem_default_domains lists the public registry and CDN hosts each
 # Dependabot ecosystem needs. The map is kept keyed by ecosystem for provenance
 # and documentation, but the handler applies the UNION of all values to every
 # job (it does not partition by PACKAGE_MANAGER). Entries are exact hosts unless
-# a leading dot is present. Object-storage hosts (storage.googleapis.com) are
-# intentionally exact so user-created buckets under them are not allowlisted.
+# a leading dot or glob pattern is present. Shared multi-tenant object stores
+# (e.g. storage.googleapis.com, which exposes every bucket via path-style URLs)
+# are intentionally NOT listed here; the registries that redirect to them are
+# reached through the job's own credentials.
 #
 # Every registered Dependabot ecosystem has an entry. An empty list means the
 # ecosystem reaches only GitHub/Dependabot infrastructure or plain git (covered
@@ -37,27 +124,51 @@ ecosystem_default_domains:
   npm_and_yarn:
     - registry.npmjs.org
     - registry.yarnpkg.com
+    - repo.yarnpkg.com
     - jsr.io
     - registry.bower.io
+    - registry.npmjs.com
+    - registry.npmmirror.com
+    - cdn.npmmirror.com
+    - npm.flatt.tech
+    - registry.npm.ouryahoo.com
+    - npm.fontawesome.com
+    - cdn.sheetjs.com
   bun:
     - registry.npmjs.org
     - registry.yarnpkg.com
+    - repo.yarnpkg.com
     - jsr.io
     - registry.bower.io
+    - registry.npmjs.com
+    - registry.npmmirror.com
+    - cdn.npmmirror.com
+    - npm.flatt.tech
+    - registry.npm.ouryahoo.com
+    - npm.fontawesome.com
+    - cdn.sheetjs.com
   pip:
     - pypi.org
     - pypi.python.org
     - files.pythonhosted.org
     - pythonhosted.org
+    - download.pytorch.org
+    - pypi.nvidia.com
+    - pypi.tuna.tsinghua.edu.cn
   uv:
     - pypi.org
     - pypi.python.org
     - files.pythonhosted.org
     - pythonhosted.org
+    - download.pytorch.org
+    - pypi.nvidia.com
+    - pypi.tuna.tsinghua.edu.cn
   bundler:
     - rubygems.org
     - index.rubygems.org
     - gems.rubygems.org
+    - rails-assets.org
+    - gem.coop
   maven:
     - repo.maven.apache.org
     - repo1.maven.org
@@ -65,6 +176,7 @@ ecosystem_default_domains:
     - dl.google.com
     - maven.google.com
     - repo.broadcom.com
+    - packages.confluent.io
   gradle:
     - repo.maven.apache.org
     - repo1.maven.org
@@ -72,6 +184,7 @@ ecosystem_default_domains:
     - dl.google.com
     - maven.google.com
     - repo.broadcom.com
+    - packages.confluent.io
   sbt:
     - repo1.maven.org
     - repo.maven.apache.org
@@ -80,16 +193,23 @@ ecosystem_default_domains:
     - crates.io
     - static.crates.io
     - index.crates.io
+    - rsproxy.cn
   composer:
     - repo.packagist.org
     - packagist.org
+    - packages.drupal.org
+    - wpackagist.org
+    - repo.wp-packages.org
+    - asset-packagist.org
+    - cdn.asset-packagist.org
   go_modules:
     - proxy.golang.org
     - sum.golang.org
-    - storage.googleapis.com
-    # Google-controlled Go source/module hosts and public module vanity-import
-    # domains (each serves a fixed "go-import" host, not a user-creatable name).
-    - go.googlesource.com
+    - .googlesource.com
+    - nodejs.org
+    # Public Go module vanity-import hosts (each serves a fixed "go-import"
+    # host, not a user-creatable name). storage.googleapis.com is intentionally
+    # omitted: it is path-style shared object storage that exposes every bucket.
     - golang.org
     - google.golang.org
     - go.opentelemetry.io
@@ -107,11 +227,28 @@ ecosystem_default_domains:
     - mcr.microsoft.com
     - quay.io
     - public.ecr.aws
+    - lscr.io
     - .gcr.io
     - .pkg.dev
   docker_compose: *docker_registries
   nuget:
     - api.nuget.org
+    - www.nuget.org
+    - globalcdn.nuget.org
+    # Exact, provider-owned storage backend (the account name is globally unique
+    # and already taken by NuGet, so it cannot be spoofed).
+    - nugetregistryv2prod.blob.core.windows.net
+    # NuGet download CDN backends (Azure Blob / Azure DevOps artifact storage),
+    # scoped to the "vsblobprod" infix / ".vsblob." label rather than the shared
+    # parent storage domains.
+    #
+    # RISK: these are NOT fully safe. An Azure storage account name is a
+    # customer-chosen 3-24 char lowercase-alphanumeric string, so "vsblobprod"
+    # is not a namespace Azure reserves — turning the shared multi-tenant storage into a
+    # possible exfiltration destination. They are retained only
+    # because NuGet restores rely on these rotating CDN hosts.
+    - "*vsblobprod*.blob.core.windows.net"
+    - "*.vsblob.vsassets.io"
   dotnet_sdk:
     - api.nuget.org
     # Official Microsoft .NET SDK/runtime build hosts.
@@ -123,7 +260,6 @@ ecosystem_default_domains:
   pub:
     - pub.dev
     - pub.dartlang.org
-    - storage.googleapis.com
   terraform:
     - registry.terraform.io
     - releases.hashicorp.com

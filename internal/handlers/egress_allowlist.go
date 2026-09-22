@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 
@@ -42,27 +43,35 @@ type MetricSender interface {
 type EgressAllowlistHandler struct {
 	observe bool
 	enforce bool
+	// allowed are the trusted, embedded defaults. Entries may use the leading-
+	// dot suffix or glob forms and are matched with hostMatchesAllowlistEntry.
 	allowed []string
-	metrics MetricSender
+	// dynamicHosts are the per-job hosts derived from the job's credentials.
+	// They are matched EXACTLY only: credential values are not trusted to be
+	// glob-free, so treating them as patterns (e.g. a configured "https://*.com")
+	// would silently disable enforcement for every matching destination.
+	dynamicHosts []string
+	metrics      MetricSender
 }
 
 // NewEgressAllowlistHandler builds the allowlist from the always-allowed GitHub
-// infrastructure domains, the union of every ecosystem's default registry hosts,
-// and the job's dynamic hosts (configured registries and OIDC token-exchange
-// endpoints derived from cfg.Credentials). The observe/enforce toggles are
-// driven by job experiments. The metric sender, when non-nil, receives an
-// observation for every host (with its allowlisted status) for reporting to the
-// backend.
+// infrastructure domains, the shared third-party registry hosts, the union of
+// every ecosystem's default registry hosts, and the job's dynamic hosts
+// (configured registries and OIDC token-exchange endpoints derived from
+// cfg.Credentials). The observe/enforce toggles are driven by job experiments.
+// The metric sender, when non-nil, receives an observation for every host (with
+// its allowlisted status) for reporting to the backend.
 func NewEgressAllowlistHandler(cfg *config.Config, env config.ProxyEnvSettings, metricSender MetricSender) *EgressAllowlistHandler {
 	allowed := append([]string(nil), githubInfraDomains...)
+	allowed = append(allowed, sharedRegistryDomains...)
 	allowed = append(allowed, allEcosystemDomains...)
-	allowed = append(allowed, dynamicHosts(cfg.Credentials)...)
 
 	return &EgressAllowlistHandler{
-		observe: cfg.Experiments.Enabled(egressObserveExperiment),
-		enforce: cfg.Experiments.Enabled(egressEnforceExperiment),
-		allowed: allowed,
-		metrics: metricSender,
+		observe:      cfg.Experiments.Enabled(egressObserveExperiment),
+		enforce:      cfg.Experiments.Enabled(egressEnforceExperiment),
+		allowed:      allowed,
+		dynamicHosts: dynamicHosts(cfg.Credentials),
+		metrics:      metricSender,
 	}
 }
 
@@ -113,15 +122,48 @@ func (h *EgressAllowlistHandler) isAllowed(host string) bool {
 	// with HostMatchesDomain's boundary handling for the suffix form.
 	host = strings.TrimSuffix(host, ".")
 	for _, entry := range h.allowed {
-		// A leading dot means "this domain and any subdomain"; otherwise the
-		// entry must match the host exactly.
-		if domain, ok := strings.CutPrefix(entry, "."); ok {
-			if helpers.HostMatchesDomain(host, domain) {
-				return true
-			}
-		} else if helpers.AreHostnamesEqual(host, entry) {
+		if hostMatchesAllowlistEntry(host, entry) {
+			return true
+		}
+	}
+	// Per-job credential hosts are matched exactly only (never as globs or
+	// subdomain suffixes), so an untrusted credential value cannot widen the
+	// allowlist beyond the exact host the job was configured to reach.
+	for _, entry := range h.dynamicHosts {
+		if helpers.AreHostnamesEqual(host, entry) {
 			return true
 		}
 	}
 	return false
+}
+
+// hostMatchesAllowlistEntry reports whether host satisfies a single allowlist
+// entry. An entry may be one of three forms:
+//   - leading-dot suffix (".github.com"): matches that domain and any subdomain;
+//   - glob pattern (contains "*", "?" or "[...]"): matched against the whole
+//     host with path.Match. Path separators are irrelevant for hostnames, so
+//     "*" spans dots and matches any subdomain depth;
+//   - exact host: compared with AreHostnamesEqual.
+//
+// Note: glob entries are only as safe as the namespace they target. A pattern
+// over a shared, multi-tenant storage domain (e.g. "*.blob.core.windows.net")
+// can be satisfied by an attacker-registered name; prefer narrow patterns whose
+// fixed components users cannot register. See egress_allowlist_defaults.yaml.
+func hostMatchesAllowlistEntry(host, entry string) bool {
+	if domain, ok := strings.CutPrefix(entry, "."); ok {
+		// A leading dot means "this domain and any subdomain".
+		return helpers.HostMatchesDomain(host, domain)
+	}
+	if isGlobPattern(entry) {
+		matched, err := path.Match(strings.ToLower(entry), strings.ToLower(host))
+		return err == nil && matched
+	}
+	// Otherwise the entry must match the host exactly.
+	return helpers.AreHostnamesEqual(host, entry)
+}
+
+// isGlobPattern reports whether an allowlist entry contains glob metacharacters
+// and should be matched with path.Match rather than compared exactly.
+func isGlobPattern(entry string) bool {
+	return strings.ContainsAny(entry, "*?[")
 }
