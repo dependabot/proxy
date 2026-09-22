@@ -17,6 +17,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -69,27 +70,79 @@ func TestNormaliseHost(t *testing.T) {
 		want string
 	}{
 		{name: "spoofed host", url: "https://EXAMPLE.com/path", host: "api.dependabot.com", want: "example.com"},
-		{name: "default port", url: "https://EXAMPLE.com:443/path", host: "example.com", want: "example.com:443"},
-		{name: "custom port", url: "https://EXAMPLE.com:8443/path", host: "example.com", want: "example.com:8443"},
+		{name: "implicit HTTPS port", url: "https://EXAMPLE.com:443/path", host: "example.com", want: "example.com"},
+		{name: "explicit HTTPS port", url: "https://EXAMPLE.com/path", host: "example.com:443", want: "example.com:443"},
+		{name: "matching HTTPS port", url: "https://EXAMPLE.com:443/path", host: "example.com:443", want: "example.com:443"},
+		{name: "custom port", url: "https://EXAMPLE.com:8443/path", host: "example.com", want: "example.com"},
+		{name: "matching custom port", url: "https://EXAMPLE.com:8443/path", host: "EXAMPLE.com:8443", want: "EXAMPLE.com:8443"},
+		{name: "mismatched port", url: "https://EXAMPLE.com:443/path", host: "example.com:8443", want: "example.com:8443"},
+		{name: "different scheme default port", url: "http://EXAMPLE.com/path", host: "example.com:443", want: "example.com:443"},
 		{name: "IPv6", url: "https://[::1]:8443/path", host: "api.dependabot.com", want: "[::1]:8443"},
+		{name: "implicit IPv6 port", url: "https://[::1]:443/path", host: "[::1]", want: "[::1]"},
+		{name: "explicit IPv6 port", url: "https://[::1]/path", host: "[::1]:443", want: "[::1]:443"},
 		{name: "HTTP", url: "http://EXAMPLE.com:8080/path", host: "api.dependabot.com", want: "example.com:8080"},
+		{name: "implicit HTTP port", url: "http://EXAMPLE.com:80/path", host: "example.com", want: "example.com"},
+		{name: "explicit HTTP port", url: "http://EXAMPLE.com/path", host: "example.com:80", want: "example.com:80"},
 		{name: "empty host", url: "https://EXAMPLE.com/path", want: "example.com"},
-		{name: "matching host", url: "https://EXAMPLE.com/path", host: "EXAMPLE.com", want: "example.com"},
+		{name: "matching host", url: "https://EXAMPLE.com/path", host: "EXAMPLE.com", want: "EXAMPLE.com"},
+		{name: "distinct IDNA labels despite Unicode folding", url: "https://\u03c3.example/path", host: "\u03c2.example", want: "\u03c3.example"},
+		{name: "matching IDNA hostname", url: "https://xn--bcher-kva.example/path", host: "b\u00fccher.example", want: "b\u00fccher.example"},
+		{name: "invalid port", url: "https://EXAMPLE.com/path", host: "example.com:invalid", want: "example.com"},
+		{name: "userinfo is not a host", url: "https://EXAMPLE.com/path", host: "user@example.com", want: "example.com"},
+		{name: "path is not a host", url: "https://EXAMPLE.com/path", host: "example.com/path", want: "example.com"},
+		{name: "query is not a host", url: "https://EXAMPLE.com/path", host: "example.com?query", want: "example.com"},
+		{name: "fragment is not a host", url: "https://EXAMPLE.com/path", host: "example.com#fragment", want: "example.com"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.url, nil)
 			req.Host = tt.host
+			wantURLHost := strings.ToLower(req.URL.Host)
 
 			got, resp := normaliseHost(req, nil)
 
 			assert.Same(t, req, got)
 			assert.Nil(t, resp)
-			assert.Equal(t, tt.want, req.URL.Host)
+			assert.Equal(t, wantURLHost, req.URL.Host)
 			assert.Equal(t, tt.want, req.Host)
 		})
 	}
+}
+
+func TestProxyHTTPSPreservesHostAfterRedirect(t *testing.T) {
+	t.Setenv("PROXY_CACHE", "false")
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/package" {
+			http.Redirect(w, r, "https://storage.example.com/artifact?X-Amz-SignedHeaders=host", http.StatusFound)
+			return
+		}
+		w.Header().Set("Received-Host", r.Host)
+		w.Header().Set("Received-Query", r.URL.RawQuery)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+	closeOnCleanup(t, proxy)
+	t.Cleanup(client.CloseIdleConnections)
+	proxyHandler := proxy.Handler.(*Proxy)
+	t.Cleanup(proxyHandler.Tr.CloseIdleConnections)
+	proxyHandler.Tr.Proxy = nil
+	proxyHandler.Tr.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, upstream.Listener.Addr().String())
+	}
+
+	resp, err := client.Get("https://registry.example.com/package")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, resp.Body.Close())
+	}()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "/artifact", resp.Request.URL.Path)
+	assert.Equal(t, "storage.example.com", resp.Header.Get("Received-Host"))
+	assert.Equal(t, "X-Amz-SignedHeaders=host", resp.Header.Get("Received-Query"))
 }
 
 func TestProxyDependabotAPIHost(t *testing.T) {
