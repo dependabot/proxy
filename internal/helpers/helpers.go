@@ -58,6 +58,21 @@ func GetHost(r *http.Request) string {
 	return r.URL.Hostname()
 }
 
+// NormalizedPort returns the explicit port or the HTTP/HTTPS scheme's default.
+func NormalizedPort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	default:
+		return ""
+	}
+}
+
 func MethodPermitted(r *http.Request, methods ...string) bool {
 	return slices.Contains(methods, r.Method)
 }

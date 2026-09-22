@@ -25,6 +25,29 @@ func newRequestWithAuth(t *testing.T, rawURL, existing string) *http.Request {
 	return req
 }
 
+func TestNormalizedPort(t *testing.T) {
+	tests := []struct {
+		scheme string
+		host   string
+		want   string
+	}{
+		{scheme: "http", host: "example.com", want: "80"},
+		{scheme: "https", host: "example.com", want: "443"},
+		{scheme: "HTTP", host: "example.com", want: "80"},
+		{scheme: "HTTPS", host: "example.com", want: "443"},
+		{scheme: "https", host: "example.com:8443", want: "8443"},
+		{scheme: "https", host: "[::1]:8443", want: "8443"},
+		{host: "example.com:8443", want: "8443"},
+		{host: "example.com", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.scheme+"://"+tt.host, func(t *testing.T) {
+			u := &url.URL{Scheme: tt.scheme, Host: tt.host}
+			assert.Equal(t, tt.want, NormalizedPort(u))
+		})
+	}
+}
+
 func TestSetBasicAuthorization(t *testing.T) {
 	t.Run("sets correct Basic header", func(t *testing.T) {
 		req := newRequest(t, "https://example.com")

@@ -177,10 +177,11 @@ func handleForbidden(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Respo
 func normaliseHost(req *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	req.URL.Host = strings.ToLower(req.URL.Host)
 	hostURL, err := url.Parse(req.URL.Scheme + "://" + req.Host)
-	// Preserve signed Host headers when their hostname matches the dial destination,
+	// Preserve signed Host headers when their hostname and effective port match the dial destination,
 	// otherwise ensure the Host header matches the dial destination.
 	if err != nil || hostURL.Host != req.Host ||
-		!helpers.AreHostnamesEqual(hostURL.Hostname(), req.URL.Hostname()) {
+		!helpers.AreHostnamesEqual(hostURL.Hostname(), req.URL.Hostname()) ||
+		helpers.NormalizedPort(hostURL) != helpers.NormalizedPort(req.URL) {
 		req.Host = req.URL.Host
 	}
 	return req, nil

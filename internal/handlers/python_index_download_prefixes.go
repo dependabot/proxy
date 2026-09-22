@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dependabot/proxy/internal/helpers"
 	"github.com/elazarl/goproxy"
 )
 
@@ -190,7 +191,7 @@ func normalizedPythonIndexDownloadURL(u *url.URL) *url.URL {
 
 	normalized := *u
 	normalized.Scheme = strings.ToLower(normalized.Scheme)
-	port := normalizedPort(&normalized)
+	port := helpers.NormalizedPort(&normalized)
 	normalized.Host = strings.ToLower(normalized.Hostname())
 	if port != "" && !isDefaultPort(normalized.Scheme, port) {
 		normalized.Host = net.JoinHostPort(normalized.Host, port)
@@ -207,21 +208,7 @@ func normalizedPythonIndexDownloadURL(u *url.URL) *url.URL {
 func sameOrigin(a, b *url.URL) bool {
 	return strings.EqualFold(a.Scheme, b.Scheme) &&
 		strings.EqualFold(a.Hostname(), b.Hostname()) &&
-		normalizedPort(a) == normalizedPort(b)
-}
-
-func normalizedPort(u *url.URL) string {
-	if port := u.Port(); port != "" {
-		return port
-	}
-	switch strings.ToLower(u.Scheme) {
-	case "https":
-		return "443"
-	case "http":
-		return "80"
-	default:
-		return ""
-	}
+		helpers.NormalizedPort(a) == helpers.NormalizedPort(b)
 }
 
 func isDefaultPort(scheme, port string) bool {
