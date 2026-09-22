@@ -144,22 +144,24 @@ func TestEgressAllowlist_ExactEntryRejectsSubdomain(t *testing.T) {
 	}
 }
 
-func TestEgressAllowlist_SharedObjectStoresNotAllowlisted(t *testing.T) {
-	// Path-style multi-tenant object stores (storage.googleapis.com exposes
-	// every bucket via /<bucket>/...) are deliberately NOT in the defaults, even
-	// for ecosystems that fetch from them; the registries that redirect there are
-	// reached through the job's own credentials.
+func TestEgressAllowlist_SharedObjectStorePathStyleTradeoff(t *testing.T) {
+	// storage.googleapis.com is allowlisted as an EXACT apex host because public
+	// Go (proxy.golang.org) and Dart (pub.dev) downloads redirect there and
+	// public jobs have no credentials to reach it otherwise. Accepted risk: the
+	// apex reaches every path-style bucket. Virtual-hosted "<bucket>." subdomains
+	// are NOT covered by an exact apex entry and must stay blocked.
 	h := newEgressHandler(false, true, "go_modules")
 
-	for _, blocked := range []string{
-		"https://storage.googleapis.com/proxy-golang-org/x.zip",  // go_modules previously listed this
-		"https://storage.googleapis.com/dartlang-pub/pkg.tar.gz", // pub previously listed this
-		"https://attacker-bucket.storage.googleapis.com/loot",
+	for _, allowed := range []string{
+		"https://storage.googleapis.com/proxy-golang-org/x.zip",  // go_modules redirect target
+		"https://storage.googleapis.com/dartlang-pub/pkg.tar.gz", // pub redirect target
 	} {
-		resp := egressResult(t, h, blocked)
-		if assert.NotNil(t, resp, "shared object store must be blocked: "+blocked) {
-			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
-		}
+		assert.Nil(t, egressResult(t, h, allowed), "path-style apex host must be allowed: "+allowed)
+	}
+
+	resp := egressResult(t, h, "https://attacker-bucket.storage.googleapis.com/loot")
+	if assert.NotNil(t, resp, "virtual-hosted bucket subdomain must be blocked") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	}
 }
 

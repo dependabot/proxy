@@ -21,11 +21,14 @@
 # namespaces even when a component looks "fixed": a 12-digit AWS account id
 # (e.g. "<id>.dkr.ecr.*.amazonaws.com" or CodeArtifact endpoints) matches every
 # AWS tenant, including an attacker's own account, so those are reached only via
-# the job's own credentials (dynamic hosts), never a default glob. Likewise a
-# path-style object store such as "storage.googleapis.com" is not allowlisted,
-# because it exposes every bucket. The only glob over unreserved shared storage
-# retained here is the NuGet CDN (see its entries), a known, accepted
-# exposure documented at its call site, not a pattern to copy.
+# the job's own credentials (dynamic hosts), never a default glob. A path-style
+# object store such as "storage.googleapis.com" exposes every bucket, so it is
+# only ever allowed as an EXACT apex host (never a glob or leading-dot form) and
+# only where a public ecosystem's downloads redirect there; see its accepted-risk
+# note in go_modules. Virtual-hosted "<bucket>.storage.googleapis.com" subdomains
+# stay blocked. The other glob over unreserved shared storage retained here is
+# the NuGet CDN (see its entries), a known, accepted exposure documented at its
+# call site, not a pattern to copy.
 
 # github_infra_domains are the GitHub and Dependabot infrastructure domains that
 # are always allowed. Their subdomains are entirely GitHub-controlled (api.,
@@ -110,8 +113,10 @@ shared_registry_domains:
 # job (it does not partition by PACKAGE_MANAGER). Entries are exact hosts unless
 # a leading dot or glob pattern is present. Shared multi-tenant object stores
 # (e.g. storage.googleapis.com, which exposes every bucket via path-style URLs)
-# are intentionally NOT listed here; the registries that redirect to them are
-# reached through the job's own credentials.
+# are avoided where possible; storage.googleapis.com is listed only as an exact
+# apex host because public Go and Dart downloads redirect there (see the
+# accepted-risk note in go_modules), and its virtual-hosted subdomains stay
+# blocked.
 #
 # Every registered Dependabot ecosystem has an entry. An empty list means the
 # ecosystem reaches only GitHub/Dependabot infrastructure or plain git (covered
@@ -208,13 +213,23 @@ ecosystem_default_domains:
     - .googlesource.com
     - nodejs.org
     # Public Go module vanity-import hosts (each serves a fixed "go-import"
-    # host, not a user-creatable name). storage.googleapis.com is intentionally
-    # omitted: it is path-style shared object storage that exposes every bucket.
+    # host, not a user-creatable name).
     - golang.org
     - google.golang.org
     - go.opentelemetry.io
     - gopkg.in
     - go.yaml.in
+    # Exact host (apex only). proxy.golang.org (go_modules) and pub.dev (pub)
+    # redirect archive downloads to storage.googleapis.com/<bucket>/...; public
+    # ecosystems have no job credentials, so blocking the host 403s those
+    # redirected fetches in enforce mode. Applied to every job via the union.
+    #
+    # RISK: this is path-style shared object storage, so allowing the apex
+    # reaches every bucket, not just the Go/Dart ones — an accepted residual
+    # exfiltration risk taken to keep public Go and Dart restores working. The
+    # apex entry does NOT match virtual-hosted "<bucket>.storage.googleapis.com"
+    # subdomains, which stay blocked.
+    - storage.googleapis.com
   docker: &docker_registries
     - registry-1.docker.io
     - auth.docker.io
