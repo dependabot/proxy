@@ -88,10 +88,16 @@ func (h *EgressAllowlistHandler) HandleRequest(req *http.Request, proxyCtx *gopr
 
 	allowed := h.isAllowed(host)
 
+	// A request is actually dropped only when it is not allowlisted AND enforce
+	// mode is on; in observe-only mode a non-allowlisted host is logged but still
+	// permitted. Capture this so Splunk can tell "observed, allowed through" from
+	// "blocked with a 403" (the metric is the only signal forwarded there).
+	blocked := !allowed && h.enforce
+
 	// Record the observation here, at the point of the allowlist decision, so
 	// that enforce-blocked hosts are captured before the 403 short-circuits the
 	// request chain (the downstream metrics handler would never see them).
-	h.recordHost(host, allowed)
+	h.recordHost(host, allowed, blocked)
 
 	if !allowed {
 		if h.observe {
@@ -104,15 +110,18 @@ func (h *EgressAllowlistHandler) HandleRequest(req *http.Request, proxyCtx *gopr
 	return req, nil
 }
 
-func (h *EgressAllowlistHandler) recordHost(host string, allowed bool) {
+func (h *EgressAllowlistHandler) recordHost(host string, allowed, blocked bool) {
 	if h.metrics == nil {
 		return
 	}
 	// package_manager is added by the collector's default tags. request_host is
-	// the raw host; the backend buckets it before emitting to Datadog.
+	// the raw host; the backend buckets it before emitting to Datadog. blocked
+	// distinguishes an enforce-mode 403 from an observe-only, still-permitted
+	// host (both carry allowlisted=false).
 	_ = h.metrics.SendMetric(egressHostMetric, "increment", 1, map[string]string{
 		"request_host": host,
 		"allowlisted":  strconv.FormatBool(allowed),
+		"blocked":      strconv.FormatBool(blocked),
 	})
 }
 
