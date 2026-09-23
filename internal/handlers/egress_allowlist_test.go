@@ -385,8 +385,8 @@ func TestEgressAllowlist_RecordsObservedHosts(t *testing.T) {
 	egressResult(t, h, "https://evil.com/steal")
 
 	assert.Equal(t, []sentMetric{
-		{name: egressHostMetric, tags: map[string]string{"request_host": "registry.npmjs.org", "allowlisted": "true", "blocked": "false"}},
-		{name: egressHostMetric, tags: map[string]string{"request_host": "evil.com", "allowlisted": "false", "blocked": "false"}},
+		{name: egressHostMetric, tags: map[string]string{"request_host": "registry.npmjs.org", "allowlisted": "true", "block_enforced": "false"}},
+		{name: egressHostMetric, tags: map[string]string{"request_host": "evil.com", "allowlisted": "false", "block_enforced": "false"}},
 	}, sender.metrics)
 }
 
@@ -402,29 +402,29 @@ func TestEgressAllowlist_RecordsEnforceBlockedHosts(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 
 	assert.Equal(t, []sentMetric{
-		{name: egressHostMetric, tags: map[string]string{"request_host": "evil.com", "allowlisted": "false", "blocked": "true"}},
+		{name: egressHostMetric, tags: map[string]string{"request_host": "evil.com", "allowlisted": "false", "block_enforced": "true"}},
 	}, sender.metrics, "blocked host is recorded despite the 403")
 }
 
-// TestEgressAllowlist_BlockedTagDistinguishesObserveFromEnforce verifies the
-// blocked tag separates an enforce-mode 403 from an observe-only host that is
-// logged but still permitted (both carry allowlisted=false).
-func TestEgressAllowlist_BlockedTagDistinguishesObserveFromEnforce(t *testing.T) {
-	// Observe only: not allowlisted, logged, but allowed through -> blocked=false.
+// TestEgressAllowlist_BlockEnforcedTagDistinguishesObserveFromEnforce verifies
+// the block_enforced tag separates an enforce-mode 403 from an observe-only host
+// that is logged but still permitted (both carry allowlisted=false).
+func TestEgressAllowlist_BlockEnforcedTagDistinguishesObserveFromEnforce(t *testing.T) {
+	// Observe only: not allowlisted, logged, but allowed through -> block_enforced=false.
 	observeSender := &fakeMetricSender{}
 	observe := NewEgressAllowlistHandler(egressCfg(true, false), config.ProxyEnvSettings{}, observeSender)
 	assert.Nil(t, egressResult(t, observe, "https://evil.com/steal"), "observe permits the host")
 	assert.Equal(t, []sentMetric{
-		{name: egressHostMetric, tags: map[string]string{"request_host": "evil.com", "allowlisted": "false", "blocked": "false"}},
+		{name: egressHostMetric, tags: map[string]string{"request_host": "evil.com", "allowlisted": "false", "block_enforced": "false"}},
 	}, observeSender.metrics)
 
-	// Observe + enforce: not allowlisted and dropped -> blocked=true.
+	// Observe + enforce: not allowlisted and dropped -> block_enforced=true.
 	enforceSender := &fakeMetricSender{}
 	enforce := NewEgressAllowlistHandler(egressCfg(true, true), config.ProxyEnvSettings{}, enforceSender)
 	resp := egressResult(t, enforce, "https://evil.com/steal")
 	require.NotNil(t, resp, "enforce blocks the host")
 	assert.Equal(t, []sentMetric{
-		{name: egressHostMetric, tags: map[string]string{"request_host": "evil.com", "allowlisted": "false", "blocked": "true"}},
+		{name: egressHostMetric, tags: map[string]string{"request_host": "evil.com", "allowlisted": "false", "block_enforced": "true"}},
 	}, enforceSender.metrics)
 }
 
