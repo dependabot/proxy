@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -131,15 +132,35 @@ func TestEgressAllowlist_UnionAllowsAllEcosystemDefaults(t *testing.T) {
 }
 
 func TestEgressAllowlist_ExactEntryRejectsSubdomain(t *testing.T) {
-	// storage.googleapis.com is an exact entry: a user-created bucket reachable
-	// as <bucket>.storage.googleapis.com must NOT be allowed, or it becomes an
-	// exfiltration channel.
+	// pkgs.dev.azure.com is an exact entry: a user-controlled subdomain must NOT
+	// be allowed, or it becomes an exfiltration channel.
+	h := newEgressHandler(false, true, "maven")
+
+	assert.Nil(t, egressResult(t, h, "https://pkgs.dev.azure.com/org/_packaging/feed"), "exact host allowed")
+
+	resp := egressResult(t, h, "https://attacker.pkgs.dev.azure.com/loot")
+	if assert.NotNil(t, resp, "user-controlled subdomain must be blocked") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	}
+}
+
+func TestEgressAllowlist_SharedObjectStorePathStyleTradeoff(t *testing.T) {
+	// storage.googleapis.com is allowlisted as an EXACT apex host because public
+	// Go (proxy.golang.org) and Dart (pub.dev) downloads redirect there and
+	// public jobs have no credentials to reach it otherwise. Accepted risk: the
+	// apex reaches every path-style bucket. Virtual-hosted "<bucket>." subdomains
+	// are NOT covered by an exact apex entry and must stay blocked.
 	h := newEgressHandler(false, true, "go_modules")
 
-	assert.Nil(t, egressResult(t, h, "https://storage.googleapis.com/proxy-golang-org/x.zip"), "exact object-store host allowed")
+	for _, allowed := range []string{
+		"https://storage.googleapis.com/proxy-golang-org/x.zip",  // go_modules redirect target
+		"https://storage.googleapis.com/dartlang-pub/pkg.tar.gz", // pub redirect target
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "path-style apex host must be allowed: "+allowed)
+	}
 
 	resp := egressResult(t, h, "https://attacker-bucket.storage.googleapis.com/loot")
-	if assert.NotNil(t, resp, "user-controlled bucket subdomain must be blocked") {
+	if assert.NotNil(t, resp, "virtual-hosted bucket subdomain must be blocked") {
 		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	}
 }
@@ -150,6 +171,195 @@ func TestEgressAllowlist_SuffixEntryAllowsSubdomain(t *testing.T) {
 
 	assert.Nil(t, egressResult(t, h, "https://us.gcr.io/v2/project/image"), "provider-controlled subdomain allowed")
 	assert.Nil(t, egressResult(t, h, "https://europe-docker.pkg.dev/v2/project/image"), "artifact registry subdomain allowed")
+}
+
+func TestEgressAllowlist_NuGetStorageBackendsAllowed(t *testing.T) {
+	// NuGet's per-region Azure Blob / Azure DevOps CDN backends are allowlisted
+	// via the "*vsblobprod*" / ".vsblob." globs. These are a KNOWN, accepted
+	// exposure (the account label is attacker-choosable), documented in the YAML.
+	// The shared parent domain must still not be wildcarded, and the exact entry
+	// must not extend to lookalikes.
+	h := newEgressHandler(false, true, "nuget")
+
+	for _, allowed := range []string{
+		"https://ajhvsblobprodcus363.blob.core.windows.net/pkg.nupkg", // vsblobprod CDN backend
+		"https://ajhvsblobprodcus363.vsblob.vsassets.io/pkg",          // vsassets artifact backend
+		"https://nugetregistryv2prod.blob.core.windows.net/pkg",       // exact CDN host
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "nuget storage backend allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		"https://attacker.blob.core.windows.net/loot",             // shared parent must not be wildcarded
+		"https://nugetregistryv2prodx.blob.core.windows.net/loot", // exact entry does not extend to lookalikes
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "unscoped storage host must be blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
+func TestEgressAllowlist_MultiTenantAWSNamespacesNotGloballyAllowed(t *testing.T) {
+	// A 12-digit AWS account id matches every AWS tenant, so ECR and CodeArtifact
+	// are NOT globally allowlisted (an attacker could use their own account).
+	// They are blocked by default and only reachable via the job's credentials.
+	h := newEgressHandler(false, true, "docker")
+
+	for _, blocked := range []string{
+		"https://089022728777.dkr.ecr.us-east-1.amazonaws.com/v2/image",               // real-looking ECR account
+		"https://evil.dkr.ecr.us-east-1.amazonaws.com/v2/image",                       // non-numeric label
+		"https://my-repo-123456789012.d.codeartifact.us-east-1.amazonaws.com/npm/pkg", // real-looking CodeArtifact endpoint
+		"https://repo-1evil.d.codeartifact.us-east-1.amazonaws.com/npm/pkg",           // spoofed account label
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "multi-tenant AWS namespace must be blocked by default: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+
+	// When the job is configured to use one, its exact ECR host is allowed via
+	// the credential-derived dynamic hosts (a different account stays blocked).
+	configured := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "docker_registry", "registry": "089022728777.dkr.ecr.us-east-1.amazonaws.com"},
+	})
+	assert.Nil(t, egressResult(t, configured, "https://089022728777.dkr.ecr.us-east-1.amazonaws.com/v2/image"),
+		"configured ECR registry allowed exactly via dynamic hosts")
+	resp := egressResult(t, configured, "https://999988887777.dkr.ecr.us-east-1.amazonaws.com/v2/image")
+	if assert.NotNil(t, resp, "a different AWS account's ECR is still blocked") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	}
+}
+
+func TestEgressAllowlist_SharedRegistryDomainsAllowed(t *testing.T) {
+	// Shared third-party infrastructure with fixed, provider-owned hosts is
+	// applied to every job regardless of package manager.
+	h := newEgressHandler(false, true, "maven")
+
+	for _, allowed := range []string{
+		"https://pkgs.dev.azure.com/org/_packaging/feed",
+		"https://jitpack.io/com/example/lib",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "shared registry host allowed: "+allowed)
+	}
+}
+
+func TestEgressAllowlist_CustomerTenantProvidersAreNotGloballyAllowed(t *testing.T) {
+	// Providers whose subdomain is a customer-chosen tenant name must NOT be
+	// globally wildcarded: a global "*.<provider>" would allow an attacker-
+	// provisioned tenant. They are only reachable when a job is configured to
+	// use one (added exactly via credential-derived dynamic hosts).
+	h := newEgressHandler(false, true, "maven")
+
+	for _, blocked := range []string{
+		"https://attacker.jfrog.io/artifactory/repo",
+		"https://attacker.pkgs.visualstudio.com/_packaging/feed",
+		"https://attacker.cloudsmith.io/owner/repo",
+		"https://attacker.myget.org/F/feed/api",
+		"https://artifactory.internal.cba/repo",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "customer-tenant provider must not be globally allowed: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+
+	// When the job is configured to use one, the exact host is allowed via the
+	// credential-derived dynamic hosts.
+	configured := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "maven_repository", "url": "https://mycompany.jfrog.io/artifactory/repo"},
+	})
+	assert.Nil(t, egressResult(t, configured, "https://mycompany.jfrog.io/artifactory/repo"),
+		"configured JFrog tenant allowed exactly via dynamic hosts")
+	resp := egressResult(t, configured, "https://attacker.jfrog.io/artifactory/repo")
+	if assert.NotNil(t, resp, "a different tenant is still blocked") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	}
+}
+
+// TestEgressAllowlist_DynamicHostsMatchedExactly guards against a
+// credential-derived host being treated as a glob pattern. A configured value
+// containing glob metacharacters (e.g. "https://*.com") must match nothing
+// rather than open enforcement for every ".com" host.
+func TestEgressAllowlist_DynamicHostsMatchedExactly(t *testing.T) {
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "maven_repository", "url": "https://*.com/repo"},
+	})
+
+	resp := egressResult(t, h, "https://evil.com/steal")
+	if assert.NotNil(t, resp, "a glob-shaped credential host must not become a wildcard") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	}
+}
+
+func TestEgressAllowlist_JFrogS3BucketsAllowedButSharedS3Blocked(t *testing.T) {
+	h := newEgressHandler(false, true, "maven")
+
+	// JFrog-owned regional buckets are exact entries and must be allowed.
+	for _, allowed := range []string{
+		"https://jfrog-prod-euw1-shared-ireland-main.s3.amazonaws.com/artifact",
+		"https://jfrog-prod-usw2-shared-oregon-main.s3.amazonaws.com/artifact",
+		"https://jfrog-prod-use1-shared-virginia-main.s3.amazonaws.com/artifact",
+		"https://jfrog-prod-use1-dedicated-virginia-main.s3.amazonaws.com/artifact",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "JFrog S3 bucket allowed: "+allowed)
+	}
+
+	// The shared S3 namespace must stay blocked: neither an attacker bucket that
+	// mimics the JFrog token shape (virtual-hosted) nor path-style access to the
+	// bare endpoint may be allowed.
+	for _, blocked := range []string{
+		"https://jfrog-prod-evil-shared-x-main.s3.amazonaws.com/loot",
+		"https://jfrog-prod-evil-dedicated-x-main.s3.amazonaws.com/loot",
+		"https://attacker-bucket.s3.amazonaws.com/loot",
+		"https://s3.amazonaws.com/attacker-bucket/loot",
+		"https://s3-us-west-2.amazonaws.com/attacker-bucket/loot",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "shared S3 host must be blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
+func TestEgressAllowlist_NewExactDomainsAllowed(t *testing.T) {
+	h := newEgressHandler(false, true, "npm_and_yarn")
+
+	for _, allowed := range []string{
+		"https://registry.npmmirror.com/left-pad",
+		"https://cdn.npmmirror.com/left-pad/-/left-pad.tgz",
+		"https://registry.npmjs.com/left-pad",
+		"https://maven.google.com/androidx/pkg.pom",
+		"https://packages.drupal.org/8/packages.json",
+		"https://packages.confluent.io/maven/pkg.jar",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "new exact host allowed: "+allowed)
+	}
+}
+
+func TestEgressAllowlist_PublicRegistriesAllowed(t *testing.T) {
+	// A representative sample of the curated public registry/CDN/mirror hosts.
+	// These are provider-controlled public infrastructure, applied to every job.
+	h := newEgressHandler(false, true, "maven")
+
+	for _, allowed := range []string{
+		"https://repo.spring.io/artifactory/repo",
+		"https://oss.sonatype.org/content/repositories/snapshots",
+		"https://repository.apache.org/content/groups/public",
+		"https://clojars.org/repo",
+		"https://download.pytorch.org/whl/torch.whl",
+		"https://pypi.nvidia.com/simple",
+		"https://mirrors.aliyun.com/pypi/simple",
+		"https://www.nuget.org/api/v2/package",
+		"https://hub.docker.com/v2/repositories/library/nginx",
+		"https://lscr.io/v2/linuxserver/image",
+		"https://wpackagist.org/packages.json",
+		"https://go.googlesource.com/tools",
+		"https://android.googlesource.com/platform",
+		"https://nodejs.org/dist/index.json",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "public registry host allowed: "+allowed)
+	}
 }
 
 // fakeMetricSender captures the metrics emitted by the egress handler.
@@ -292,6 +502,34 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 	resp := egressResult(t, h, "https://attacker.github.io/loot")
 	if assert.NotNil(t, resp, "arbitrary github.io host must be blocked") {
 		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	}
+}
+
+func TestValidateGlobPattern(t *testing.T) {
+	valid := []string{
+		"*.example.com",
+		"*-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].d.codeartifact.*.amazonaws.com",
+		"[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].dkr.ecr.*.amazonaws.com",
+		"[a-z0-9]*.example.com",
+		"host?.example.com",
+		"[^x]host.example.com",
+	}
+	for _, p := range valid {
+		assert.NoErrorf(t, validateGlobPattern(p), "expected %q to be a valid glob", p)
+		// path.Match must agree it is a well-formed pattern (no ErrBadPattern).
+		_, err := path.Match(p, "probe.example.com")
+		assert.NoErrorf(t, err, "path.Match disagrees on validity of %q", p)
+	}
+
+	invalid := []string{
+		"foo*bar[", // unterminated class after a literal path.Match never reaches
+		"[",        // bare unterminated class
+		"[]",       // empty class
+		"a[b-",     // range with missing high bound / unterminated
+		"pre[abc",  // unterminated class with content
+	}
+	for _, p := range invalid {
+		assert.Errorf(t, validateGlobPattern(p), "expected %q to be rejected", p)
 	}
 }
 
