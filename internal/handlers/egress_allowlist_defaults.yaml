@@ -159,6 +159,12 @@ shared_registry_domains:
 # accepted-risk note in go_modules), and its virtual-hosted subdomains stay
 # blocked.
 #
+# Ecosystems that share an identical registry set are de-duplicated with a YAML
+# anchor on the first member and an alias on the rest (npm_and_yarn/bun,
+# pip/uv, maven/gradle, docker/docker_compose/devcontainers). Edit the anchored
+# list and every alias follows automatically; do not expand an alias back into a
+# literal copy. TestEgressDefaults_AliasedEcosystemsStayInSync enforces this.
+#
 # Every registered Dependabot ecosystem has an entry. An empty list means the
 # ecosystem reaches only GitHub/Dependabot infrastructure or plain git (covered
 # by github_infra_domains and the job's own git credentials), or its registries
@@ -167,7 +173,7 @@ shared_registry_domains:
 # must match the ecosystem internal names registered in dependabot-core
 # (Dependabot::FileFetchers.register).
 ecosystem_default_domains:
-  npm_and_yarn:
+  npm_and_yarn: &npm_registries
     - registry.npmjs.org
     - registry.yarnpkg.com
     - repo.yarnpkg.com
@@ -182,22 +188,8 @@ ecosystem_default_domains:
     - cdn.sheetjs.com
     - npm.jsr.io
     - dl.fontawesome.com
-  bun:
-    - registry.npmjs.org
-    - registry.yarnpkg.com
-    - repo.yarnpkg.com
-    - jsr.io
-    - registry.bower.io
-    - registry.npmjs.com
-    - registry.npmmirror.com
-    - cdn.npmmirror.com
-    - npm.flatt.tech
-    - registry.npm.ouryahoo.com
-    - npm.fontawesome.com
-    - cdn.sheetjs.com
-    - npm.jsr.io
-    - dl.fontawesome.com
-  pip:
+  bun: *npm_registries
+  pip: &python_registries
     - pypi.org
     - pypi.python.org
     - files.pythonhosted.org
@@ -207,23 +199,14 @@ ecosystem_default_domains:
     - pypi.tuna.tsinghua.edu.cn
     - download-r2.pytorch.org
     - flashinfer.ai
-  uv:
-    - pypi.org
-    - pypi.python.org
-    - files.pythonhosted.org
-    - pythonhosted.org
-    - download.pytorch.org
-    - pypi.nvidia.com
-    - pypi.tuna.tsinghua.edu.cn
-    - download-r2.pytorch.org
-    - flashinfer.ai
+  uv: *python_registries
   bundler:
     - rubygems.org
     - index.rubygems.org
     - gems.rubygems.org
     - rails-assets.org
     - gem.coop
-  maven:
+  maven: &jvm_registries
     - repo.maven.apache.org
     - repo1.maven.org
     - plugins.gradle.org
@@ -231,14 +214,7 @@ ecosystem_default_domains:
     - maven.google.com
     - repo.broadcom.com
     - packages.confluent.io
-  gradle:
-    - repo.maven.apache.org
-    - repo1.maven.org
-    - plugins.gradle.org
-    - dl.google.com
-    - maven.google.com
-    - repo.broadcom.com
-    - packages.confluent.io
+  gradle: *jvm_registries
   sbt:
     - repo1.maven.org
     - repo.maven.apache.org
@@ -287,6 +263,7 @@ ecosystem_default_domains:
     - modernc.org
     - mvdan.cc
     - olympos.io
+    - rsc.io
     - sigs.k8s.io
     - storj.io
     # Exact host (apex only). proxy.golang.org (go_modules) and pub.dev (pub)

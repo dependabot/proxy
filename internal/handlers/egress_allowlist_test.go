@@ -388,6 +388,7 @@ func TestEgressAllowlist_ProdBlockedHostsNowAllowed(t *testing.T) {
 			"https://modernc.org/sqlite",
 			"https://mvdan.cc/gofumpt",
 			"https://olympos.io/encoding/edn",
+			"https://rsc.io/quote",
 			"https://storj.io/common",
 		},
 		"public vcs forges": {
@@ -701,6 +702,30 @@ func TestValidateGlobPattern(t *testing.T) {
 	}
 	for _, p := range invalid {
 		assert.Errorf(t, validateGlobPattern(p), "expected %q to be rejected", p)
+	}
+}
+
+// TestEgressDefaults_AliasedEcosystemsStayInSync guards the YAML anchor/alias
+// pattern used to de-duplicate ecosystems that share a registry set
+// (npm_and_yarn/bun, pip/uv, maven/gradle, docker/docker_compose/devcontainers).
+//
+// The alias makes the duplication impossible by construction, so this test
+// exists to catch the regression where someone expands one member back into a
+// literal list and edits only that copy. It asserts equality including order,
+// since an alias always yields the identical sequence.
+func TestEgressDefaults_AliasedEcosystemsStayInSync(t *testing.T) {
+	for _, group := range [][]string{
+		{"npm_and_yarn", "bun"},
+		{"pip", "uv"},
+		{"maven", "gradle"},
+		{"docker", "docker_compose", "devcontainers"},
+	} {
+		base := group[0]
+		require.NotEmpty(t, ecosystemDefaultDomains[base], "%s must be populated", base)
+		for _, other := range group[1:] {
+			assert.Equal(t, ecosystemDefaultDomains[base], ecosystemDefaultDomains[other],
+				"%s must stay identical to %s (they share a YAML anchor)", other, base)
+		}
 	}
 }
 
