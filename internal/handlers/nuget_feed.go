@@ -171,6 +171,13 @@ func addNugetDiscoveryJob(
 	sourceURLs map[string]struct{},
 	job nugetDiscoveryJob,
 ) {
+	serviceIndexURL, err := normalizeNugetServiceIndexURL(job.serviceIndexURL)
+	if err != nil {
+		logging.RequestLogf(nil, "skipping invalid NuGet service index URL %s: %v", job.serviceIndexURL, err)
+		return
+	}
+	job.serviceIndexURL = serviceIndexURL
+
 	key := nugetDiscoverySourceKey(job.serviceIndexURL)
 	if _, ok := sourceURLs[key]; ok {
 		logging.RequestLogf(nil, "skipping duplicate NuGet service index because it is already registered: %s", job.serviceIndexURL)
@@ -178,6 +185,20 @@ func addNugetDiscoveryJob(
 	}
 	sourceURLs[key] = struct{}{}
 	*jobs = append(*jobs, job)
+}
+
+func normalizeNugetServiceIndexURL(rawURL string) (string, error) {
+	parsedURL, err := helpers.ParseURLLax(rawURL)
+	if err != nil {
+		return "", err
+	}
+	if parsedURL.Hostname() == "" {
+		return "", fmt.Errorf("missing host")
+	}
+	if parsedURL.Scheme == "" {
+		parsedURL.Scheme = "https"
+	}
+	return parsedURL.String(), nil
 }
 
 func discoverNugetFeedURLs(
@@ -240,6 +261,9 @@ func discoverNugetFeedURLsForJob(
 	discoveryClient := *client
 	originalCheckRedirect := client.CheckRedirect
 	discoveryClient.CheckRedirect = func(redirectReq *http.Request, via []*http.Request) error {
+		if job.oidcCredential != nil && !strings.EqualFold(redirectReq.URL.Scheme, "https") {
+			return fmt.Errorf("refusing to redirect OIDC-authenticated NuGet discovery to non-HTTPS URL %s", redirectReq.URL)
+		}
 		if originalCheckRedirect != nil {
 			if err := originalCheckRedirect(redirectReq, via); err != nil {
 				return err
@@ -489,8 +513,9 @@ func authenticateNugetRequest(req *http.Request, cred nugetFeedCredentials, prox
 }
 
 func shouldTreatTokenAsPassword(url *url.URL) bool {
-	if url.Hostname() == "pkgs.dev.azure.com" {
+	hostname := strings.ToLower(url.Hostname())
+	if hostname == "pkgs.dev.azure.com" {
 		return true
 	}
-	return strings.HasSuffix(url.Hostname(), ".pkgs.visualstudio.com") && strings.Contains(url.Path, "/_packaging/")
+	return strings.HasSuffix(hostname, ".pkgs.visualstudio.com") && strings.Contains(url.Path, "/_packaging/")
 }
