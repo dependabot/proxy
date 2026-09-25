@@ -362,6 +362,126 @@ func TestEgressAllowlist_PublicRegistriesAllowed(t *testing.T) {
 	}
 }
 
+// TestEgressAllowlist_ProdBlockedHostsNowAllowed covers the hosts added from
+// the production blocked-domain sample. Each is public, provider-controlled
+// infrastructure that a job cannot reach via credentials, so blocking it under
+// enforce breaks dependency resolution outright.
+func TestEgressAllowlist_ProdBlockedHostsNowAllowed(t *testing.T) {
+	h := newEgressHandler(false, true, "")
+
+	for name, allowed := range map[string][]string{
+		"go vanity imports": {
+			"https://buf.build/gen/go/pkg",
+			"https://go.uber.org/zap",
+			"https://k8s.io/client-go",
+			"https://sigs.k8s.io/yaml",
+			"https://filippo.io/edwards25519",
+			"https://cel.dev/expr",
+			"https://connectrpc.com/connect",
+			"https://go.etcd.io/bbolt",
+			"https://go.mongodb.org/mongo-driver",
+			"https://go.starlark.net/starlark",
+			"https://go4.org/netipx",
+			"https://golang.zx2c4.com/wireguard",
+			"https://gorm.io/gorm",
+			"https://layeh.com/radius",
+			"https://modernc.org/sqlite",
+			"https://mvdan.cc/gofumpt",
+			"https://olympos.io/encoding/edn",
+			"https://storj.io/common",
+		},
+		"public vcs forges": {
+			"https://bitbucket.org/team/repo.git/info/refs",
+			"https://api.bitbucket.org/2.0/repositories/team/repo",
+			"https://codeberg.org/owner/repo.git/info/refs",
+			"https://gitea.com/owner/repo.git/info/refs",
+			"https://git.sr.ht/~owner/repo",
+			"https://gitlab.com/group/project.git/info/refs",
+			"https://gitlab.freedesktop.org/group/project",
+			"https://foss.heptapod.net/pypy/pypy",
+			"https://sourceforge.net/projects/proj/files",
+		},
+		"jvm repositories": {
+			"https://s01.oss.sonatype.org/content/repositories/releases",
+			"https://www.jitpack.io/com/example/lib",
+			"https://repo.gradle.org/artifactory/libs-releases",
+			"https://downloads.gradle.org/distributions/gradle-8.0-bin.zip",
+			"https://repo.typesafe.com/typesafe/releases",
+			"https://maven.twttr.com/com/twitter/lib.jar",
+			"https://build.shibboleth.net/maven/releases",
+			"https://maven.enginehub.org/repo",
+			"https://maven.canvasmc.io/releases",
+			"https://repo.thenextlvl.net/releases",
+			"https://cdn.reproio.com/maven/io/repro/sdk.aar",
+			"https://build-artifacts.signal.org/maven",
+			"https://redirector.kotlinlang.org/maven/artifact.jar",
+			"https://developer.huawei.com/repo/agconnect.aar",
+			"https://appboy.github.io/appboy-android-sdk/sdk.aar",
+		},
+		"ecosystem registries and cdns": {
+			"https://juliaregistries.github.io/General/registry.toml",
+			"https://us-east.pkg.julialang.org/registries",
+			"https://us-west.pkg.julialang.org/registries",
+			"https://flashinfer.ai/whl/cu121/flashinfer.whl",
+			"https://download-r2.pytorch.org/whl/torch.whl",
+			"https://builds.hex.pm/builds/elixir/builds.txt",
+			"https://npm.jsr.io/@jsr/std__path",
+			"https://dl.fontawesome.com/releases/v6/fontawesome.zip",
+			"https://dl.cloudsmith.io/token/org/repo/maven/artifact.jar",
+			"https://npm.cloudsmith.io/org/repo/left-pad",
+			"https://mirrors.cloud.tencent.com/gradle/gradle-8.0-bin.zip",
+			"https://satis.spatie.be/packages.json",
+			"https://download.swift.org/swift-5.9-release/toolchain.tar.gz",
+		},
+		"verification and protocol endpoints": {
+			"https://checkpoint-api.hashicorp.com/v1/check/terraform",
+			"https://crl3.digicert.com/sha2-assured-cs-g1.crl",
+			"https://ocsp.digicert.com/",
+			"https://oneocsp.microsoft.com/ocsp",
+			"https://www.microsoft.com/pkiops/crl/microsoft.crl",
+			"https://spsprodcus3.vssps.visualstudio.com/_signin",
+			"https://spsproduks1.vssps.visualstudio.com/_signin",
+		},
+	} {
+		for _, target := range allowed {
+			assert.Nil(t, egressResult(t, h, target), name+": expected allowed: "+target)
+		}
+	}
+}
+
+// TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts guards the safety
+// boundaries documented alongside the §A additions. Every new entry is an exact
+// host, so neither a sibling tenant nor a subdomain may inherit the allowance.
+func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
+	h := newEgressHandler(false, true, "")
+
+	for _, blocked := range []string{
+		// "*.github.io" is user-creatable: only the two exact project pages are
+		// allowed, never a sibling GitHub Pages site.
+		"https://attacker.github.io/payload",
+		// "<org>.vssps.visualstudio.com" is a customer-chosen name, so only the
+		// Microsoft-operated "sps<region>" instances are allowed.
+		"https://attacker.vssps.visualstudio.com/_signin",
+		// Cloudsmith is allowed only on its fixed provider-owned hosts, where
+		// the tenant lives in the path rather than the hostname.
+		"https://attacker.cloudsmith.io/owner/repo",
+		// Forge subdomains are user-creatable (Pages), so the apex entries must
+		// not be treated as suffix matches.
+		"https://attacker.gitlab.com/payload",
+		"https://attacker.codeberg.org/payload",
+		"https://attacker.sourceforge.net/payload",
+		// Sibling hosts of the newly added vanity/CDN entries stay blocked.
+		"https://attacker.buf.build/payload",
+		"https://attacker.flashinfer.ai/payload",
+		"https://attacker.pkg.julialang.org/registries",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "new entries must not widen to: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
 // fakeMetricSender captures the metrics emitted by the egress handler.
 type fakeMetricSender struct {
 	metrics []sentMetric
