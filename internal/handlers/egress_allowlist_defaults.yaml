@@ -118,7 +118,6 @@ shared_registry_domains:
   - gitlab.com
   - gitlab.freedesktop.org
   - foss.heptapod.net
-  - sourceforge.net
   # Public JVM repositories (continued).
   - s01.oss.sonatype.org
   - www.jitpack.io
@@ -138,11 +137,14 @@ shared_registry_domains:
   # "*.github.io" is user-creatable and must never be globbed.
   - appboy.github.io
   - juliaregistries.github.io
-  # Cloudsmith: provider-owned fixed hosts. The customer tenant is in the PATH,
-  # not the hostname, so these are safe as exact entries (unlike the
-  # <org>.cloudsmith.io form, which is excluded by the NOTE above).
-  - dl.cloudsmith.io
-  - npm.cloudsmith.io
+  # NOTE: Cloudsmith's download hosts (dl./npm.cloudsmith.io) are deliberately
+  # NOT listed. They are shared multi-tenant hosts whose customer namespace and
+  # repository live in the URL PATH, and the allowlist authorizes the hostname
+  # only — it does not constrain path or method. An attacker with their own
+  # Cloudsmith namespace could therefore encode data in a request that the
+  # hostname check would permit, and Cloudsmith surfaces package-request logs to
+  # repository owners. A job's own Cloudsmith repository is added exactly, per
+  # job, via the credential-derived dynamic hosts instead.
   # Public mirrors (continued).
   - mirrors.cloud.tencent.com
 
@@ -375,6 +377,7 @@ ecosystem_default_domains:
     - registry.npmjs.org
   bazel:
     - bcr.bazel.build
+    - releases.bazel.build
   julia:
     - pkg.julialang.org
     - us-east.pkg.julialang.org

@@ -399,7 +399,6 @@ func TestEgressAllowlist_ProdBlockedHostsNowAllowed(t *testing.T) {
 			"https://gitlab.com/group/project.git/info/refs",
 			"https://gitlab.freedesktop.org/group/project",
 			"https://foss.heptapod.net/pypy/pypy",
-			"https://sourceforge.net/projects/proj/files",
 		},
 		"jvm repositories": {
 			"https://s01.oss.sonatype.org/content/repositories/releases",
@@ -427,11 +426,10 @@ func TestEgressAllowlist_ProdBlockedHostsNowAllowed(t *testing.T) {
 			"https://builds.hex.pm/builds/elixir/builds.txt",
 			"https://npm.jsr.io/@jsr/std__path",
 			"https://dl.fontawesome.com/releases/v6/fontawesome.zip",
-			"https://dl.cloudsmith.io/token/org/repo/maven/artifact.jar",
-			"https://npm.cloudsmith.io/org/repo/left-pad",
 			"https://mirrors.cloud.tencent.com/gradle/gradle-8.0-bin.zip",
 			"https://satis.spatie.be/packages.json",
 			"https://download.swift.org/swift-5.9-release/toolchain.tar.gz",
+			"https://releases.bazel.build/7.0.0/release/bazel-7.0.0-linux-x86_64",
 		},
 		"verification and protocol endpoints": {
 			"https://checkpoint-api.hashicorp.com/v1/check/terraform",
@@ -451,30 +449,61 @@ func TestEgressAllowlist_ProdBlockedHostsNowAllowed(t *testing.T) {
 
 // TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts guards the safety
 // boundaries documented alongside the §A additions. Every new entry is an exact
-// host, so neither a sibling tenant nor a subdomain may inherit the allowance.
+// host, so neither a sibling name nor a CHILD subdomain may inherit it.
+//
+// The two probe families are distinct and both are required:
+//   - Child probes ("evil.<entry>") fail if an entry is relaxed to the
+//     leading-dot suffix form (".appboy.github.io"). This is the suffix
+//     regression the exact-host convention exists to prevent.
+//   - Sibling probes ("attacker.<parent-of-entry>") fail if an entry is
+//     widened to its parent namespace ("*.github.io"), which a child probe
+//     alone would not catch.
 func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 	h := newEgressHandler(false, true, "")
 
-	for _, blocked := range []string{
-		// "*.github.io" is user-creatable: only the two exact project pages are
-		// allowed, never a sibling GitHub Pages site.
+	// Child hosts of the added exact entries. Each of these starts failing the
+	// moment its entry is changed to a leading-dot suffix, so this is the probe
+	// set that actually pins exact-host semantics.
+	childProbes := []string{
+		"https://evil.appboy.github.io/payload",
+		"https://evil.juliaregistries.github.io/payload",
+		"https://evil.spsprodcus3.vssps.visualstudio.com/_signin",
+		"https://evil.us-east.pkg.julialang.org/registries",
+		"https://evil.crl3.digicert.com/payload",
+		"https://evil.www.microsoft.com/pkiops/crl/x.crl",
+		"https://evil.s01.oss.sonatype.org/content/repositories",
+		"https://evil.build-artifacts.signal.org/maven",
+		"https://evil.redirector.kotlinlang.org/maven",
+		"https://evil.buf.build/payload",
+		"https://evil.flashinfer.ai/whl/x.whl",
+		"https://evil.bitbucket.org/team/repo",
+		"https://evil.codeberg.org/owner/repo",
+		"https://evil.gitlab.com/group/project",
+		"https://evil.releases.bazel.build/payload",
+	}
+
+	// Sibling hosts: names sharing a parent with an added entry. These pin the
+	// parent namespace closed ("*.github.io", "*.vssps.visualstudio.com").
+	siblingProbes := []string{
 		"https://attacker.github.io/payload",
-		// "<org>.vssps.visualstudio.com" is a customer-chosen name, so only the
-		// Microsoft-operated "sps<region>" instances are allowed.
 		"https://attacker.vssps.visualstudio.com/_signin",
-		// Cloudsmith is allowed only on its fixed provider-owned hosts, where
-		// the tenant lives in the path rather than the hostname.
-		"https://attacker.cloudsmith.io/owner/repo",
-		// Forge subdomains are user-creatable (Pages), so the apex entries must
-		// not be treated as suffix matches.
-		"https://attacker.gitlab.com/payload",
-		"https://attacker.codeberg.org/payload",
-		"https://attacker.sourceforge.net/payload",
-		// Sibling hosts of the newly added vanity/CDN entries stay blocked.
-		"https://attacker.buf.build/payload",
-		"https://attacker.flashinfer.ai/payload",
 		"https://attacker.pkg.julialang.org/registries",
-	} {
+		"https://attacker.digicert.com/payload",
+		"https://attacker.bazel.build/payload",
+		// Cloudsmith is multi-tenant with the tenant in the URL path, and the
+		// allowlist authorizes the hostname only. Neither the tenant subdomain
+		// form nor the shared download hosts may be globally allowed.
+		"https://attacker.cloudsmith.io/owner/repo",
+		"https://dl.cloudsmith.io/token/org/repo/maven/artifact.jar",
+		"https://npm.cloudsmith.io/org/repo/left-pad",
+		// SourceForge was not added: the sampled traffic was POM metadata, and
+		// the real clone/download chain (git.code.sf.net, downloads. and
+		// *.dl.sourceforge.net mirrors) is user-uploadable file hosting.
+		"https://sourceforge.net/projects/proj/files",
+		"https://downloads.sourceforge.net/project/proj/file.zip",
+	}
+
+	for _, blocked := range append(childProbes, siblingProbes...) {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "new entries must not widen to: "+blocked) {
 			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
