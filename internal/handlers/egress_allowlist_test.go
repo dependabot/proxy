@@ -362,6 +362,156 @@ func TestEgressAllowlist_PublicRegistriesAllowed(t *testing.T) {
 	}
 }
 
+// TestEgressAllowlist_ProdBlockedHostsNowAllowed covers the hosts added from
+// the production blocked-domain sample. Each is public, provider-controlled
+// infrastructure that a job cannot reach via credentials, so blocking it under
+// enforce breaks dependency resolution outright.
+func TestEgressAllowlist_ProdBlockedHostsNowAllowed(t *testing.T) {
+	h := newEgressHandler(false, true, "")
+
+	for name, allowed := range map[string][]string{
+		"go vanity imports": {
+			"https://buf.build/gen/go/pkg",
+			"https://go.uber.org/zap",
+			"https://k8s.io/client-go",
+			"https://sigs.k8s.io/yaml",
+			"https://filippo.io/edwards25519",
+			"https://cel.dev/expr",
+			"https://connectrpc.com/connect",
+			"https://go.etcd.io/bbolt",
+			"https://go.mongodb.org/mongo-driver",
+			"https://go.starlark.net/starlark",
+			"https://go4.org/netipx",
+			"https://golang.zx2c4.com/wireguard",
+			"https://gorm.io/gorm",
+			"https://layeh.com/radius",
+			"https://modernc.org/sqlite",
+			"https://mvdan.cc/gofumpt",
+			"https://olympos.io/encoding/edn",
+			"https://rsc.io/quote",
+			"https://storj.io/common",
+		},
+		"public vcs forges": {
+			"https://bitbucket.org/team/repo.git/info/refs",
+			"https://api.bitbucket.org/2.0/repositories/team/repo",
+			"https://codeberg.org/owner/repo.git/info/refs",
+			"https://gitea.com/owner/repo.git/info/refs",
+			"https://git.sr.ht/~owner/repo",
+			"https://gitlab.com/group/project.git/info/refs",
+			"https://gitlab.freedesktop.org/group/project",
+			"https://foss.heptapod.net/pypy/pypy",
+		},
+		"jvm repositories": {
+			"https://s01.oss.sonatype.org/content/repositories/releases",
+			"https://www.jitpack.io/com/example/lib",
+			"https://repo.gradle.org/artifactory/libs-releases",
+			"https://downloads.gradle.org/distributions/gradle-8.0-bin.zip",
+			"https://repo.typesafe.com/typesafe/releases",
+			"https://maven.twttr.com/com/twitter/lib.jar",
+			"https://build.shibboleth.net/maven/releases",
+			"https://maven.enginehub.org/repo",
+			"https://maven.canvasmc.io/releases",
+			"https://repo.thenextlvl.net/releases",
+			"https://cdn.reproio.com/maven/io/repro/sdk.aar",
+			"https://build-artifacts.signal.org/maven",
+			"https://redirector.kotlinlang.org/maven/artifact.jar",
+			"https://developer.huawei.com/repo/agconnect.aar",
+			"https://appboy.github.io/appboy-android-sdk/sdk.aar",
+		},
+		"ecosystem registries and cdns": {
+			"https://juliaregistries.github.io/General/registry.toml",
+			"https://us-east.pkg.julialang.org/registries",
+			"https://us-west.pkg.julialang.org/registries",
+			"https://flashinfer.ai/whl/cu121/flashinfer.whl",
+			"https://download-r2.pytorch.org/whl/torch.whl",
+			"https://builds.hex.pm/builds/elixir/builds.txt",
+			"https://npm.jsr.io/@jsr/std__path",
+			"https://dl.fontawesome.com/releases/v6/fontawesome.zip",
+			"https://mirrors.cloud.tencent.com/gradle/gradle-8.0-bin.zip",
+			"https://satis.spatie.be/packages.json",
+			"https://download.swift.org/swift-5.9-release/toolchain.tar.gz",
+			"https://releases.bazel.build/7.0.0/release/bazel-7.0.0-linux-x86_64",
+		},
+		"verification and protocol endpoints": {
+			"https://checkpoint-api.hashicorp.com/v1/check/terraform",
+			"https://crl3.digicert.com/sha2-assured-cs-g1.crl",
+			"https://ocsp.digicert.com/",
+			"https://oneocsp.microsoft.com/ocsp",
+			"https://www.microsoft.com/pkiops/crl/microsoft.crl",
+			"https://spsprodcus3.vssps.visualstudio.com/_signin",
+			"https://spsproduks1.vssps.visualstudio.com/_signin",
+		},
+	} {
+		for _, target := range allowed {
+			assert.Nil(t, egressResult(t, h, target), name+": expected allowed: "+target)
+		}
+	}
+}
+
+// TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts guards the safety
+// boundaries documented alongside the §A additions. Every new entry is an exact
+// host, so neither a sibling name nor a CHILD subdomain may inherit it.
+//
+// The two probe families are distinct and both are required:
+//   - Child probes ("evil.<entry>") fail if an entry is relaxed to the
+//     leading-dot suffix form (".appboy.github.io"). This is the suffix
+//     regression the exact-host convention exists to prevent.
+//   - Sibling probes ("attacker.<parent-of-entry>") fail if an entry is
+//     widened to its parent namespace ("*.github.io"), which a child probe
+//     alone would not catch.
+func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
+	h := newEgressHandler(false, true, "")
+
+	// Child hosts of the added exact entries. Each of these starts failing the
+	// moment its entry is changed to a leading-dot suffix, so this is the probe
+	// set that actually pins exact-host semantics.
+	childProbes := []string{
+		"https://evil.appboy.github.io/payload",
+		"https://evil.juliaregistries.github.io/payload",
+		"https://evil.spsprodcus3.vssps.visualstudio.com/_signin",
+		"https://evil.us-east.pkg.julialang.org/registries",
+		"https://evil.crl3.digicert.com/payload",
+		"https://evil.www.microsoft.com/pkiops/crl/x.crl",
+		"https://evil.s01.oss.sonatype.org/content/repositories",
+		"https://evil.build-artifacts.signal.org/maven",
+		"https://evil.redirector.kotlinlang.org/maven",
+		"https://evil.buf.build/payload",
+		"https://evil.flashinfer.ai/whl/x.whl",
+		"https://evil.bitbucket.org/team/repo",
+		"https://evil.codeberg.org/owner/repo",
+		"https://evil.gitlab.com/group/project",
+		"https://evil.releases.bazel.build/payload",
+	}
+
+	// Sibling hosts: names sharing a parent with an added entry. These pin the
+	// parent namespace closed ("*.github.io", "*.vssps.visualstudio.com").
+	siblingProbes := []string{
+		"https://attacker.github.io/payload",
+		"https://attacker.vssps.visualstudio.com/_signin",
+		"https://attacker.pkg.julialang.org/registries",
+		"https://attacker.digicert.com/payload",
+		"https://attacker.bazel.build/payload",
+		// Cloudsmith is multi-tenant with the tenant in the URL path, and the
+		// allowlist authorizes the hostname only. Neither the tenant subdomain
+		// form nor the shared download hosts may be globally allowed.
+		"https://attacker.cloudsmith.io/owner/repo",
+		"https://dl.cloudsmith.io/token/org/repo/maven/artifact.jar",
+		"https://npm.cloudsmith.io/org/repo/left-pad",
+		// SourceForge was not added: the sampled traffic was POM metadata, and
+		// the real clone/download chain (git.code.sf.net, downloads. and
+		// *.dl.sourceforge.net mirrors) is user-uploadable file hosting.
+		"https://sourceforge.net/projects/proj/files",
+		"https://downloads.sourceforge.net/project/proj/file.zip",
+	}
+
+	for _, blocked := range append(childProbes, siblingProbes...) {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "new entries must not widen to: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
 // fakeMetricSender captures the metrics emitted by the egress handler.
 type fakeMetricSender struct {
 	metrics []sentMetric
@@ -552,6 +702,30 @@ func TestValidateGlobPattern(t *testing.T) {
 	}
 	for _, p := range invalid {
 		assert.Errorf(t, validateGlobPattern(p), "expected %q to be rejected", p)
+	}
+}
+
+// TestEgressDefaults_AliasedEcosystemsStayInSync guards the YAML anchor/alias
+// pattern used to de-duplicate ecosystems that share a registry set
+// (npm_and_yarn/bun, pip/uv, maven/gradle, docker/docker_compose/devcontainers).
+//
+// The alias makes the duplication impossible by construction, so this test
+// exists to catch the regression where someone expands one member back into a
+// literal list and edits only that copy. It asserts equality including order,
+// since an alias always yields the identical sequence.
+func TestEgressDefaults_AliasedEcosystemsStayInSync(t *testing.T) {
+	for _, group := range [][]string{
+		{"npm_and_yarn", "bun"},
+		{"pip", "uv"},
+		{"maven", "gradle"},
+		{"docker", "docker_compose", "devcontainers"},
+	} {
+		base := group[0]
+		require.NotEmpty(t, ecosystemDefaultDomains[base], "%s must be populated", base)
+		for _, other := range group[1:] {
+			assert.Equal(t, ecosystemDefaultDomains[base], ecosystemDefaultDomains[other],
+				"%s must stay identical to %s (they share a YAML anchor)", other, base)
+		}
 	}
 }
 

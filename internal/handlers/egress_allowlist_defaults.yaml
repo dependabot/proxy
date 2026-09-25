@@ -106,6 +106,47 @@ shared_registry_domains:
   # Private Packagist (Composer) hosting.
   - packagist.com
   - repo.packagist.com
+  # Public VCS forges. Reached for git-based dependencies (go_modules direct
+  # fetch, cargo git deps) and Maven SCM resolution. Apex exact entries only:
+  # subdomains of these forges are user-creatable (e.g. GitLab Pages), so the
+  # leading-dot form would be attacker-satisfiable.
+  - bitbucket.org
+  - api.bitbucket.org
+  - codeberg.org
+  - gitea.com
+  - git.sr.ht
+  - gitlab.com
+  - gitlab.freedesktop.org
+  - foss.heptapod.net
+  # Public JVM repositories (continued).
+  - s01.oss.sonatype.org
+  - www.jitpack.io
+  - repo.gradle.org
+  - downloads.gradle.org
+  - repo.typesafe.com
+  - maven.twttr.com
+  - build.shibboleth.net
+  - maven.enginehub.org
+  - maven.canvasmc.io
+  - repo.thenextlvl.net
+  - cdn.reproio.com
+  - build-artifacts.signal.org
+  - redirector.kotlinlang.org
+  - developer.huawei.com
+  # Maven/registry indexes served from GitHub Pages. EXACT hosts only:
+  # "*.github.io" is user-creatable and must never be globbed.
+  - appboy.github.io
+  - juliaregistries.github.io
+  # NOTE: Cloudsmith's download hosts (dl./npm.cloudsmith.io) are deliberately
+  # NOT listed. They are shared multi-tenant hosts whose customer namespace and
+  # repository live in the URL PATH, and the allowlist authorizes the hostname
+  # only — it does not constrain path or method. An attacker with their own
+  # Cloudsmith namespace could therefore encode data in a request that the
+  # hostname check would permit, and Cloudsmith surfaces package-request logs to
+  # repository owners. A job's own Cloudsmith repository is added exactly, per
+  # job, via the credential-derived dynamic hosts instead.
+  # Public mirrors (continued).
+  - mirrors.cloud.tencent.com
 
 # ecosystem_default_domains lists the public registry and CDN hosts each
 # Dependabot ecosystem needs. The map is kept keyed by ecosystem for provenance
@@ -118,6 +159,12 @@ shared_registry_domains:
 # accepted-risk note in go_modules), and its virtual-hosted subdomains stay
 # blocked.
 #
+# Ecosystems that share an identical registry set are de-duplicated with a YAML
+# anchor on the first member and an alias on the rest (npm_and_yarn/bun,
+# pip/uv, maven/gradle, docker/docker_compose/devcontainers). Edit the anchored
+# list and every alias follows automatically; do not expand an alias back into a
+# literal copy. TestEgressDefaults_AliasedEcosystemsStayInSync enforces this.
+#
 # Every registered Dependabot ecosystem has an entry. An empty list means the
 # ecosystem reaches only GitHub/Dependabot infrastructure or plain git (covered
 # by github_infra_domains and the job's own git credentials), or its registries
@@ -126,7 +173,7 @@ shared_registry_domains:
 # must match the ecosystem internal names registered in dependabot-core
 # (Dependabot::FileFetchers.register).
 ecosystem_default_domains:
-  npm_and_yarn:
+  npm_and_yarn: &npm_registries
     - registry.npmjs.org
     - registry.yarnpkg.com
     - repo.yarnpkg.com
@@ -139,20 +186,10 @@ ecosystem_default_domains:
     - registry.npm.ouryahoo.com
     - npm.fontawesome.com
     - cdn.sheetjs.com
-  bun:
-    - registry.npmjs.org
-    - registry.yarnpkg.com
-    - repo.yarnpkg.com
-    - jsr.io
-    - registry.bower.io
-    - registry.npmjs.com
-    - registry.npmmirror.com
-    - cdn.npmmirror.com
-    - npm.flatt.tech
-    - registry.npm.ouryahoo.com
-    - npm.fontawesome.com
-    - cdn.sheetjs.com
-  pip:
+    - npm.jsr.io
+    - dl.fontawesome.com
+  bun: *npm_registries
+  pip: &python_registries
     - pypi.org
     - pypi.python.org
     - files.pythonhosted.org
@@ -160,21 +197,16 @@ ecosystem_default_domains:
     - download.pytorch.org
     - pypi.nvidia.com
     - pypi.tuna.tsinghua.edu.cn
-  uv:
-    - pypi.org
-    - pypi.python.org
-    - files.pythonhosted.org
-    - pythonhosted.org
-    - download.pytorch.org
-    - pypi.nvidia.com
-    - pypi.tuna.tsinghua.edu.cn
+    - download-r2.pytorch.org
+    - flashinfer.ai
+  uv: *python_registries
   bundler:
     - rubygems.org
     - index.rubygems.org
     - gems.rubygems.org
     - rails-assets.org
     - gem.coop
-  maven:
+  maven: &jvm_registries
     - repo.maven.apache.org
     - repo1.maven.org
     - plugins.gradle.org
@@ -182,14 +214,7 @@ ecosystem_default_domains:
     - maven.google.com
     - repo.broadcom.com
     - packages.confluent.io
-  gradle:
-    - repo.maven.apache.org
-    - repo1.maven.org
-    - plugins.gradle.org
-    - dl.google.com
-    - maven.google.com
-    - repo.broadcom.com
-    - packages.confluent.io
+  gradle: *jvm_registries
   sbt:
     - repo1.maven.org
     - repo.maven.apache.org
@@ -207,6 +232,7 @@ ecosystem_default_domains:
     - repo.wp-packages.org
     - asset-packagist.org
     - cdn.asset-packagist.org
+    - satis.spatie.be
   go_modules:
     - proxy.golang.org
     - sum.golang.org
@@ -219,6 +245,27 @@ ecosystem_default_domains:
     - go.opentelemetry.io
     - gopkg.in
     - go.yaml.in
+    # Public Go vanity-import hosts (continued). Each serves a fixed "go-import"
+    # meta tag on a project-controlled apex that is not user-creatable.
+    - buf.build
+    - cel.dev
+    - connectrpc.com
+    - filippo.io
+    - go.etcd.io
+    - go.mongodb.org
+    - go.starlark.net
+    - go.uber.org
+    - go4.org
+    - golang.zx2c4.com
+    - gorm.io
+    - k8s.io
+    - layeh.com
+    - modernc.org
+    - mvdan.cc
+    - olympos.io
+    - rsc.io
+    - sigs.k8s.io
+    - storj.io
     # Exact host (apex only). proxy.golang.org (go_modules) and pub.dev (pub)
     # redirect archive downloads to storage.googleapis.com/<bucket>/...; public
     # ecosystems have no job credentials, so blocking the host 403s those
@@ -264,6 +311,19 @@ ecosystem_default_domains:
     # because NuGet restores rely on these rotating CDN hosts.
     - "*vsblobprod*.blob.core.windows.net"
     - "*.vsblob.vsassets.io"
+    # Certificate revocation endpoints. NuGet validates author/repository
+    # signatures on restore, so blocking these stalls or fails verification of
+    # signed packages. All four are CA/Microsoft-operated fixed hosts.
+    - crl3.digicert.com
+    - ocsp.digicert.com
+    - oneocsp.microsoft.com
+    - www.microsoft.com
+    # Azure Artifacts auth (SPS). EXACT hosts only: "<org>.vssps.visualstudio.com"
+    # is a customer-chosen name, so a glob here would be attacker-satisfiable.
+    # Only Microsoft-operated "sps<region>" instances belong on this list; expect
+    # to append further regions as they are observed.
+    - spsprodcus3.vssps.visualstudio.com
+    - spsproduks1.vssps.visualstudio.com
   dotnet_sdk:
     - api.nuget.org
     # Official Microsoft .NET SDK/runtime build hosts.
@@ -272,15 +332,20 @@ ecosystem_default_domains:
   hex:
     - repo.hex.pm
     - hex.pm
+    - builds.hex.pm
   pub:
     - pub.dev
     - pub.dartlang.org
   terraform:
     - registry.terraform.io
     - releases.hashicorp.com
+    # Terraform CLI version check. Alternative: set CHECKPOINT_DISABLE=1 in the
+    # updater image and leave this blocked.
+    - checkpoint-api.hashicorp.com
   opentofu:
     - registry.opentofu.org
     - releases.hashicorp.com
+    - checkpoint-api.hashicorp.com
   elm:
     - package.elm-lang.org
   deno:
@@ -289,8 +354,11 @@ ecosystem_default_domains:
     - registry.npmjs.org
   bazel:
     - bcr.bazel.build
+    - releases.bazel.build
   julia:
     - pkg.julialang.org
+    - us-east.pkg.julialang.org
+    - us-west.pkg.julialang.org
   rust_toolchain:
     - static.rust-lang.org
   conda:
@@ -337,5 +405,6 @@ ecosystem_default_domains:
   # swift builds may also resolve CocoaPods dependencies.
   swift:
     - cocoapods.org
+    - download.swift.org
   vcpkg: []
   pre_commit: []
