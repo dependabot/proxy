@@ -200,6 +200,46 @@ func TestEgressAllowlist_NuGetStorageBackendsAllowed(t *testing.T) {
 	}
 }
 
+func TestEgressAllowlist_GitHubPackagesContentHostsAllowed(t *testing.T) {
+	// GitHub Packages serves registry metadata from *.pkg.github.com but
+	// 302-redirects the actual package download to a per-ecosystem Azure Blob
+	// content host carrying a short-lived SAS token. Blocking the redirect
+	// target fails the download even though the registry request succeeded.
+	// These four hosts are published under domains.packages in
+	// https://api.github.com/meta. They are allowed as EXACT hosts only: an
+	// Azure storage account name is globally unique and these are already
+	// registered to GitHub, so no attacker can claim them.
+	h := newEgressHandler(false, true, "bundler")
+
+	for _, allowed := range []string{
+		"https://rubygems.pkg.github.com/github/gems/github-kredz-0.0.4.gem",
+		"https://rubygemsregistryv2prod.blob.core.windows.net/gems/x.gem?sig=redacted",
+		"https://npmregistryv2prod.blob.core.windows.net/npm/x.tgz?sig=redacted",
+		"https://mavenregistryv2prod.blob.core.windows.net/maven/x.jar?sig=redacted",
+		"https://nugetregistryv2prod.blob.core.windows.net/nuget/x.nupkg?sig=redacted",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "github packages content host allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		// Child hosts: these start passing the moment an entry is widened to a
+		// leading-dot suffix, so they pin the exact-host semantics.
+		"https://evil.rubygemsregistryv2prod.blob.core.windows.net/loot",
+		"https://evil.npmregistryv2prod.blob.core.windows.net/loot",
+		"https://evil.mavenregistryv2prod.blob.core.windows.net/loot",
+		// Lookalike account names must not match.
+		"https://rubygemsregistryv2prodx.blob.core.windows.net/loot",
+		"https://myrubygemsregistryv2prod.blob.core.windows.net/loot",
+		// The shared multi-tenant parent stays closed.
+		"https://attacker.blob.core.windows.net/loot",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "packages entries must not widen to: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
 func TestEgressAllowlist_MultiTenantAWSNamespacesNotGloballyAllowed(t *testing.T) {
 	// A 12-digit AWS account id matches every AWS tenant, so ECR and CodeArtifact
 	// are NOT globally allowlisted (an attacker could use their own account).
