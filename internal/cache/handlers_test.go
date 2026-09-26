@@ -166,6 +166,65 @@ func TestCache(t *testing.T) {
 	})
 }
 
+func TestCache_AcceptedNotCached(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
+		t.Run(method, func(t *testing.T) {
+			cacheDir := t.TempDir()
+			cacher, err := New(true, cacheDir)
+			require.NoError(t, err)
+
+			for _, status := range []int{http.StatusAccepted, http.StatusAccepted, http.StatusOK} {
+				req := httptest.NewRequestWithContext(t.Context(), method, URL, nil)
+				proxyCtx := &goproxy.ProxyCtx{Req: req}
+				_, hit := cacher.OnRequest(req, proxyCtx)
+				if hit != nil {
+					require.NoError(t, hit.Body.Close())
+				}
+				require.Nil(t, hit)
+				assert.False(t, WasResponseCached(proxyCtx))
+
+				body := "response"
+				if method == http.MethodHead {
+					body = ""
+				}
+				originalBody := &closeTrackingReadCloser{Reader: strings.NewReader(body)}
+				resp := &http.Response{
+					Request:       req,
+					StatusCode:    status,
+					Body:          originalBody,
+					ContentLength: int64(len(body)),
+				}
+				resp = cacher.OnResponse(resp, proxyCtx)
+				if status == http.StatusAccepted {
+					if method == http.MethodHead {
+						assert.Equal(t, http.NoBody, resp.Body)
+					} else {
+						assert.Same(t, originalBody, resp.Body)
+					}
+				}
+				data, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+				assert.Equal(t, body, string(data))
+				if status == http.StatusAccepted {
+					assert.Empty(t, cacher.cacheDB)
+					files, err := os.ReadDir(cacheDir)
+					require.NoError(t, err)
+					assert.Empty(t, files)
+				}
+			}
+
+			req := httptest.NewRequestWithContext(t.Context(), method, URL, nil)
+			proxyCtx := &goproxy.ProxyCtx{Req: req}
+			_, hit := cacher.OnRequest(req, proxyCtx)
+			require.NotNil(t, hit)
+			require.NoError(t, hit.Body.Close())
+			assert.Equal(t, http.StatusOK, hit.StatusCode)
+			assert.True(t, WasResponseCached(proxyCtx))
+		})
+	}
+}
+
 func Test_bodyless(t *testing.T) {
 	cases := []struct {
 		name   string

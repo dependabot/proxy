@@ -267,7 +267,7 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 	return r, nil
 }
 
-// OnResponse caches the data in the DB and writes the data to disk.
+// OnResponse caches responses except upgrades and pending asynchronous operations.
 func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if d == nil {
 		// caching disabled
@@ -298,7 +298,8 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 
-	if bodyless(resp.StatusCode, resp.Request.Method) {
+	isBodyless := bodyless(resp.StatusCode, resp.Request.Method)
+	if isBodyless {
 		// Bodyless responses (1xx/204/205/304/HEAD) carry no body. An earlier
 		// response handler may have replaced resp.Body with a wrapper (e.g.
 		// PythonIndexHandler swaps in a replay reader even for http.NoBody), so
@@ -312,6 +313,14 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 			_ = resp.Body.Close()
 			resp.Body = http.NoBody
 		}
+	}
+
+	// Polling must reach upstream again while an asynchronous operation is pending.
+	if resp.StatusCode == http.StatusAccepted {
+		return resp
+	}
+
+	if isBodyless {
 		d.cacheDB[key] = &Entry{
 			Status:          resp.StatusCode,
 			ResponseHeaders: resp.Header,
