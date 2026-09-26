@@ -188,6 +188,9 @@ ecosystem_default_domains:
     - cdn.sheetjs.com
     - npm.jsr.io
     - dl.fontawesome.com
+    # GitHub Packages npm content host; npm.pkg.github.com 302-redirects here.
+    # Exact only; listed in api.github.com/meta domains.packages.
+    - npmregistryv2prod.blob.core.windows.net
   bun: *npm_registries
   pip: &python_registries
     - pypi.org
@@ -206,6 +209,9 @@ ecosystem_default_domains:
     - gems.rubygems.org
     - rails-assets.org
     - gem.coop
+    # GitHub Packages RubyGems content host; rubygems.pkg.github.com redirects here.
+    # Exact only; listed in api.github.com/meta domains.packages.
+    - rubygemsregistryv2prod.blob.core.windows.net
   maven: &jvm_registries
     - repo.maven.apache.org
     - repo1.maven.org
@@ -214,6 +220,9 @@ ecosystem_default_domains:
     - maven.google.com
     - repo.broadcom.com
     - packages.confluent.io
+    # GitHub Packages Maven content host; maven.pkg.github.com 302-redirects here.
+    # Exact only; listed in api.github.com/meta domains.packages.
+    - mavenregistryv2prod.blob.core.windows.net
   gradle: *jvm_registries
   sbt:
     - repo1.maven.org
