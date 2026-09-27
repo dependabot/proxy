@@ -28,7 +28,7 @@ RUN go build -o $GOPATH/bin/dependabot-proxy -ldflags="-w ${INJECTED_VARS} -s"
 
 # ============================================================================
 
-FROM docker.io/library/alpine:3.24.1
+FROM docker.io/library/alpine:3.24.2
 
 LABEL org.opencontainers.image.source="https://github.com/dependabot/proxy"
 
