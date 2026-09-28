@@ -1,11 +1,42 @@
 package handlers
 
 import (
+	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/dependabot/proxy/internal/config"
 )
+
+// ecrHostPattern matches the canonical private ECR registry host,
+// "<account-id>.dkr.ecr.<region>.amazonaws.com", capturing the region.
+//
+// The region is interpolated into an allowlist entry, so the account is anchored
+// to 12 digits and the region to a single dot-free label: a crafted credential
+// must not be able to widen the derived host. A path.Match glob cannot serve
+// here — it has no capture group, and its "*" spans dots.
+var ecrHostPattern = regexp.MustCompile(`^[0-9]{12}\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com$`)
+
+// registryRedirectHosts returns storage backends that a configured registry
+// redirects to on download but that appear in no credential field.
+//
+// Private ECR 307-redirects layer downloads to a per-region, AWS-owned S3
+// bucket. It is derived per job rather than globbed into the static defaults
+// because "prod-<anything>-starport-layer-bucket" is a claimable S3 name, so a
+// glob would hand every job an attacker-registrable destination.
+func registryRedirectHosts(credHosts []string) []string {
+	var hosts []string
+	for _, h := range credHosts {
+		m := ecrHostPattern.FindStringSubmatch(h)
+		if m == nil {
+			continue
+		}
+		region := m[1]
+		hosts = append(hosts, fmt.Sprintf("prod-%s-starport-layer-bucket.s3.%s.amazonaws.com", region, region))
+	}
+	return hosts
+}
 
 // credentialHostKeys are the credential fields that carry a registry host or
 // URL. The host of each is added to the per-job allowlist so that the private
@@ -95,11 +126,19 @@ func oidcExchangeHosts(creds config.Credentials) []string {
 }
 
 // dynamicHosts returns the deduplicated per-job hosts derived from the job's
-// credentials: configured registries and OIDC token-exchange endpoints.
+// credentials: configured registries, OIDC token-exchange endpoints, and the
+// storage backends those registries redirect to for content downloads.
 func dynamicHosts(creds config.Credentials) []string {
+	credHosts := credentialHosts(creds)
+
+	all := make([]string, 0, len(credHosts))
+	all = append(all, credHosts...)
+	all = append(all, oidcExchangeHosts(creds)...)
+	all = append(all, registryRedirectHosts(credHosts)...)
+
 	seen := make(map[string]struct{})
 	var out []string
-	for _, h := range append(credentialHosts(creds), oidcExchangeHosts(creds)...) {
+	for _, h := range all {
 		if _, ok := seen[h]; ok {
 			continue
 		}

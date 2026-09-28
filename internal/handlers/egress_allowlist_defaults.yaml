@@ -26,7 +26,9 @@
 # only ever allowed as an EXACT apex host (never a glob or leading-dot form) and
 # only where a public ecosystem's downloads redirect there; see its accepted-risk
 # note in go_modules. Virtual-hosted "<bucket>.storage.googleapis.com" subdomains
-# stay blocked. The other glob over unreserved shared storage retained here is
+# stay blocked as a class, and are only ever added one exact, already-registered
+# bucket at a time (see maven-central in maven), never as a glob or leading-dot
+# form. The other glob over unreserved shared storage retained here is
 # the NuGet CDN (see its entries), a known, accepted exposure documented at its
 # call site, not a pattern to copy.
 
@@ -147,6 +149,7 @@ shared_registry_domains:
   # job, via the credential-derived dynamic hosts instead.
   # Public mirrors (continued).
   - mirrors.cloud.tencent.com
+  - mirrors.huaweicloud.com
 
 # ecosystem_default_domains lists the public registry and CDN hosts each
 # Dependabot ecosystem needs. The map is kept keyed by ecosystem for provenance
@@ -191,6 +194,16 @@ ecosystem_default_domains:
     # GitHub Packages npm content host; npm.pkg.github.com 302-redirects here.
     # Exact only; listed in api.github.com/meta domains.packages.
     - npmregistryv2prod.blob.core.windows.net
+    # Node.js runtime downloads. pnpm fetches these when a lockfile pins a Node
+    # runtime (devEngines); unofficial-builds serves the musl and other
+    # non-official platform builds. Both are exact entries, so neither opens the
+    # nodejs.org namespace.
+    - nodejs.org
+    - unofficial-builds.nodejs.org
+    # Continuous-release preview packages, published per commit/PR. Shared host
+    # with the namespace in the path; unlike Cloudsmith above it exposes no
+    # per-tenant request logs, so it is listed rather than credential-derived.
+    - pkg.pr.new
   bun: *npm_registries
   pip: &python_registries
     - pypi.org
@@ -223,6 +236,16 @@ ecosystem_default_domains:
     # GitHub Packages Maven content host; maven.pkg.github.com 302-redirects here.
     # Exact only; listed in api.github.com/meta domains.packages.
     - mavenregistryv2prod.blob.core.windows.net
+    # Maven Central's Google-hosted mirror. Exact virtual-hosted buckets only;
+    # the "maven-central" bucket is already owned, so it cannot be claimed.
+    - maven-central.storage.googleapis.com
+    - maven-central.storage-download.googleapis.com
+    # Public vendor/community Maven repositories, served anonymously.
+    - repo.osgeo.org
+    - androidx.dev
+    # packages.atlassian.com 301-redirects to maven.artifacts.atlassian.com.
+    - packages.atlassian.com
+    - maven.artifacts.atlassian.com
   gradle: *jvm_registries
   sbt:
     - repo1.maven.org
@@ -246,7 +269,6 @@ ecosystem_default_domains:
     - proxy.golang.org
     - sum.golang.org
     - .googlesource.com
-    - nodejs.org
     # Public Go module vanity-import hosts (each serves a fixed "go-import"
     # host, not a user-creatable name).
     - golang.org
@@ -284,7 +306,7 @@ ecosystem_default_domains:
     # reaches every bucket, not just the Go/Dart ones — an accepted residual
     # exfiltration risk taken to keep public Go and Dart restores working. The
     # apex entry does NOT match virtual-hosted "<bucket>.storage.googleapis.com"
-    # subdomains, which stay blocked.
+    # subdomains, which stay blocked unless listed exactly (see maven-central).
     - storage.googleapis.com
   docker: &docker_registries
     - registry-1.docker.io
@@ -301,11 +323,25 @@ ecosystem_default_domains:
     - lscr.io
     - .gcr.io
     - .pkg.dev
+    # Vendor-operated public OCI registries that allow anonymous pulls.
+    # docker.getcollate.io fronts Docker Hub via Scarf, so its token service is
+    # auth.docker.io above and its blobs land on the Docker Hub CDN hosts above.
+    - docker.getcollate.io
+    # Elastic's registry, its anonymous token service, and the R2 bucket its
+    # blob downloads 307-redirect to. The bucket host embeds Elastic's own
+    # Cloudflare account hash, so it is exact only: a glob over
+    # *.r2.cloudflarestorage.com would match every Cloudflare tenant.
+    - docker.elastic.co
+    - docker-auth.elastic.co
+    - docker-registry-production.d24a988e385e0074d717b6bdaea58f0d.r2.cloudflarestorage.com
   docker_compose: *docker_registries
   nuget:
     - api.nuget.org
     - www.nuget.org
     - globalcdn.nuget.org
+    # Legacy NuGet endpoint (Microsoft-owned, Akamai-fronted) still requested by
+    # older clients. Every path 404s; allowed so restores see 404, not a block.
+    - data.nuget.org
     # Exact, provider-owned storage backend (the account name is globally unique
     # and already taken by NuGet, so it cannot be spoofed).
     - nugetregistryv2prod.blob.core.windows.net
@@ -368,6 +404,8 @@ ecosystem_default_domains:
     - pkg.julialang.org
     - us-east.pkg.julialang.org
     - us-west.pkg.julialang.org
+    # Official Julia release/artifact storage.
+    - julialang-s3.julialang.org
   rust_toolchain:
     - static.rust-lang.org
   conda:

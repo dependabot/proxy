@@ -240,6 +240,123 @@ func TestEgressAllowlist_GitHubPackagesContentHostsAllowed(t *testing.T) {
 	}
 }
 
+func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
+	// Vendor-operated public OCI registries that serve anonymous pulls. Each
+	// needs its registry host, its token service, and whatever host its blob
+	// downloads redirect to; allowing only the registry fixes tag discovery but
+	// still fails the pull.
+	h := newEgressHandler(false, true, "docker_compose")
+
+	for _, allowed := range []string{
+		"https://docker.getcollate.io/v2/openmetadata/server/tags/list",
+		"https://auth.docker.io/token?service=registry.docker.io", // getcollate's token service
+		"https://docker.elastic.co/v2/elasticsearch/elasticsearch/tags/list",
+		"https://docker-auth.elastic.co/auth?service=token-service",
+		"https://docker-registry-production.d24a988e385e0074d717b6bdaea58f0d.r2.cloudflarestorage.com/docker/registry/v2/blobs/sha256/x/data",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "public vendor OCI host allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		// Child hosts pin the exact-host semantics.
+		"https://evil.docker.elastic.co/v2/",
+		"https://evil.docker.getcollate.io/v2/",
+		"https://evil.docker-registry-production.d24a988e385e0074d717b6bdaea58f0d.r2.cloudflarestorage.com/loot",
+		// R2 is multi-tenant: only Elastic's own account hash is allowed.
+		"https://loot.deadbeefdeadbeefdeadbeefdeadbeef.r2.cloudflarestorage.com/loot",
+		"https://attacker.r2.cloudflarestorage.com/loot",
+		// getcollate fronts Docker Hub through Scarf, which is multi-tenant.
+		"https://attacker.docker.scarf.sh/v2/",
+		"https://docker.scarf.sh/v2/",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "vendor OCI entries must not widen to: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
+func TestEgressAllowlist_NodeRuntimeDownloadsAllowed(t *testing.T) {
+	// pnpm re-resolves a lockfile-pinned Node runtime (devEngines) by fetching
+	// checksums from the Node.js project's unofficial-builds host. Since pnpm
+	// 12.6 a 403 there is fatal, so blocking it fails every dependency.
+	h := newEgressHandler(false, true, "npm_and_yarn")
+
+	for _, allowed := range []string{
+		"https://unofficial-builds.nodejs.org/download/release/v24.20.0/SHASUMS256.txt",
+		"https://unofficial-builds.nodejs.org/download/release/v24.20.0/node-v24.20.0-linux-x64-musl.tar.xz",
+		"https://nodejs.org/dist/v24.20.0/SHASUMS256.txt",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "node runtime download allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		// Both entries are exact; neither opens the nodejs.org namespace.
+		"https://evil.unofficial-builds.nodejs.org/payload",
+		"https://attacker.nodejs.org/payload",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "node entries must not widen to: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+
+	// These entries live under npm_and_yarn, but every job gets the union of all
+	// ecosystem defaults, so a Go job still reaches them.
+	goJob := newEgressHandler(false, true, "go_modules")
+	assert.Nil(t, egressResult(t, goJob, "https://nodejs.org/dist/index.json"),
+		"nodejs.org must stay reachable from a go_modules job")
+}
+
+// TestEgressAllowlist_PublicEcosystemMirrorsAllowed covers the public hosts
+// recorded as blocked during the 25% enforce rollout. Each is anonymous,
+// provider-controlled package infrastructure with no attacker-choosable label.
+func TestEgressAllowlist_PublicEcosystemMirrorsAllowed(t *testing.T) {
+	h := newEgressHandler(false, true, "")
+
+	for _, allowed := range []string{
+		// Legacy NuGet host: Microsoft-owned, every path 404s. Allowed so the
+		// client sees a 404 it handles rather than a proxy block it does not.
+		"https://data.nuget.org/packages/",
+		// Maven Central's Google-hosted mirror.
+		"https://maven-central.storage.googleapis.com/maven2/org/slf4j/slf4j-api/maven-metadata.xml",
+		"https://maven-central.storage-download.googleapis.com/maven2/org/slf4j/slf4j-api/maven-metadata.xml",
+		"https://repo.osgeo.org/repository/release/org/geotools/gt-main/30.0/gt-main-30.0.pom",
+		"https://androidx.dev/snapshots/latest/artifacts/repository/androidx/core/core/maven-metadata.xml",
+		// packages.atlassian.com 301s to maven.artifacts.atlassian.com, so both
+		// ends of the chain must be allowed for a restore to complete.
+		"https://packages.atlassian.com/maven/",
+		"https://maven.artifacts.atlassian.com/",
+		"https://julialang-s3.julialang.org/bin/linux/x64/1.10/julia-1.10.0-linux-x86_64.tar.gz",
+		"https://mirrors.huaweicloud.com/repository/npm/lodash",
+		"https://pkg.pr.new/tinylibs/tinybench@a832a55",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "public ecosystem host allowed: "+allowed)
+	}
+
+	// The maven-central entries are exact virtual-hosted buckets. Adding them
+	// must not make any other bucket reachable as a subdomain, which is the one
+	// way this change could regress the storage.googleapis.com apex exception.
+	for _, blocked := range []string{
+		"https://attacker.storage.googleapis.com/payload",
+		"https://attacker.storage-download.googleapis.com/payload",
+		"https://evil.maven-central.storage.googleapis.com/payload",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "bucket subdomains must stay blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+
+	// Cloudsmith stays blocked: it is the documented precedent for a shared
+	// host whose tenant lives in the path and whose request logs are visible to
+	// the tenant. Adding public mirrors must not erode that rule.
+	resp := egressResult(t, h, "https://dl.cloudsmith.io/org/repo/npm/left-pad")
+	if assert.NotNil(t, resp, "dl.cloudsmith.io must stay blocked") {
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	}
+}
+
 func TestEgressAllowlist_MultiTenantAWSNamespacesNotGloballyAllowed(t *testing.T) {
 	// A 12-digit AWS account id matches every AWS tenant, so ECR and CodeArtifact
 	// are NOT globally allowlisted (an attacker could use their own account).
@@ -521,6 +638,13 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.codeberg.org/owner/repo",
 		"https://evil.gitlab.com/group/project",
 		"https://evil.releases.bazel.build/payload",
+		"https://evil.data.nuget.org/payload",
+		"https://evil.repo.osgeo.org/repository",
+		"https://evil.androidx.dev/snapshots",
+		"https://evil.pkg.pr.new/owner/repo",
+		"https://evil.julialang-s3.julialang.org/bin",
+		"https://evil.maven.artifacts.atlassian.com/maven",
+		"https://evil.mirrors.huaweicloud.com/repository/npm",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -531,6 +655,11 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://attacker.pkg.julialang.org/registries",
 		"https://attacker.digicert.com/payload",
 		"https://attacker.bazel.build/payload",
+		"https://attacker.nuget.org/payload",
+		"https://attacker.osgeo.org/repository",
+		"https://attacker.artifacts.atlassian.com/maven",
+		"https://attacker.huaweicloud.com/repository/npm",
+		"https://attacker.julialang.org/bin",
 		// Cloudsmith is multi-tenant with the tenant in the URL path, and the
 		// allowlist authorizes the hostname only. Neither the tenant subdomain
 		// form nor the shared download hosts may be globally allowed.

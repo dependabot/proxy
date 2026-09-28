@@ -98,3 +98,59 @@ func TestDynamicHosts_Deduplicates(t *testing.T) {
 	got := dynamicHosts(creds)
 	assert.Equal(t, []string{"npm.example.com"}, got)
 }
+
+func TestRegistryRedirectHosts_ECRStarportBucketDerived(t *testing.T) {
+	// Private ECR 307-redirects layer downloads to a per-region AWS-owned S3
+	// bucket that appears in no credential field, so it is derived from the
+	// region named by the job's own ECR credential.
+	creds := config.Credentials{
+		{"type": "docker_registry", "registry": "123456789012.dkr.ecr.eu-west-1.amazonaws.com"},
+	}
+	h := newEgressHandlerWithCreds(creds)
+
+	assert.Nil(t, egressResult(t, h, "https://123456789012.dkr.ecr.eu-west-1.amazonaws.com/v2/chart/manifests/1.0.0"),
+		"the ECR registry itself must be allowed")
+	assert.Nil(t, egressResult(t, h, "https://prod-eu-west-1-starport-layer-bucket.s3.eu-west-1.amazonaws.com/blob?X-Amz-Signature=x"),
+		"the ECR layer bucket for the credential's region must be allowed")
+
+	for _, blocked := range []string{
+		// Only the region the job actually uses is opened.
+		"https://prod-us-east-1-starport-layer-bucket.s3.us-east-1.amazonaws.com/loot",
+		// Dynamic hosts are matched exactly, so no child or lookalike widens it.
+		"https://evil.prod-eu-west-1-starport-layer-bucket.s3.eu-west-1.amazonaws.com/loot",
+		"https://prod-eu-west-1-starport-layer-bucket.s3.amazonaws.com/loot",
+		// The shared parent namespace stays closed.
+		"https://attacker-bucket.s3.eu-west-1.amazonaws.com/loot",
+	} {
+		assert.NotNil(t, egressResult(t, h, blocked), "must remain blocked: "+blocked)
+	}
+}
+
+func TestRegistryRedirectHosts_OnlyCanonicalECRHosts(t *testing.T) {
+	// The region is interpolated into an allowlist entry, so the pattern must
+	// not match anything an attacker-supplied credential could bend.
+	none := []string{
+		"public.ecr.aws",                                  // public ECR has no starport backend
+		"12345.dkr.ecr.eu-west-1.amazonaws.com",           // account id must be 12 digits
+		"123456789012.dkr.ecr.amazonaws.com",              // missing region
+		"123456789012.dkr.ecr.a.b.amazonaws.com",          // region must be a single label
+		"123456789012.dkr.ecr.eu-west-1.amazonaws.com.cn", // different partition
+		"123456789012.dkr.ecr.eu-west-1.evil.com",         // suffix must be amazonaws.com
+		"evil.com",
+	}
+	for _, h := range none {
+		assert.Empty(t, registryRedirectHosts([]string{h}), "must derive nothing from %q", h)
+	}
+
+	assert.Equal(t,
+		[]string{"prod-us-east-2-starport-layer-bucket.s3.us-east-2.amazonaws.com"},
+		registryRedirectHosts([]string{"123456789012.dkr.ecr.us-east-2.amazonaws.com"}))
+}
+
+func TestRegistryRedirectHosts_NotAddedWithoutECRCredential(t *testing.T) {
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "docker_registry", "registry": "https://registry.internal.example.com"},
+	})
+	assert.NotNil(t, egressResult(t, h, "https://prod-eu-west-1-starport-layer-bucket.s3.eu-west-1.amazonaws.com/loot"),
+		"layer bucket must not be allowed for a job with no ECR credential")
+}
