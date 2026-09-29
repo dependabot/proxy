@@ -26,15 +26,60 @@ Ask the requester for the host, the package ecosystem, and — if they have it �
 
 If the host is private or multi-tenant, the correct outcome of this skill is a clear explanation and **no code change**. That is a success, not a failure.
 
-## Step 2 — Verify the host is real and public
+**This step is the gate.** Only a host you have classified as public, provider-controlled infrastructure proceeds to step 2. Step 2 does not revisit this decision — it cannot (see the warning there) — so a misclassification here is never caught later.
+
+### Signals that a host is a private or tenant-specific registry
+
+These are not proof, but each should send you back to the table above:
+
+- **A wildcard certificate whose parent domain is a known multi-tenant provider** — `CN=*.jfrog.io`, `CN=*.cloudsmith.io`, `CN=*.fury.io`, `CN=*.myget.org`. This shows the *provider* owns the domain; it says nothing about the tenant being public. Note the inverse is not a signal: `*.julialang.org` and `*.huaweicloud.com` are wildcards on genuinely public infrastructure, so judge the parent domain, not the wildcard.
+- **A redirect to a registry vendor's marketing site** — `package-manager.aa.com` and `dl.cloudsmith.io` both 302 to `https://cloudsmith.com/`. A private tenant fronted by a hosted registry commonly advertises its backing vendor this way.
+- **An organisation name in the host** that matches the requester rather than an ecosystem (`artifactory.<company>.com`, `npm.<company>.com`, `<company>.jfrog.io`).
+- **A credentialed response** — `401`/`403` on a real artifact path means the host expects authentication, which is what `registries:` is for.
+
+## Step 2 — Confirm the host is safe to probe, and gather ownership evidence
+
+> **A passing `verify_host` does NOT authorise an addition.** It answers "is it safe for *me* to send a request here?" — not "is this host public infrastructure?". Most private registries pass it: `package-manager.aa.com`, `dl.cloudsmith.io` and `centraluhg.jfrog.io` all resolve to public IPs and serve valid certificates. A private registry that is properly internet-facing is indistinguishable from public infrastructure at this layer. Step 1 is what decides; this step only keeps the probe itself safe and collects evidence for the PR.
 
 Never add a host on the strength of a report alone.
 
+A reported hostname is untrusted input. Validate it as a bare DNS hostname *before* it reaches any command, require every resolved address to be public, and walk redirects one hop at a time — `curl -L` will happily follow a public host to loopback, RFC1918, link-local, or metadata endpoints.
+
 ```bash
-curl -sS -o /dev/null -w '%{http_code} %{url_effective}\n' -L --max-time 15 "https://<host>/"
+verify_host() {
+  local host="$1" ip ips
+  # Reject anything that is not a bare DNS hostname, before it reaches a command.
+  if ! printf '%s' "$host" | grep -qE '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$'; then
+    echo "REJECT: not a bare DNS hostname"; return 1
+  fi
+  # Every resolved address must be public.
+  ips=$(dig +short "$host" A; dig +short "$host" AAAA)
+  ips=$(printf '%s\n' "$ips" | grep -E '^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[0-9a-fA-F:]+)$')
+  [ -z "$ips" ] && { echo "REJECT: does not resolve"; return 1; }
+  for ip in $ips; do
+    case "$ip" in
+      10.*|127.*|0.*|169.254.*|192.168.*|::1|fc*|fd*|fe80*) echo "REJECT: non-public $ip"; return 1;;
+      172.1[6-9].*|172.2[0-9].*|172.3[01].*) echo "REJECT: non-public $ip"; return 1;;
+      100.6[4-9].*|100.[7-9][0-9].*|100.1[01][0-9].*|100.12[0-7].*) echo "REJECT: CGNAT $ip"; return 1;;
+    esac
+  done
+  echo "OK: $host -> $(printf '%s' "$ips" | tr '\n' ' ')"
+  # One hop at a time. Re-run verify_host on any next_hop before following it.
+  curl -sS -o /dev/null --max-time 15 --proto '=https' --max-redirs 0 \
+       -w '    status=%{http_code} next_hop=%{redirect_url}\n' "https://$host/<real/artifact/path>" || true
+  # Ownership evidence, not just reachability.
+  echo | openssl s_client -connect "$host:443" -servername "$host" 2>/dev/null \
+    | openssl x509 -noout -subject -issuer 2>/dev/null | sed 's/^/    /'
+}
+
+verify_host '<host>'
 ```
 
-Confirm it resolves, is reachable without credentials, and looks like the package infrastructure it's claimed to be. If it redirects, note the final host — **the redirect target may be the host that actually needs allowlisting**, and it is often a different one.
+Reachability alone is **not** sufficient evidence — it proves the host answers, not that the claimed provider controls it, and certainly not that it is public. Require authoritative corroboration: a TLS certificate whose subject/issuer belongs to the provider, an entry in a provider-published list such as `api.github.com/meta`, or the provider's own documentation. Check the certificate against the private-registry signals in step 1 before treating it as supporting evidence. A host that merely responds is not yet a candidate.
+
+Probe a **real artifact path**, not `/`. Root probes mislead: `data.nuget.org/` 404s and `packages.atlassian.com/` 401s, while both serve packages correctly on their real paths.
+
+If it redirects, re-run `verify_host` on the target before following it — **the redirect target may be the host that actually needs allowlisting**, and it is often a different one.
 
 ## Step 3 — Choose the matching form
 
@@ -101,16 +146,20 @@ Confirm with the user before pushing. Then:
 git checkout -b <user>/allowlist-<short-host-slug>
 git add internal/handlers/egress_allowlist_defaults.yaml internal/handlers/egress_allowlist_test.go
 git commit
-gh pr create --fill
+gh pr create --template .github/pull_request_template.md
 ```
 
-If you lack write access to `dependabot/proxy`, push to a fork and use `gh pr create --repo dependabot/proxy`.
+`--template` opens the repository template for completion. Do not use `--fill`: it takes the title and body from commit data and skips template selection entirely, producing a PR that omits the required sections.
 
-Use `.github/pull_request_template.md`. The description should state what the host serves, which ecosystem needs it, evidence it's public provider-controlled infrastructure, and why the chosen matching form is safe. Only tick checklist boxes you actually verified.
+If you lack write access to `dependabot/proxy`, push to a fork and use `gh pr create --repo dependabot/proxy --template .github/pull_request_template.md`.
+
+Complete every section of the template. The description should state what the host serves, which ecosystem needs it, the authoritative evidence that it is public provider-controlled infrastructure, and why the chosen matching form is safe. Only tick checklist boxes you actually verified.
 
 ## Guardrails
 
-- Never add a host you could not reach or identify in step 2.
+- Never add a host you could not reach in step 2, or for which you have no authoritative provider evidence. Reachability alone is not evidence of ownership.
+- Never treat a passing `verify_host` as permission to add a host. It checks probe safety, not whether the host is public — private registries pass it routinely. Step 1 is the gate.
+- Never interpolate a reported hostname into a command before validating it as a bare DNS hostname, and never follow redirects with `curl -L` during verification — validate each hop's address is public first.
 - Never add a private, internal, or customer-tenant host to the static defaults — route it to `registries:` in `dependabot.yml`.
 - Never widen an existing exact entry to a leading-dot or glob form as a shortcut for a subdomain report. Add the specific subdomain.
 - Never commit unrelated changes, and never commit scratch or triage files to the repo root.
