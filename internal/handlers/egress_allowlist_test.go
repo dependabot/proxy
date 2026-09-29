@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"path"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -913,4 +916,114 @@ func TestEgressDefaults_LoadedFromYAML(t *testing.T) {
 	}
 	assert.Contains(t, allEcosystemDomains, "registry.npmjs.org")
 	assert.Contains(t, allEcosystemDomains, "pypi.org")
+}
+
+// TestEgressDefaults_NoRedundantEntries pins the YAML source, not the computed
+// union. The union builder deduplicates, so a host listed twice in the file is
+// absorbed silently and TestEgressDefaults_LoadedFromYAML still passes. That
+// makes redundant entries invisible in review: they accumulate, imply a host
+// needs listing in several places, and make removing one occurrence look
+// sufficient when it is not.
+//
+// Note the aliased ecosystems (npm_and_yarn/bun, pip/uv, maven/gradle,
+// docker/docker_compose/devcontainers) legitimately resolve to identical
+// slices, so duplicates are counted per distinct source list, not per key.
+func TestEgressDefaults_NoRedundantEntries(t *testing.T) {
+	withinList := func(t *testing.T, label string, hosts []string) {
+		t.Helper()
+		seen := make(map[string]struct{}, len(hosts))
+		for _, host := range hosts {
+			key := strings.ToLower(host)
+			_, dup := seen[key]
+			assert.Falsef(t, dup, "%s lists %q more than once", label, host)
+			seen[key] = struct{}{}
+		}
+	}
+
+	withinList(t, "github_infra_domains", githubInfraDomains)
+	withinList(t, "shared_registry_domains", sharedRegistryDomains)
+
+	// Distinct source lists only: aliased ecosystems share one backing slice.
+	checked := make(map[string]bool)
+	for _, ecosystem := range slices.Sorted(maps.Keys(ecosystemDefaultDomains)) {
+		hosts := ecosystemDefaultDomains[ecosystem]
+		fingerprint := strings.Join(hosts, "\n")
+		if checked[fingerprint] {
+			continue
+		}
+		checked[fingerprint] = true
+		withinList(t, "ecosystem "+ecosystem, hosts)
+	}
+
+	// A host must not be repeated across the always-applied sections. Every one
+	// of these is applied to every job, so a second listing is pure redundancy.
+	// Ecosystem keys are compared against the shared/infra lists rather than
+	// each other: two ecosystems legitimately naming the same public registry
+	// is the documented reason the union exists.
+	//
+	// knownProvenanceCopies grandfathers hosts that are deliberately listed
+	// twice because the ecosystem map doubles as documentation. Keep this set
+	// small and justify every addition — it exists so that genuinely accidental
+	// duplicates still fail.
+	knownProvenanceCopies := map[string]string{
+		// ghcr.io is GitHub infrastructure, but the container ecosystems list it
+		// too so their entries read as a complete registry set.
+		"ghcr.io": "documents that container ecosystems pull from GHCR",
+	}
+
+	always := map[string]string{}
+	for _, host := range githubInfraDomains {
+		always[strings.ToLower(host)] = "github_infra_domains"
+	}
+	for _, host := range sharedRegistryDomains {
+		key := strings.ToLower(host)
+		if where, ok := always[key]; ok {
+			assert.Failf(t, "redundant entry",
+				"%q is in both %s and shared_registry_domains", host, where)
+		}
+		always[key] = "shared_registry_domains"
+	}
+	for _, ecosystem := range slices.Sorted(maps.Keys(ecosystemDefaultDomains)) {
+		for _, host := range ecosystemDefaultDomains[ecosystem] {
+			key := strings.ToLower(host)
+			if _, allowed := knownProvenanceCopies[key]; allowed {
+				continue
+			}
+			if where, ok := always[key]; ok {
+				assert.Failf(t, "redundant entry",
+					"%q is in ecosystem %q and also in %s; the union applies both to every job",
+					host, ecosystem, where)
+			}
+		}
+	}
+
+	// An exact host that an existing leading-dot or glob entry already covers is
+	// dead weight: it can be deleted with no behaviour change, and its presence
+	// falsely implies the namespace is not already open.
+	var patterns []string
+	for _, host := range allDefaultDomains() {
+		if strings.HasPrefix(host, ".") || isGlobPattern(host) {
+			patterns = append(patterns, host)
+		}
+	}
+	for _, host := range allDefaultDomains() {
+		if strings.HasPrefix(host, ".") || isGlobPattern(host) {
+			continue
+		}
+		for _, pattern := range patterns {
+			assert.Falsef(t, hostMatchesAllowlistEntry(host, pattern),
+				"exact entry %q is already covered by %q; remove the redundant entry "+
+					"(or, if %q must stay exact, narrow %q)", host, pattern, host, pattern)
+		}
+	}
+}
+
+// allDefaultDomains returns every host listed anywhere in the defaults file.
+func allDefaultDomains() []string {
+	hosts := slices.Clone(githubInfraDomains)
+	hosts = append(hosts, sharedRegistryDomains...)
+	for _, ecosystem := range slices.Sorted(maps.Keys(ecosystemDefaultDomains)) {
+		hosts = append(hosts, ecosystemDefaultDomains[ecosystem]...)
+	}
+	return hosts
 }

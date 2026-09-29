@@ -93,9 +93,22 @@ The rule for the non-exact forms: every label the pattern matches must be **enti
 
 ## Step 4 — Place the entry
 
+First, confirm it isn't already allowed:
+
+```bash
+grep -n '<host>' internal/handlers/egress_allowlist_defaults.yaml
+go test ./internal/handlers/ -run TestEgressDefaults_NoRedundantEntries -count=1
+```
+
+`grep` catches an exact repeat. It does **not** catch a host already covered by a leading-dot or glob entry — `foo.github.com` is redundant because `.github.com` exists — so also scan the file's leading-dot and `*` entries for one that would match. If the host is already allowed, the correct outcome is no code change; report where it is covered and stop.
+
+Then choose the section:
+
 - `github_infra_domains` — GitHub/Dependabot infrastructure only. Don't add third-party hosts here.
 - `shared_registry_domains` — hosts genuinely used by more than one ecosystem.
 - `ecosystem_default_domains.<ecosystem>` — the normal case.
+
+Add the host to exactly one section. Every section is applied to every job, so listing it twice is redundant, not safer.
 
 Keep entries in the existing grouping and ordering of that section, and add a brief comment saying what the host serves when it isn't self-evident.
 
@@ -162,6 +175,7 @@ Complete every section of the template. The description should state what the ho
 - Never interpolate a reported hostname into a command before validating it as a bare DNS hostname, and never follow redirects with `curl -L` during verification — validate each hop's address is public first.
 - Never add a private, internal, or customer-tenant host to the static defaults — route it to `registries:` in `dependabot.yml`.
 - Never widen an existing exact entry to a leading-dot or glob form as a shortcut for a subdomain report. Add the specific subdomain.
+- Never add a host that is already allowed. Before editing, check for an exact repeat **and** for an existing leading-dot or glob entry that already covers it — a redundant entry changes nothing, implies the namespace is not already open, and makes deleting one copy look sufficient when it is not. `TestEgressDefaults_NoRedundantEntries` enforces this; run it before opening a PR.
 - Never commit unrelated changes, and never commit scratch or triage files to the repo root.
 - Treat a reported hostname as untrusted input: quote it in shell variables rather than interpolating it into the middle of a command.
 
