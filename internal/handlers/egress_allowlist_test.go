@@ -256,6 +256,14 @@ func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
 		"https://docker.elastic.co/v2/elasticsearch/elasticsearch/tags/list",
 		"https://docker-auth.elastic.co/auth?service=token-service",
 		"https://docker-registry-production.d24a988e385e0074d717b6bdaea58f0d.r2.cloudflarestorage.com/docker/registry/v2/blobs/sha256/x/data",
+		// Chainguard: registry, same-host token service, and its own R2 account.
+		"https://cgr.dev/v2/chainguard/wolfi-base/manifests/latest",
+		"https://cgr.dev/token?scope=repository:chainguard/wolfi-base:pull&service=cgr.dev",
+		"https://9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com/chainguard-images-prod/sha256%3Aabc",
+		// Red Hat UBI: anonymous, no token service, blobs land on the Quay CDN.
+		"https://registry.access.redhat.com/v2/ubi9/ubi-minimal/tags/list",
+		"https://registry.access.redhat.com/v2/ubi9/ubi-minimal/manifests/latest",
+		"https://cdn01.quay.io/quayio-production-s3/sha256/33/33f1abc",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor OCI host allowed: "+allowed)
 	}
@@ -265,6 +273,11 @@ func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
 		"https://evil.docker.elastic.co/v2/",
 		"https://evil.docker.getcollate.io/v2/",
 		"https://evil.docker-registry-production.d24a988e385e0074d717b6bdaea58f0d.r2.cloudflarestorage.com/loot",
+		"https://evil.cgr.dev/v2/",
+		"https://evil.registry.access.redhat.com/v2/",
+		// R2 is multi-tenant: only Elastic's and Chainguard's own account hashes
+		// are allowed, never a sibling account or the parent domain.
+		"https://evil.9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com/loot",
 		// R2 is multi-tenant: only Elastic's own account hash is allowed.
 		"https://loot.deadbeefdeadbeefdeadbeefdeadbeef.r2.cloudflarestorage.com/loot",
 		"https://attacker.r2.cloudflarestorage.com/loot",
@@ -274,6 +287,44 @@ func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "vendor OCI entries must not widen to: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
+// TestEgressAllowlist_QuayCDNSubdomainsAllowed pins the deliberate leading-dot
+// entry for Quay. The exact apex entry that preceded it did NOT match the
+// cdn01-cdn04.quay.io blob CDN, so pulls from any quay.io-hosted image were
+// blocked at the blob step while tag discovery appeared to work.
+//
+// The leading-dot form is safe here specifically because Quay's tenancy is
+// path-based (quay.io/<org>/<repo>): a user cannot provision <name>.quay.io, so
+// no matched label is attacker-choosable. Do not copy this to a registry that
+// hands out subdomains.
+func TestEgressAllowlist_QuayCDNSubdomainsAllowed(t *testing.T) {
+	h := newEgressHandler(false, true, "docker")
+
+	for _, allowed := range []string{
+		"https://quay.io/v2/prometheus/busybox/tags/list",
+		"https://cdn01.quay.io/quayio-production-s3/sha256/33/abc",
+		"https://cdn02.quay.io/quayio-production-s3/sha256/33/abc",
+		// Quay may add CDN hosts; the suffix form must keep covering them.
+		"https://cdn99.quay.io/quayio-production-s3/sha256/33/abc",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "quay host allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		// The suffix must not be satisfiable by an attacker-registered parent.
+		"https://quay.io.attacker.com/v2/",
+		"https://evil.quay.io.attacker.com/v2/",
+		"https://notquay.io/v2/",
+		// Red Hat's authenticated registry is deliberately excluded: it needs a
+		// Red Hat login, so it belongs in `registries:`, not the defaults.
+		"https://registry.redhat.io/v2/ubi9/ubi-minimal/manifests/latest",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "quay entry must not widen to: "+blocked) {
 			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 		}
 	}
@@ -333,6 +384,15 @@ func TestEgressAllowlist_PublicEcosystemMirrorsAllowed(t *testing.T) {
 		"https://julialang-s3.julialang.org/bin/linux/x64/1.10/julia-1.10.0-linux-x86_64.tar.gz",
 		"https://mirrors.huaweicloud.com/repository/npm/lodash",
 		"https://pkg.pr.new/tinylibs/tinybench@a832a55",
+		// Maven Central's EU download mirror, a sibling of the buckets above.
+		"https://maven-central-eu.storage-download.googleapis.com/maven2/org/slf4j/slf4j-api/2.0.13/slf4j-api-2.0.13.pom",
+		// Vaadin release/add-on repositories.
+		"https://maven.vaadin.com/vaadin-addons/org/vaadin/artur/a-vaadin-helper/maven-metadata.xml",
+		"https://maven.vaadin.com/vaadin-releases/com/vaadin/flow-server/maven-metadata.xml",
+		// Mojang library host used by Minecraft mod builds.
+		"https://libraries.minecraft.net/com/mojang/brigadier/1.0.18/brigadier-1.0.18.jar",
+		// Backstage version manifests.
+		"https://versions.backstage.io/v1/tags/main/manifest.json",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public ecosystem host allowed: "+allowed)
 	}
@@ -344,9 +404,19 @@ func TestEgressAllowlist_PublicEcosystemMirrorsAllowed(t *testing.T) {
 		"https://attacker.storage.googleapis.com/payload",
 		"https://attacker.storage-download.googleapis.com/payload",
 		"https://evil.maven-central.storage.googleapis.com/payload",
+		"https://evil.maven-central-eu.storage-download.googleapis.com/payload",
+		// The new vendor entries are exact hosts: no child may inherit them,
+		// and no lookalike parent may match them.
+		"https://evil.maven.vaadin.com/payload",
+		"https://maven.vaadin.com.attacker.com/payload",
+		"https://vaadin.com/payload",
+		"https://evil.libraries.minecraft.net/payload",
+		"https://libraries.minecraft.net.attacker.com/payload",
+		"https://evil.versions.backstage.io/payload",
+		"https://backstage.io/payload",
 	} {
 		resp := egressResult(t, h, blocked)
-		if assert.NotNil(t, resp, "bucket subdomains must stay blocked: "+blocked) {
+		if assert.NotNil(t, resp, "exact entries must not widen: "+blocked) {
 			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 		}
 	}
@@ -1026,4 +1096,52 @@ func allDefaultDomains() []string {
 		hosts = append(hosts, ecosystemDefaultDomains[ecosystem]...)
 	}
 	return hosts
+}
+
+// Changelog and release-note hosts are reached by following package metadata
+// (PyPI project_urls, POM <url>), not by resolving dependencies. They are
+// allowed so pull requests keep their release notes; every entry is exact.
+func TestEgressAllowlist_ChangelogHostsAllowed(t *testing.T) {
+	h := newEgressHandler(false, true, "")
+
+	for _, allowed := range []string{
+		"https://docs.pytest.org/en/stable/changelog.html",
+		"https://docs.sqlalchemy.org/en/20/changelog/",
+		"https://alembic.sqlalchemy.org/en/latest/changelog.html",
+		"https://anyio.readthedocs.io/en/stable/versionhistory.html",
+		"https://commons.apache.org/proper/commons-lang/changes.html",
+		"https://developer.android.com/jetpack/androidx/releases/core",
+		// Both ends of the two cross-host redirect chains.
+		"https://docs.pydantic.dev/latest/changelog/",
+		"https://pydantic.dev/docs/validation/latest/get-started/changelog/",
+		"https://psycopg.org/docs/news.html",
+		"https://www.psycopg.org/docs/news.html",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "changelog host allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		// readthedocs.io subdomains are project-creatable, so allowing one
+		// project must not expose the namespace or its apex.
+		"https://evil.readthedocs.io/payload",
+		"https://readthedocs.io/payload",
+		"https://evil.anyio.readthedocs.io/payload",
+		// Issue trackers, code browsers and vendor doc portals are deliberately
+		// excluded: they carry no changelog Dependabot renders.
+		"https://issues.apache.org/jira/browse/LANG",
+		"https://cs.android.com/android/platform/superproject",
+		"https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/home.html",
+		// Exact entries must not widen to children or lookalike parents.
+		"https://evil.docs.pytest.org/payload",
+		"https://docs.pytest.org.attacker.com/payload",
+		"https://pytest.org/payload",
+		"https://evil.developer.android.com/payload",
+		"https://android.com/payload",
+		"https://apache.org/payload",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
 }

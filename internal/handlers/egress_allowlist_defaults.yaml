@@ -204,6 +204,9 @@ ecosystem_default_domains:
     # with the namespace in the path; unlike Cloudsmith above it exposes no
     # per-tenant request logs, so it is listed rather than credential-derived.
     - pkg.pr.new
+    # Backstage's published version manifests, read by the Backstage CLI during
+    # upgrades. Anonymous, no redirects.
+    - versions.backstage.io
   bun: *npm_registries
   pip: &python_registries
     - pypi.org
@@ -215,6 +218,21 @@ ecosystem_default_domains:
     - pypi.tuna.tsinghua.edu.cn
     - download-r2.pytorch.org
     - flashinfer.ai
+    # Changelog/release-note hosts, not registries. Dependabot follows the
+    # project_urls it reads from PyPI metadata to render release notes in pull
+    # requests; blocking these degrades PR bodies but never breaks resolution.
+    # All exact: readthedocs.io subdomains in particular are project-creatable,
+    # so ".readthedocs.io" must never be used here.
+    - docs.pytest.org
+    - docs.sqlalchemy.org
+    - alembic.sqlalchemy.org
+    - anyio.readthedocs.io
+    # docs.pydantic.dev 301-redirects to pydantic.dev, and psycopg.org 302s to
+    # www.psycopg.org, so both ends of each chain are required.
+    - docs.pydantic.dev
+    - pydantic.dev
+    - psycopg.org
+    - www.psycopg.org
   uv: *python_registries
   bundler:
     - rubygems.org
@@ -240,9 +258,18 @@ ecosystem_default_domains:
     # the "maven-central" bucket is already owned, so it cannot be claimed.
     - maven-central.storage.googleapis.com
     - maven-central.storage-download.googleapis.com
+    - maven-central-eu.storage-download.googleapis.com
     # Public vendor/community Maven repositories, served anonymously.
     - repo.osgeo.org
     - androidx.dev
+    # Vaadin's release/add-on repositories; anonymous, no redirects.
+    - maven.vaadin.com
+    # Mojang's library host for Minecraft mod builds; anonymous, no redirects.
+    - libraries.minecraft.net
+    # Changelog/release-note hosts, not registries; sourced from POM <url> and
+    # AndroidX release pages. See the note in the pip list above.
+    - commons.apache.org
+    - developer.android.com
     # packages.atlassian.com 301-redirects to maven.artifacts.atlassian.com.
     - packages.atlassian.com
     - maven.artifacts.atlassian.com
@@ -318,7 +345,9 @@ ecosystem_default_domains:
     - production.cloudfront.docker.com
     - ghcr.io
     - mcr.microsoft.com
-    - quay.io
+    # Leading-dot: Quay tenancy is path-based (quay.io/<org>/<repo>), so every
+    # subdomain is Red Hat-operated and none is user-creatable.
+    - .quay.io
     - public.ecr.aws
     - lscr.io
     - .gcr.io
@@ -334,6 +363,15 @@ ecosystem_default_domains:
     - docker.elastic.co
     - docker-auth.elastic.co
     - docker-registry-production.d24a988e385e0074d717b6bdaea58f0d.r2.cloudflarestorage.com
+    # Chainguard. Its token service is cgr.dev/token (same host); blobs
+    # 307-redirect to Chainguard's own R2 account, exact for the reason above.
+    - cgr.dev
+    - 9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com
+    # Red Hat's anonymous UBI registry: /v2/ answers 200 with no challenge, so
+    # there is no token service. Blobs 302-redirect to cdn01.quay.io, covered
+    # by .quay.io above. registry.redhat.io is deliberately absent: it requires
+    # a Red Hat login and so belongs in `registries:`.
+    - registry.access.redhat.com
   docker_compose: *docker_registries
   nuget:
     - api.nuget.org
@@ -432,7 +470,9 @@ ecosystem_default_domains:
     - production.cloudfront.docker.com
     - ghcr.io
     - mcr.microsoft.com
-    - quay.io
+    # Leading-dot for the same reason as the docker list: Quay tenancy is
+    # path-based, so its cdnNN blob hosts are provider-controlled.
+    - .quay.io
     - public.ecr.aws
     - .gcr.io
     - .pkg.dev
