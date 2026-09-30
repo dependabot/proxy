@@ -233,6 +233,16 @@ ecosystem_default_domains:
     - pydantic.dev
     - psycopg.org
     - www.psycopg.org
+    - cryptography.io
+    - numpy.org
+    - docs.sentry.io
+    - coverage.readthedocs.io
+    - reference.langchain.com
+    - developer.nvidia.com
+    # cloud.google.com 301-redirects to docs.cloud.google.com, so both ends of
+    # the chain are required.
+    - cloud.google.com
+    - docs.cloud.google.com
   uv: *python_registries
   bundler:
     - rubygems.org
@@ -243,6 +253,8 @@ ecosystem_default_domains:
     # GitHub Packages RubyGems content host; rubygems.pkg.github.com redirects here.
     # Exact only; listed in api.github.com/meta domains.packages.
     - rubygemsregistryv2prod.blob.core.windows.net
+    # Gem documentation host, read for release notes. Not a registry.
+    - rubydoc.info
   maven: &jvm_registries
     - repo.maven.apache.org
     - repo1.maven.org
@@ -270,6 +282,13 @@ ecosystem_default_domains:
     # AndroidX release pages. See the note in the pip list above.
     - commons.apache.org
     - developer.android.com
+    # Public vendor Maven repositories, verified anonymous with no redirects.
+    - nexus.payara.fish
+    - repository.mulesoft.org
+    - maven.repository.redhat.com
+    - artifacts.alfresco.com
+    - repo.grails.org
+    - releases.aspose.com
     # packages.atlassian.com 301-redirects to maven.artifacts.atlassian.com.
     - packages.atlassian.com
     - maven.artifacts.atlassian.com
@@ -292,6 +311,9 @@ ecosystem_default_domains:
     - asset-packagist.org
     - cdn.asset-packagist.org
     - satis.spatie.be
+    # Composer repository published via GitHub Pages. Exact only:
+    # github.io subdomains are user-creatable.
+    - wp-languages.github.io
   go_modules:
     - proxy.golang.org
     - sum.golang.org
@@ -335,6 +357,9 @@ ecosystem_default_domains:
     # apex entry does NOT match virtual-hosted "<bucket>.storage.googleapis.com"
     # subdomains, which stay blocked unless listed exactly (see maven-central).
     - storage.googleapis.com
+    # Go package documentation, read when resolving module metadata and
+    # release notes. Not a module proxy.
+    - pkg.go.dev
   docker: &docker_registries
     - registry-1.docker.io
     - auth.docker.io
@@ -429,6 +454,8 @@ ecosystem_default_domains:
     - registry.opentofu.org
     - releases.hashicorp.com
     - checkpoint-api.hashicorp.com
+    # OpenTofu's public registry API, serving provider/module metadata.
+    - api.opentofu.org
   elm:
     - package.elm-lang.org
   deno:

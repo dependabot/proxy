@@ -1145,3 +1145,106 @@ func TestEgressAllowlist_ChangelogHostsAllowed(t *testing.T) {
 		}
 	}
 }
+
+// Public vendor registries surfaced by the 75% enforce rollout. Each was
+// verified to serve a real artifact anonymously with no cross-origin redirect.
+func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
+	h := newEgressHandler(false, true, "")
+
+	for _, allowed := range []string{
+		"https://nexus.payara.fish/repository/payara-artifacts/fish/payara/api/payara-bom/maven-metadata.xml",
+		"https://repository.mulesoft.org/nexus/content/repositories/public/org/mule/mule-core/maven-metadata.xml",
+		"https://maven.repository.redhat.com/ga/org/jboss/jboss-parent/maven-metadata.xml",
+		"https://artifacts.alfresco.com/nexus/content/repositories/public/org/alfresco/alfresco-core/maven-metadata.xml",
+		"https://repo.grails.org/grails/core/org/grails/grails-core/maven-metadata.xml",
+		"https://releases.aspose.com/java/repo/com/aspose/aspose-words/maven-metadata.xml",
+		"https://api.opentofu.org/registry/docs/providers/hashicorp/aws/index.json",
+		"https://wp-languages.github.io/packages.json",
+		"https://pkg.go.dev/github.com/gorilla/mux",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		// github.io subdomains are user-creatable, so one Pages repository must
+		// not expose the namespace or any sibling.
+		"https://github.io/payload",
+		"https://evil.github.io/payload",
+		"https://evil.wp-languages.github.io/payload",
+		// repo.magento.com returns 401: it needs a registries: credential, so
+		// allowlisting the public hosts must not quietly cover it.
+		"https://repo.magento.com/packages.json",
+		// Multi-tenant hosts whose tenant lives in the path stay blocked, per
+		// the dl.cloudsmith.io precedent.
+		"https://packagecloud.io/org/repo/packages",
+		"https://api.cloudsmith.io/v1/packages/org/repo/",
+		// Exact entries must not widen to children or lookalike parents.
+		"https://evil.nexus.payara.fish/payload",
+		"https://payara.fish/payload",
+		"https://evil.api.opentofu.org/payload",
+		"https://opentofu.org/payload",
+		"https://evil.pkg.go.dev/payload",
+		"https://repo.grails.org.attacker.com/payload",
+		// Every exact entry gets a child probe so a later widening to a
+		// leading-dot suffix cannot pass silently.
+		"https://evil.repo.grails.org/payload",
+		"https://grails.org/payload",
+		"https://evil.repository.mulesoft.org/payload",
+		"https://evil.maven.repository.redhat.com/payload",
+		"https://evil.artifacts.alfresco.com/payload",
+		"https://evil.releases.aspose.com/payload",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
+// Second wave of changelog hosts, from the 75% rollout. Same rationale as
+// TestEgressAllowlist_ChangelogHostsAllowed: metadata links, not resolution.
+func TestEgressAllowlist_ChangelogHostsSecondWaveAllowed(t *testing.T) {
+	h := newEgressHandler(false, true, "")
+
+	for _, allowed := range []string{
+		"https://cryptography.io/en/latest/changelog/",
+		"https://numpy.org/doc/stable/release.html",
+		"https://docs.sentry.io/platforms/python/",
+		"https://coverage.readthedocs.io/en/latest/changes.html",
+		"https://reference.langchain.com/python/",
+		"https://developer.nvidia.com/cuda-toolkit",
+		"https://rubydoc.info/gems/rails",
+		// cloud.google.com 301s to docs.cloud.google.com; both ends required.
+		"https://cloud.google.com/python/docs/reference",
+		"https://docs.cloud.google.com/python/docs/reference",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "changelog host allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		// The Google Cloud web console is a sign-in flow, not a registry, and
+		// allowing cloud.google.com must not reach it.
+		"https://console.cloud.google.com/",
+		// A project_urls community link, deliberately not allowlisted.
+		"https://www.reddit.com/r/python/",
+		// readthedocs.io stays exact-only: subdomains are project-creatable.
+		"https://evil.readthedocs.io/payload",
+		"https://evil.coverage.readthedocs.io/payload",
+		// Exact entries must not widen.
+		"https://evil.numpy.org/payload",
+		"https://evil.cloud.google.com/payload",
+		"https://google.com/payload",
+		"https://cryptography.io.attacker.com/payload",
+		"https://evil.cryptography.io/payload",
+		"https://evil.docs.sentry.io/payload",
+		"https://evil.reference.langchain.com/payload",
+		"https://evil.developer.nvidia.com/payload",
+		"https://evil.rubydoc.info/payload",
+		"https://evil.docs.cloud.google.com/payload",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
