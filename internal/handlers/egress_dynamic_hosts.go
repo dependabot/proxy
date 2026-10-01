@@ -18,6 +18,11 @@ import (
 // here — it has no capture group, and its "*" spans dots.
 var ecrHostPattern = regexp.MustCompile(`^[0-9]{12}\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com$`)
 
+// gemfuryStorageHost is the single Gemfury-owned S3 bucket that every Gemfury
+// registry (pypi.fury.io, npm.fury.io, ...) 302-redirects package downloads to
+// via short-lived pre-signed URLs.
+const gemfuryStorageHost = "gemfury.s3-accelerate.dualstack.amazonaws.com"
+
 // registryRedirectHosts returns storage backends that a configured registry
 // redirects to on download but that appear in no credential field.
 //
@@ -25,15 +30,22 @@ var ecrHostPattern = regexp.MustCompile(`^[0-9]{12}\.dkr\.ecr\.([a-z0-9-]+)\.ama
 // bucket. It is derived per job rather than globbed into the static defaults
 // because "prod-<anything>-starport-layer-bucket" is a claimable S3 name, so a
 // glob would hand every job an attacker-registrable destination.
+//
+// Gemfury redirects to one fixed bucket shared by all Gemfury accounts, with
+// the account in the URL path. It is derived per job rather than added to the
+// static defaults because allowing a shared multi-tenant host there would open
+// every tenant's content to every job. The derived host is a constant, so a
+// crafted credential cannot widen it.
 func registryRedirectHosts(credHosts []string) []string {
 	var hosts []string
 	for _, h := range credHosts {
-		m := ecrHostPattern.FindStringSubmatch(h)
-		if m == nil {
-			continue
+		if m := ecrHostPattern.FindStringSubmatch(h); m != nil {
+			region := m[1]
+			hosts = append(hosts, fmt.Sprintf("prod-%s-starport-layer-bucket.s3.%s.amazonaws.com", region, region))
 		}
-		region := m[1]
-		hosts = append(hosts, fmt.Sprintf("prod-%s-starport-layer-bucket.s3.%s.amazonaws.com", region, region))
+		if strings.HasSuffix(h, ".fury.io") {
+			hosts = append(hosts, gemfuryStorageHost)
+		}
 	}
 	return hosts
 }

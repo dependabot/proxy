@@ -147,6 +147,67 @@ func TestRegistryRedirectHosts_OnlyCanonicalECRHosts(t *testing.T) {
 		registryRedirectHosts([]string{"123456789012.dkr.ecr.us-east-2.amazonaws.com"}))
 }
 
+func TestRegistryRedirectHosts_GemfuryStorageDerived(t *testing.T) {
+	// Gemfury 302-redirects package downloads from every registry endpoint to a
+	// single Gemfury-owned S3 bucket via pre-signed URLs, so the bucket is
+	// derived from the job's own Gemfury credential.
+	creds := config.Credentials{
+		{"type": "python_index", "index-url": "https://pypi.fury.io/acme/"},
+	}
+	h := newEgressHandlerWithCreds(creds)
+
+	assert.Nil(t, egressResult(t, h, "https://pypi.fury.io/acme/-/ver_x/pkg-1.0.0-py3-none-any.whl"),
+		"the Gemfury registry itself must be allowed")
+	assert.Nil(t, egressResult(t, h, "https://gemfury.s3-accelerate.dualstack.amazonaws.com/gems/x/pkg_whl?X-Amz-Signature=x"),
+		"the Gemfury storage bucket must be allowed")
+
+	for _, blocked := range []string{
+		// Dynamic hosts are matched exactly, so no child or lookalike widens it.
+		"https://evil.gemfury.s3-accelerate.dualstack.amazonaws.com/loot",
+		"https://gemfuryx.s3-accelerate.dualstack.amazonaws.com/loot",
+		"https://gemfury.s3.amazonaws.com/loot",
+		// The shared parent namespace stays closed.
+		"https://attacker.s3-accelerate.dualstack.amazonaws.com/loot",
+	} {
+		assert.NotNil(t, egressResult(t, h, blocked), "must remain blocked: "+blocked)
+	}
+}
+
+func TestRegistryRedirectHosts_OnlyGemfuryHosts(t *testing.T) {
+	for _, h := range []string{
+		"pypi.fury.io",
+		"npm.fury.io",
+		"npm-proxy.fury.io",
+		"gem.fury.io",
+	} {
+		assert.Equal(t, []string{gemfuryStorageHost}, registryRedirectHosts([]string{h}),
+			"must derive the Gemfury bucket from %q", h)
+	}
+
+	for _, h := range []string{
+		"fury.io",               // apex is not a registry endpoint
+		"pypi.fury.io.evil.com", // suffix must be fury.io
+		"pypifury.io",
+		"evil.com",
+	} {
+		assert.Empty(t, registryRedirectHosts([]string{h}), "must derive nothing from %q", h)
+	}
+
+	// Several Gemfury credentials still yield a single entry.
+	assert.Equal(t, []string{"pypi.fury.io", "npm.fury.io", gemfuryStorageHost}, dynamicHosts(config.Credentials{
+		{"type": "python_index", "index-url": "https://pypi.fury.io/acme/"},
+		{"type": "npm_registry", "registry": "https://npm.fury.io/acme/"},
+	}))
+}
+
+func TestRegistryRedirectHosts_NotAddedWithoutGemfuryCredential(t *testing.T) {
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "https://pypi.internal.example.com/simple"},
+	})
+	assert.NotNil(t, egressResult(t, h, "https://gemfury.s3-accelerate.dualstack.amazonaws.com/gems/x/loot"),
+		"Gemfury bucket must not be allowed for a job with no Gemfury credential")
+}
+
 func TestRegistryRedirectHosts_NotAddedWithoutECRCredential(t *testing.T) {
 	h := newEgressHandlerWithCreds(config.Credentials{
 		{"type": "docker_registry", "registry": "https://registry.internal.example.com"},
