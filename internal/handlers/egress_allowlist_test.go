@@ -1318,6 +1318,11 @@ func TestEgressAllowlist_PublicRegistriesThirdWaveAllowed(t *testing.T) {
 		"https://evil.pkg.kzu.app/payload",
 		"https://evil.archivist.terraform.io/payload",
 		"https://evil.storage.julialang.net/payload",
+		// The two exact S3 entries need child probes of their own: the sibling
+		// and apex probes above catch a glob or a path-style widening, but only
+		// these catch the entry being changed to a leading-dot suffix.
+		"https://evil.a8c-libs.s3.amazonaws.com/payload",
+		"https://evil.julialang-storage-us-east-1.s3.us-east-1.amazonaws.com/payload",
 		// Lookalike parents and suffix-appending attacker domains.
 		"https://bintray.com/payload",
 		"https://talend.com/payload",
