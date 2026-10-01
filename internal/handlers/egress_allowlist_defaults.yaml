@@ -243,6 +243,9 @@ ecosystem_default_domains:
     # the chain are required.
     - cloud.google.com
     - docs.cloud.google.com
+    - click.palletsprojects.com
+    - pytest-mock.readthedocs.io
+    - redis.readthedocs.io
   uv: *python_registries
   bundler:
     - rubygems.org
@@ -292,6 +295,30 @@ ecosystem_default_domains:
     # packages.atlassian.com 301-redirects to maven.artifacts.atlassian.com.
     - packages.atlassian.com
     - maven.artifacts.atlassian.com
+    # Public vendor/community Maven repositories, verified anonymous: each
+    # returns 404 (not 401) for an absent artifact, so no auth is demanded.
+    - repo.opencollab.dev
+    - maven.restlet.talend.com
+    - maven.fpregistry.io
+    - repo.essentialsx.net
+    - repo.dmulloy2.net
+    - api.xposed.info
+    - packages.nuxeo.com
+    - maven.fullstory.com
+    - maven.lokalise.com
+    - repository.medallia.com
+    - jogamp.org
+    # JCenter is retired but still 301-redirects to repo1.maven.org, which is
+    # already allowed; only the entry point of the chain needs listing.
+    - jcenter.bintray.com
+    # Exact only. GitHub Pages hosts this vendor's Maven repo, but "*.github.io"
+    # is user-creatable, so a leading-dot entry would be an exfiltration channel.
+    - salesforce-marketingcloud.github.io
+    # Exact virtual-hosted S3 bucket (Automattic's public Android libraries).
+    # Never the path-style "s3.amazonaws.com" apex, which reaches every bucket.
+    - a8c-libs.s3.amazonaws.com
+    # Changelog/release-note host for Log4j and friends, not a registry.
+    - logging.apache.org
   gradle: *jvm_registries
   sbt:
     - repo1.maven.org
@@ -418,6 +445,8 @@ ecosystem_default_domains:
     # possible exfiltration destination. They are retained only
     # because NuGet restores rely on these rotating CDN hosts.
     - "*vsblobprod*.blob.core.windows.net"
+    # Public community NuGet feed, serving an anonymous v3 service index.
+    - pkg.kzu.app
     - "*.vsblob.vsassets.io"
     # Certificate revocation endpoints. NuGet validates author/repository
     # signatures on restore, so blocking these stalls or fails verification of
@@ -450,6 +479,8 @@ ecosystem_default_domains:
     # Terraform CLI version check. Alternative: set CHECKPOINT_DISABLE=1 in the
     # updater image and leave this blocked.
     - checkpoint-api.hashicorp.com
+    # Module archive downloads from the public registry.
+    - archivist.terraform.io
   opentofu:
     - registry.opentofu.org
     - releases.hashicorp.com
@@ -471,6 +502,16 @@ ecosystem_default_domains:
     - us-west.pkg.julialang.org
     # Official Julia release/artifact storage.
     - julialang-s3.julialang.org
+    # storage.julialang.net 302-redirects package tarballs to the exact
+    # virtual-hosted bucket below, so both ends of the chain are required.
+    #
+    # The bucket is pinned exactly rather than globbed over the region: only
+    # "julialang-storage-us-east-1" exists today, and sibling names such as
+    # "julialang-storage-eu-west-1" are unclaimed, so a
+    # "julialang-storage-*.s3.*.amazonaws.com" pattern would point at an
+    # attacker-registrable bucket. If Julia adds a region, add it here.
+    - storage.julialang.net
+    - julialang-storage-us-east-1.s3.us-east-1.amazonaws.com
   rust_toolchain:
     - static.rust-lang.org
   conda:

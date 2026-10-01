@@ -1248,3 +1248,131 @@ func TestEgressAllowlist_ChangelogHostsSecondWaveAllowed(t *testing.T) {
 		}
 	}
 }
+
+func TestEgressAllowlist_PublicRegistriesThirdWaveAllowed(t *testing.T) {
+	h := newEgressHandler(false, true, "")
+
+	for _, allowed := range []string{
+		"https://repo.opencollab.dev/maven-releases/org/geysermc/geyser/maven-metadata.xml",
+		"https://maven.restlet.talend.com/org/restlet/jse/org.restlet/maven-metadata.xml",
+		"https://maven.fpregistry.io/releases/io/fairyproject/maven-metadata.xml",
+		"https://repo.essentialsx.net/releases/net/essentialsx/EssentialsX/maven-metadata.xml",
+		"https://repo.dmulloy2.net/repository/public/com/comphenix/protocol/ProtocolLib/maven-metadata.xml",
+		"https://api.xposed.info/api/de/robv/android/xposed/api/maven-metadata.xml",
+		"https://packages.nuxeo.com/repository/maven-public/org/nuxeo/maven-metadata.xml",
+		"https://maven.fullstory.com/com/fullstory/gradle-plugin/maven-metadata.xml",
+		"https://maven.lokalise.com/com/lokalise/sdk/maven-metadata.xml",
+		"https://repository.medallia.com/artifactory/public/com/medallia/maven-metadata.xml",
+		"https://jogamp.org/deployment/maven/org/jogamp/gluegen/maven-metadata.xml",
+		"https://jcenter.bintray.com/com/google/guava/guava/maven-metadata.xml",
+		"https://salesforce-marketingcloud.github.io/MarketingCloudSDK-Android/maven-metadata.xml",
+		"https://a8c-libs.s3.amazonaws.com/android/com/automattic/maven-metadata.xml",
+		"https://pkg.kzu.app/index.json",
+		"https://archivist.terraform.io/v1/object/abc123",
+		"https://storage.julialang.net/registries/23338594-aafe-5451-b93e-139f81909106",
+		"https://julialang-storage-us-east-1.s3.us-east-1.amazonaws.com/package/abc",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "public registry allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		// Path-style shared object storage must never be allowlisted: the apex
+		// reaches every bucket, so only the exact virtual-hosted bucket is listed.
+		"https://s3.amazonaws.com/attacker-bucket/payload",
+		"https://s3.us-east-1.amazonaws.com/attacker-bucket/payload",
+		"https://s3-us-west-2.amazonaws.com/attacker-bucket/payload",
+		// Sibling Julia bucket names are unclaimed and therefore registrable, so
+		// the region must never be globbed.
+		"https://julialang-storage-eu-west-1.s3.eu-west-1.amazonaws.com/payload",
+		"https://julialang-storage-evil.s3.us-east-1.amazonaws.com/payload",
+		// github.io subdomains are user-creatable; one Pages repo must not
+		// expose the namespace or any sibling.
+		"https://evil.salesforce-marketingcloud.github.io/payload",
+		// Hosts that return 401 need a registries: credential. Allowlisting the
+		// public set must not quietly cover them.
+		"https://mobile-sdks.forter.com/android/maven-metadata.xml",
+		"https://nuget.devexpress.com/api/v3/index.json",
+		// Commercial feeds tenanted by a license key in the path.
+		"https://nuget.hangfire.io/pro/v3/index.json",
+		"https://nuget.abp.io/key/v3/index.json",
+		"https://registry.nes.herodevs.com/angular/core",
+		"https://connect.advancedcustomfields.com/v1/plugins/download",
+		// Application Insights telemetry ingestion, not a registry.
+		"https://dc.services.visualstudio.com/v2/track",
+		// Retired Bintray download host; only the JCenter redirector is listed.
+		"https://dl.bintray.com/payload",
+		// Every exact entry gets a child probe so a later widening to a
+		// leading-dot suffix cannot pass silently.
+		"https://evil.repo.opencollab.dev/payload",
+		"https://evil.maven.restlet.talend.com/payload",
+		"https://evil.maven.fpregistry.io/payload",
+		"https://evil.repo.essentialsx.net/payload",
+		"https://evil.repo.dmulloy2.net/payload",
+		"https://evil.api.xposed.info/payload",
+		"https://evil.packages.nuxeo.com/payload",
+		"https://evil.maven.fullstory.com/payload",
+		"https://evil.maven.lokalise.com/payload",
+		"https://evil.repository.medallia.com/payload",
+		"https://evil.jogamp.org/payload",
+		"https://evil.jcenter.bintray.com/payload",
+		"https://evil.pkg.kzu.app/payload",
+		"https://evil.archivist.terraform.io/payload",
+		"https://evil.storage.julialang.net/payload",
+		// Lookalike parents and suffix-appending attacker domains.
+		"https://bintray.com/payload",
+		"https://talend.com/payload",
+		"https://nuxeo.com/payload",
+		"https://fullstory.com/payload",
+		"https://lokalise.com/payload",
+		"https://medallia.com/payload",
+		"https://essentialsx.net/payload",
+		"https://xposed.info/payload",
+		"https://julialang.net/payload",
+		"https://archivist.terraform.io.attacker.com/payload",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
+func TestEgressAllowlist_ChangelogHostsThirdWaveAllowed(t *testing.T) {
+	h := newEgressHandler(false, true, "")
+
+	for _, allowed := range []string{
+		"https://click.palletsprojects.com/en/stable/changes/",
+		"https://pytest-mock.readthedocs.io/en/latest/changelog.html",
+		"https://redis.readthedocs.io/en/stable/",
+		"https://logging.apache.org/log4j/2.x/release-notes.html",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "changelog host allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		// readthedocs.io subdomains are project-creatable, so each entry stays
+		// exact and the namespace itself must never resolve.
+		"https://readthedocs.io/payload",
+		"https://evil.readthedocs.io/payload",
+		"https://evil.pytest-mock.readthedocs.io/payload",
+		"https://evil.redis.readthedocs.io/payload",
+		// Child probes guard against a later widening to a leading-dot suffix.
+		"https://evil.click.palletsprojects.com/payload",
+		"https://evil.logging.apache.org/payload",
+		// Lookalike parents and suffix-appending attacker domains.
+		"https://palletsprojects.com/payload",
+		"https://logging.apache.org.attacker.com/payload",
+		// Issue trackers and code browsers carry no renderable changelog.
+		"https://issues.apache.org/jira/browse/LOG4J2-1",
+		"https://cs.android.com/android/platform/superproject",
+		"https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/home.html",
+		// Chat and link-aggregator hosts reached via project_urls metadata.
+		"https://gitter.im/org/room",
+		"https://www.reddit.com/r/python/",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
