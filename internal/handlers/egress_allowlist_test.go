@@ -718,6 +718,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.julialang-s3.julialang.org/bin",
 		"https://evil.maven.artifacts.atlassian.com/maven",
 		"https://evil.mirrors.huaweicloud.com/repository/npm",
+		"https://evil.dotnetcli.blob.core.windows.net/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -901,6 +902,7 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 		"https://repo.broadcom.com/artifactory/repo",
 		"https://builds.dotnet.microsoft.com/dotnet/Sdk/x.zip",
 		"https://ci.dot.net/public/dotnet/x.nupkg",
+		"https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json",
 		"https://charts.bitnami.com/bitnami/index.yaml",
 		"https://charts.jetstack.io/charts/cert-manager.tgz",
 		"https://prometheus-community.github.io/helm-charts/index.yaml",
