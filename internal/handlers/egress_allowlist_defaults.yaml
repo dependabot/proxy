@@ -73,6 +73,7 @@ shared_registry_domains:
   - jfrog-prod-use1-shared-virginia-main.s3.amazonaws.com
   - jfrog-prod-usw2-shared-oregon-main.s3.amazonaws.com
   - jfrog-prod-use1-dedicated-virginia-main.s3.amazonaws.com
+  - gemfury.s3-accelerate.dualstack.amazonaws.com
   - pkgs.dev.azure.com
   - jitpack.io
   # NOTE: AWS CodeArtifact endpoints

@@ -552,6 +552,28 @@ func TestEgressAllowlist_JFrogS3BucketsAllowedButSharedS3Blocked(t *testing.T) {
 	}
 }
 
+func TestEgressAllowlist_GemfuryS3BucketAllowedButSharedS3Blocked(t *testing.T) {
+	// Gemfury serves pip and npm (among others) and redirects downloads from all
+	// of them to one bucket, so it must be reachable from each ecosystem.
+	for _, ecosystem := range []string{"pip", "npm_and_yarn"} {
+		h := newEgressHandler(false, true, ecosystem)
+		assert.Nil(t, egressResult(t, h, "https://gemfury.s3-accelerate.dualstack.amazonaws.com/gems/x/pkg_whl?X-Amz-Signature=x"),
+			"Gemfury S3 bucket allowed for "+ecosystem)
+	}
+
+	h := newEgressHandler(false, true, "pip")
+	for _, blocked := range []string{
+		"https://gemfuryx.s3-accelerate.dualstack.amazonaws.com/loot",
+		"https://attacker.s3-accelerate.dualstack.amazonaws.com/loot",
+		"https://s3-accelerate.dualstack.amazonaws.com/attacker-bucket/loot",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "shared S3 accelerate host must be blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
 func TestEgressAllowlist_NewExactDomainsAllowed(t *testing.T) {
 	h := newEgressHandler(false, true, "npm_and_yarn")
 
@@ -718,6 +740,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.julialang-s3.julialang.org/bin",
 		"https://evil.maven.artifacts.atlassian.com/maven",
 		"https://evil.mirrors.huaweicloud.com/repository/npm",
+		"https://evil.gemfury.s3-accelerate.dualstack.amazonaws.com/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
