@@ -213,6 +213,9 @@ ecosystem_default_domains:
     - pypi.python.org
     - files.pythonhosted.org
     - pythonhosted.org
+    # Gemfury package downloads redirect to signed URLs in this shared bucket.
+    # Exact host only; customer objects share it, so no S3 namespace wildcard.
+    - gemfury.s3-accelerate.dualstack.amazonaws.com
     - download.pytorch.org
     - pypi.nvidia.com
     - pypi.tuna.tsinghua.edu.cn
