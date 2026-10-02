@@ -562,6 +562,7 @@ func TestEgressAllowlist_NewExactDomainsAllowed(t *testing.T) {
 		"https://maven.google.com/androidx/pkg.pom",
 		"https://packages.drupal.org/8/packages.json",
 		"https://packages.confluent.io/maven/pkg.jar",
+		"https://gemfury.s3-accelerate.dualstack.amazonaws.com/packages/example/example-1.0.0-py3-none-any.whl",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "new exact host allowed: "+allowed)
 	}
@@ -696,6 +697,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 	// moment its entry is changed to a leading-dot suffix, so this is the probe
 	// set that actually pins exact-host semantics.
 	childProbes := []string{
+		"https://evil.gemfury.s3-accelerate.dualstack.amazonaws.com/payload",
 		"https://evil.appboy.github.io/payload",
 		"https://evil.juliaregistries.github.io/payload",
 		"https://evil.spsprodcus3.vssps.visualstudio.com/_signin",
@@ -723,6 +725,8 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
 	// parent namespace closed ("*.github.io", "*.vssps.visualstudio.com").
 	siblingProbes := []string{
+		"https://attacker.s3-accelerate.dualstack.amazonaws.com/payload",
+		"https://s3-accelerate.dualstack.amazonaws.com/attacker/payload",
 		"https://attacker.github.io/payload",
 		"https://attacker.vssps.visualstudio.com/_signin",
 		"https://attacker.pkg.julialang.org/registries",
