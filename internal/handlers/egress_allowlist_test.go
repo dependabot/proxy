@@ -1267,6 +1267,7 @@ func TestEgressAllowlist_PublicRegistriesThirdWaveAllowed(t *testing.T) {
 		"https://jcenter.bintray.com/com/google/guava/guava/maven-metadata.xml",
 		"https://salesforce-marketingcloud.github.io/MarketingCloudSDK-Android/maven-metadata.xml",
 		"https://a8c-libs.s3.amazonaws.com/android/com/automattic/maven-metadata.xml",
+		"https://nuxeo-devtools-nexus-central.s3.eu-west-1.amazonaws.com/storage/content/2026/10/01/22/02/82a2a8b2-184e-44a0-bc23-13e331e9fe10.bytes",
 		"https://pkg.kzu.app/index.json",
 		"https://archivist.terraform.io/v1/object/abc123",
 		"https://storage.julialang.net/registries/23338594-aafe-5451-b93e-139f81909106",
@@ -1285,6 +1286,10 @@ func TestEgressAllowlist_PublicRegistriesThirdWaveAllowed(t *testing.T) {
 		// the region must never be globbed.
 		"https://julialang-storage-eu-west-1.s3.eu-west-1.amazonaws.com/payload",
 		"https://julialang-storage-evil.s3.us-east-1.amazonaws.com/payload",
+		// Sibling Nuxeo bucket names are unregistered and therefore claimable,
+		// so neither the bucket nor the region may be globbed.
+		"https://nuxeo-devtools-nexus-evil.s3.eu-west-1.amazonaws.com/payload",
+		"https://nuxeo-devtools-nexus-central.s3.us-east-1.amazonaws.com/payload",
 		// github.io subdomains are user-creatable; one Pages repo must not
 		// expose the namespace or any sibling.
 		"https://evil.salesforce-marketingcloud.github.io/payload",
@@ -1318,11 +1323,12 @@ func TestEgressAllowlist_PublicRegistriesThirdWaveAllowed(t *testing.T) {
 		"https://evil.pkg.kzu.app/payload",
 		"https://evil.archivist.terraform.io/payload",
 		"https://evil.storage.julialang.net/payload",
-		// The two exact S3 entries need child probes of their own: the sibling
+		// The exact S3 entries need child probes of their own: the sibling
 		// and apex probes above catch a glob or a path-style widening, but only
 		// these catch the entry being changed to a leading-dot suffix.
 		"https://evil.a8c-libs.s3.amazonaws.com/payload",
 		"https://evil.julialang-storage-us-east-1.s3.us-east-1.amazonaws.com/payload",
+		"https://evil.nuxeo-devtools-nexus-central.s3.eu-west-1.amazonaws.com/payload",
 		// Lookalike parents and suffix-appending attacker domains.
 		"https://bintray.com/payload",
 		"https://talend.com/payload",
