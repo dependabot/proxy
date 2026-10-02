@@ -498,6 +498,11 @@ ecosystem_default_domains:
     # Official Microsoft .NET SDK/runtime build hosts.
     - builds.dotnet.microsoft.com
     - ci.dot.net
+    # .NET release metadata index (releases-index.json), served from Microsoft's
+    # production Azure Blob storage (documented in dotnet/core). Exact host: the
+    # "dotnetcli" account is globally unique and Microsoft-owned, so it cannot be
+    # spoofed.
+    - dotnetcli.blob.core.windows.net
   hex:
     - repo.hex.pm
     - hex.pm
