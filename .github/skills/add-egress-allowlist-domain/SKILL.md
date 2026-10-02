@@ -20,7 +20,7 @@ Ask the requester for the host, the package ecosystem, and — if they have it �
 |---|---|---|
 | **Public, provider-controlled package infrastructure** | public registry, mirror, CDN, checksum/CRL endpoint, public VCS forge | **Add to the YAML.** Continue to step 2. |
 | **Private, internal, or org-specific registry** | `artifacts.acme-corp.internal`, `acme.jfrog.io`, a self-hosted Nexus/Artifactory | **Do not add.** Tell the user to declare it under `registries:` in their `dependabot.yml`. Those hosts are allowlisted per-job automatically by `internal/handlers/egress_dynamic_hosts.go`. Stop here. |
-| **Shared multi-tenant host where the tenant is in the URL path** | `dl.cloudsmith.io`, generic object-store download hosts | **Do not add.** The handler authorizes the **hostname only** — it never constrains path or method — so allowing the host grants every tenant's content to every job. Explain this and stop. |
+| **Shared multi-tenant host where the tenant is in the URL path** | `dl.cloudsmith.io`, generic object-store download hosts | **Do not add to the static sections.** The handler authorizes the **hostname only** — it never constrains path or method — so allowing the host grants every tenant's content to every job. If the host is the download target a configured registry *redirects* to, add it under `registry_redirect_derivations:` instead, where it is allowed only for jobs holding that registry's credential. Otherwise explain this and stop. |
 | **User-uploadable file hosting** | `downloads.sourceforge.net`, arbitrary release-file mirrors | **Do not add** without explicit maintainer sign-off. Flag it and ask. |
 | **Documentation, changelog, or homepage host** | project docs sites, blog domains | **Usually don't add.** These fail gracefully — `dependabot-core`'s metadata finder treats a non-200 as "no metadata", so the only loss is a missing changelog link in the PR body. Say so and ask whether it's worth it. |
 
@@ -107,8 +107,9 @@ Then choose the section:
 - `github_infra_domains` — GitHub/Dependabot infrastructure only. Don't add third-party hosts here.
 - `shared_registry_domains` — hosts genuinely used by more than one ecosystem.
 - `ecosystem_default_domains.<ecosystem>` — the normal case.
+- `registry_redirect_derivations` — **not** a static section: the host is allowed only for jobs whose credentials name the matching registry. Use it when a configured registry redirects downloads to a provider-owned storage host that step 1 ruled out of the static sections. Entries are `credential_host` (exact, or leading dot for any subdomain) plus `derived` (exact hosts only; globs are rejected at startup).
 
-Add the host to exactly one section. Every section is applied to every job, so listing it twice is redundant, not safer.
+Add the host to exactly one section. Every static section is applied to every job, so listing it twice is redundant, not safer.
 
 Keep entries in the existing grouping and ordering of that section, and add a brief comment saying what the host serves when it isn't self-evident.
 

@@ -19,39 +19,21 @@ import (
 // here — it has no capture group, and its "*" spans dots.
 var ecrHostPattern = regexp.MustCompile(`^[0-9]{12}\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com$`)
 
-// packagecloudDownloadHost is the CloudFront distribution that packagecloud.io
-// 302-redirects every package download to, across all of its ecosystems.
-const packagecloudDownloadHost = "d3fo0g5hm7lbuv.cloudfront.net"
-
 // registryRedirectDerivation maps a credential host to the fixed storage hosts
 // that registry redirects downloads to. The derived hosts are constants, so a
 // crafted credential cannot widen the destination.
 type registryRedirectDerivation struct {
-	// credentialHost matches exactly, or, with a leading dot, any subdomain of
+	// CredentialHost matches exactly, or, with a leading dot, any subdomain of
 	// that domain but not the apex.
-	credentialHost string
-	derived        []string
+	CredentialHost string   `yaml:"credential_host"`
+	Derived        []string `yaml:"derived"`
 }
 
-// registryRedirectDerivations are derived per job rather than listed in the
-// static defaults because each target is one bucket shared by all of that
-// provider's tenants, with the tenant in the URL path.
-var registryRedirectDerivations = []registryRedirectDerivation{
-	{
-		credentialHost: "packagecloud.io",
-		derived:        []string{packagecloudDownloadHost},
-	},
-	// Every Gemfury endpoint (pypi., npm., gem., ...) redirects downloads to
-	// pre-signed URLs on one Gemfury-owned bucket, reachable on both its
-	// dualstack and plain Transfer Acceleration endpoints.
-	{
-		credentialHost: ".fury.io",
-		derived: []string{
-			"gemfury.s3-accelerate.dualstack.amazonaws.com",
-			"gemfury.s3-accelerate.amazonaws.com",
-		},
-	},
-}
+// registryRedirectDerivations is loaded from the registry_redirect_derivations
+// section of egress_allowlist_defaults.yaml, which documents the rules for
+// adding one. Derivations whose target embeds a credential-derived value (ECR)
+// stay in registryRedirectHosts below.
+var registryRedirectDerivations []registryRedirectDerivation
 
 // registryRedirectHosts returns storage backends that a configured registry
 // redirects to on download but that appear in no credential field.
@@ -68,7 +50,7 @@ func registryRedirectHosts(credHosts []string) []string {
 
 		for _, derivation := range registryRedirectDerivations {
 			if derivation.matches(h) {
-				hosts = append(hosts, derivation.derived...)
+				hosts = append(hosts, derivation.Derived...)
 			}
 		}
 
@@ -81,10 +63,10 @@ func registryRedirectHosts(credHosts []string) []string {
 }
 
 func (d registryRedirectDerivation) matches(host string) bool {
-	if strings.HasPrefix(d.credentialHost, ".") {
-		return strings.HasSuffix(host, d.credentialHost)
+	if strings.HasPrefix(d.CredentialHost, ".") {
+		return strings.HasSuffix(host, d.CredentialHost)
 	}
-	return helpers.AreHostnamesEqual(host, d.credentialHost)
+	return helpers.AreHostnamesEqual(host, d.CredentialHost)
 }
 
 // credentialHostKeys are the credential fields that carry a registry host or

@@ -988,6 +988,46 @@ func TestEgressDefaults_LoadedFromYAML(t *testing.T) {
 	assert.Contains(t, allEcosystemDomains, "pypi.org")
 }
 
+func TestEgressDefaults_RegistryRedirectDerivationsLoadedFromYAML(t *testing.T) {
+	require.NotEmpty(t, registryRedirectDerivations, "derivations loaded from YAML")
+
+	// The embedded defaults must satisfy the rules enforced at startup.
+	assert.NoError(t, validateRegistryRedirectDerivations(registryRedirectDerivations))
+
+	assert.Equal(t, []string{"d3fo0g5hm7lbuv.cloudfront.net"},
+		registryRedirectHosts([]string{"packagecloud.io"}))
+	assert.Equal(t,
+		[]string{
+			"gemfury.s3-accelerate.dualstack.amazonaws.com",
+			"gemfury.s3-accelerate.amazonaws.com",
+		},
+		registryRedirectHosts([]string{"pypi.fury.io"}))
+}
+
+func TestValidateRegistryRedirectDerivations_RejectsUnmatchableEntries(t *testing.T) {
+	// Derived hosts join the dynamic hosts, which are matched exactly, so a glob
+	// or leading-dot entry would silently never match.
+	cases := map[string]registryRedirectDerivation{
+		"empty credential host":     {CredentialHost: "", Derived: []string{"cdn.example.com"}},
+		"bare dot credential host":  {CredentialHost: ".", Derived: []string{"cdn.example.com"}},
+		"glob credential host":      {CredentialHost: "*.example.com", Derived: []string{"cdn.example.com"}},
+		"no derived hosts":          {CredentialHost: "example.com"},
+		"empty derived host":        {CredentialHost: "example.com", Derived: []string{""}},
+		"glob derived host":         {CredentialHost: "example.com", Derived: []string{"*.cdn.example.com"}},
+		"leading-dot derived host":  {CredentialHost: "example.com", Derived: []string{".cdn.example.com"}},
+		"glob in second derivation": {CredentialHost: "example.com", Derived: []string{"cdn.example.com", "cdn[.example.com"}},
+	}
+	for name, derivation := range cases {
+		assert.Errorf(t, validateRegistryRedirectDerivations([]registryRedirectDerivation{derivation}),
+			"must be rejected: %s", name)
+	}
+
+	assert.NoError(t, validateRegistryRedirectDerivations([]registryRedirectDerivation{
+		{CredentialHost: "example.com", Derived: []string{"cdn.example.com"}},
+		{CredentialHost: ".example.org", Derived: []string{"cdn1.example.org", "cdn2.example.org"}},
+	}))
+}
+
 // TestEgressDefaults_NoRedundantEntries pins the YAML source, not the computed
 // union. The union builder deduplicates, so a host listed twice in the file is
 // absorbed silently and TestEgressDefaults_LoadedFromYAML still passes. That
