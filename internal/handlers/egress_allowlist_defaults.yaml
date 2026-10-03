@@ -349,6 +349,12 @@ ecosystem_default_domains:
     # Exact virtual-hosted S3 bucket (Automattic's public Android libraries).
     # Never the path-style "s3.amazonaws.com" apex, which reaches every bucket.
     - a8c-libs.s3.amazonaws.com
+    # Nexus S3 blob store that packages.nuxeo.com above 302-redirects every
+    # download to. Exact virtual-hosted bucket, never a glob: "nuxeo-devtools-"
+    # is not a reserved AWS namespace, so any sibling name is registrable by
+    # anyone and a "nuxeo-devtools-*.s3.*.amazonaws.com" pattern would match an
+    # attacker-controlled bucket.
+    - nuxeo-devtools-nexus-central.s3.eu-west-1.amazonaws.com
     # Changelog/release-note host for Log4j and friends, not a registry.
     - logging.apache.org
   gradle: *jvm_registries
