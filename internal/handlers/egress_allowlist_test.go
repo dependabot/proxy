@@ -264,6 +264,12 @@ func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
 		"https://registry.access.redhat.com/v2/ubi9/ubi-minimal/tags/list",
 		"https://registry.access.redhat.com/v2/ubi9/ubi-minimal/manifests/latest",
 		"https://cdn01.quay.io/quayio-production-s3/sha256/33/33f1abc",
+		// Kubernetes' official registry: same-host token service, and tags,
+		// manifests and blobs 307-redirect to its Artifact Registry mirror.
+		"https://registry.k8s.io/v2/coredns/coredns/tags/list",
+		"https://registry.k8s.io/v2/coredns/coredns/manifests/v1.14.7",
+		"https://registry.k8s.io/token?scope=repository:coredns/coredns:pull&service=registry.k8s.io",
+		"https://europe-west8-docker.pkg.dev/v2/k8s-artifacts-prod/images/coredns/coredns/tags/list",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor OCI host allowed: "+allowed)
 	}
@@ -275,6 +281,10 @@ func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
 		"https://evil.docker-registry-production.d24a988e385e0074d717b6bdaea58f0d.r2.cloudflarestorage.com/loot",
 		"https://evil.cgr.dev/v2/",
 		"https://evil.registry.access.redhat.com/v2/",
+		"https://evil.registry.k8s.io/v2/",
+		// The Go vanity-import entry for k8s.io is exact, so the apex and its
+		// other subdomains stay closed even with registry.k8s.io allowed.
+		"https://attacker.k8s.io/v2/",
 		// R2 is multi-tenant: only Elastic's and Chainguard's own account hashes
 		// are allowed, never a sibling account or the parent domain.
 		"https://evil.9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com/loot",
