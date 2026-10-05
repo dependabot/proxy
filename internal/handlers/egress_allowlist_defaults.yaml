@@ -151,6 +151,38 @@ shared_registry_domains:
   - mirrors.cloud.tencent.com
   - mirrors.huaweicloud.com
 
+# registry_redirect_derivations are storage hosts that a configured registry
+# 302-redirects package downloads to, but that appear in no credential field.
+# Unlike every other section here, these are NOT applied to every job: each is
+# allowed only for a job whose own credentials name the matching registry.
+#
+# Use this section when the target is a single bucket or CDN shared by all of a
+# provider's tenants, with the tenant in the URL path. Such a host must never go
+# into the sections above, where it would expose one tenant's content to every
+# job in the world (see add-egress-allowlist-domain).
+#
+#   credential_host: matches a job's credential host exactly, or, with a leading
+#                    dot, any subdomain of that domain but not the apex.
+#   derived:         exact hosts to allow for that job. Glob and leading-dot
+#                    forms are rejected at startup: dynamic hosts are matched
+#                    exactly so that a crafted credential cannot widen them.
+#
+# Every derived host is a constant. Targets whose name embeds a value taken from
+# the credential (e.g. the private ECR layer bucket, which interpolates the
+# region) stay in registryRedirectHosts in Go.
+registry_redirect_derivations:
+  # packagecloud.io redirects downloads to one CloudFront distribution it owns.
+  - credential_host: packagecloud.io
+    derived:
+      - d3fo0g5hm7lbuv.cloudfront.net
+  # Every Gemfury endpoint (pypi., npm., gem., ...) redirects downloads to
+  # pre-signed URLs on one Gemfury-owned bucket, reachable on both its dualstack
+  # and plain Transfer Acceleration endpoints.
+  - credential_host: .fury.io
+    derived:
+      - gemfury.s3-accelerate.dualstack.amazonaws.com
+      - gemfury.s3-accelerate.amazonaws.com
+
 # ecosystem_default_domains lists the public registry and CDN hosts each
 # Dependabot ecosystem needs. The map is kept keyed by ecosystem for provenance
 # and documentation, but the handler applies the UNION of all values to every

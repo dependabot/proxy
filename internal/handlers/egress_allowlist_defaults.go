@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,9 +19,10 @@ var egressDefaultsYAML []byte
 
 // egressDefaults is the parsed representation of egress_allowlist_defaults.yaml.
 type egressDefaults struct {
-	GithubInfraDomains      []string            `yaml:"github_infra_domains"`
-	SharedRegistryDomains   []string            `yaml:"shared_registry_domains"`
-	EcosystemDefaultDomains map[string][]string `yaml:"ecosystem_default_domains"`
+	GithubInfraDomains         []string                     `yaml:"github_infra_domains"`
+	SharedRegistryDomains      []string                     `yaml:"shared_registry_domains"`
+	EcosystemDefaultDomains    map[string][]string          `yaml:"ecosystem_default_domains"`
+	RegistryRedirectDerivation []registryRedirectDerivation `yaml:"registry_redirect_derivations"`
 }
 
 var (
@@ -57,6 +59,7 @@ func init() {
 	githubInfraDomains = defaults.GithubInfraDomains
 	sharedRegistryDomains = defaults.SharedRegistryDomains
 	ecosystemDefaultDomains = defaults.EcosystemDefaultDomains
+	registryRedirectDerivations = defaults.RegistryRedirectDerivation
 
 	seen := make(map[string]struct{})
 	for _, hosts := range ecosystemDefaultDomains {
@@ -75,6 +78,37 @@ func init() {
 	validateGlobDefaults(githubInfraDomains)
 	validateGlobDefaults(sharedRegistryDomains)
 	validateGlobDefaults(allEcosystemDomains)
+
+	if err := validateRegistryRedirectDerivations(registryRedirectDerivations); err != nil {
+		panic(fmt.Sprintf("invalid registry_redirect_derivations in egress_allowlist_defaults.yaml: %v", err))
+	}
+}
+
+// validateRegistryRedirectDerivations rejects derivations that dynamic-host
+// matching cannot honour. Derived hosts are matched exactly, so a glob or
+// leading-dot entry there would silently never match; a glob in credentialHost
+// would be compared literally and likewise never fire.
+func validateRegistryRedirectDerivations(derivations []registryRedirectDerivation) error {
+	for _, d := range derivations {
+		if d.CredentialHost == "" || d.CredentialHost == "." {
+			return fmt.Errorf("credential_host must not be empty")
+		}
+		if isGlobPattern(d.CredentialHost) {
+			return fmt.Errorf("credential_host %q must be an exact host or a leading-dot domain, not a glob", d.CredentialHost)
+		}
+		if len(d.Derived) == 0 {
+			return fmt.Errorf("credential_host %q has no derived hosts", d.CredentialHost)
+		}
+		for _, host := range d.Derived {
+			if host == "" {
+				return fmt.Errorf("credential_host %q has an empty derived host", d.CredentialHost)
+			}
+			if isGlobPattern(host) || strings.HasPrefix(host, ".") {
+				return fmt.Errorf("derived host %q (credential_host %q) must be an exact host: derived hosts are matched exactly", host, d.CredentialHost)
+			}
+		}
+	}
+	return nil
 }
 
 // validateGlobDefaults panics if any glob entry is not a valid path.Match

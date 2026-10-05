@@ -154,3 +154,137 @@ func TestRegistryRedirectHosts_NotAddedWithoutECRCredential(t *testing.T) {
 	assert.NotNil(t, egressResult(t, h, "https://prod-eu-west-1-starport-layer-bucket.s3.eu-west-1.amazonaws.com/loot"),
 		"layer bucket must not be allowed for a job with no ECR credential")
 }
+
+func TestRegistryRedirectHosts_PackagecloudDownloadCDNDerived(t *testing.T) {
+	// packagecloud.io 302-redirects package downloads to a CloudFront
+	// distribution that appears in no credential field.
+	creds := config.Credentials{
+		{"type": "python_index", "index-url": "https://packagecloud.io/acme/repo/pypi/simple"},
+	}
+	h := newEgressHandlerWithCreds(creds)
+
+	assert.Nil(t, egressResult(t, h, "https://packagecloud.io/acme/repo/pypi/simple/pkg/"),
+		"the configured packagecloud registry must be allowed")
+	assert.Nil(t, egressResult(t, h, "https://d3fo0g5hm7lbuv.cloudfront.net/1358/1665/blobs/pkg.whl?Expires=1&Signature=x"),
+		"the packagecloud download CDN must be allowed for a job with a packagecloud credential")
+
+	for _, blocked := range []string{
+		// Dynamic hosts are matched exactly, so no child or lookalike widens it.
+		"https://evil.d3fo0g5hm7lbuv.cloudfront.net/loot",
+		"https://d3fo0g5hm7lbuv.cloudfront.net.attacker.com/loot",
+		// The shared CloudFront namespace stays closed.
+		"https://cloudfront.net/loot",
+		"https://d1ii4ma7ymllif.cloudfront.net/loot",
+	} {
+		assert.NotNil(t, egressResult(t, h, blocked), "must remain blocked: "+blocked)
+	}
+}
+
+func TestRegistryRedirectHosts_PackagecloudMatchedExactly(t *testing.T) {
+	// Only packagecloud.io itself opens the CDN, not a lookalike.
+	assert.Equal(t,
+		[]string{"d3fo0g5hm7lbuv.cloudfront.net"},
+		registryRedirectHosts([]string{"packagecloud.io"}))
+	assert.Equal(t,
+		[]string{"d3fo0g5hm7lbuv.cloudfront.net"},
+		registryRedirectHosts([]string{"packagecloud.io."}),
+		"an absolute DNS name derives like its relative form")
+
+	for _, host := range []string{
+		"packagecloud.io.attacker.com",
+		"evil.packagecloud.io",
+		"packagecloud.com",
+		"notpackagecloud.io",
+	} {
+		assert.Empty(t, registryRedirectHosts([]string{host}), "must derive nothing from %q", host)
+	}
+}
+
+func TestRegistryRedirectHosts_PackagecloudCDNNotAllowedWithoutCredential(t *testing.T) {
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "https://pypi.internal.example.com/simple"},
+	})
+	assert.NotNil(t, egressResult(t, h, "https://d3fo0g5hm7lbuv.cloudfront.net/loot"),
+		"download CDN must not be allowed for a job with no packagecloud credential")
+}
+
+func TestRegistryRedirectHosts_GemfuryStorageDerived(t *testing.T) {
+	// Gemfury endpoints redirect downloads to one Gemfury-owned bucket,
+	// reachable on both its dualstack and plain accelerate endpoints.
+	creds := config.Credentials{
+		{"type": "python_index", "index-url": "https://pypi.fury.io/acme/"},
+	}
+	h := newEgressHandlerWithCreds(creds)
+
+	assert.Nil(t, egressResult(t, h, "https://pypi.fury.io/acme/-/ver_x/pkg-1.0.0-py3-none-any.whl"),
+		"the Gemfury registry itself must be allowed")
+	for _, allowed := range []string{
+		"https://gemfury.s3-accelerate.dualstack.amazonaws.com/gems/x/pkg_whl?X-Amz-Signature=x",
+		"https://gemfury.s3-accelerate.amazonaws.com/gems/x/pkg_whl?X-Amz-Signature=x",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "Gemfury storage must be allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		// Dynamic hosts are matched exactly, so no child or lookalike widens it.
+		"https://evil.gemfury.s3-accelerate.dualstack.amazonaws.com/loot",
+		"https://gemfuryx.s3-accelerate.dualstack.amazonaws.com/loot",
+		// Only the accelerate endpoints are opened.
+		"https://gemfury.s3.amazonaws.com/loot",
+		// The shared parent namespace stays closed.
+		"https://attacker.s3-accelerate.dualstack.amazonaws.com/loot",
+		"https://attacker.s3-accelerate.amazonaws.com/loot",
+	} {
+		assert.NotNil(t, egressResult(t, h, blocked), "must remain blocked: "+blocked)
+	}
+}
+
+func TestRegistryRedirectHosts_OnlyGemfuryHosts(t *testing.T) {
+	gemfuryStorage := []string{
+		"gemfury.s3-accelerate.dualstack.amazonaws.com",
+		"gemfury.s3-accelerate.amazonaws.com",
+	}
+
+	for _, host := range []string{
+		"pypi.fury.io",
+		"npm.fury.io",
+		"npm-proxy.fury.io",
+		"gem.fury.io",
+		"repo.fury.io",
+		// An absolute DNS name derives like its relative form.
+		"pypi.fury.io.",
+	} {
+		assert.Equal(t, gemfuryStorage, registryRedirectHosts([]string{host}),
+			"must derive the Gemfury storage hosts from %q", host)
+	}
+
+	for _, host := range []string{
+		"fury.io",               // apex is not a registry endpoint
+		"pypi.fury.io.evil.com", // suffix must be fury.io
+		"pypifury.io",
+		"evil.com",
+	} {
+		assert.Empty(t, registryRedirectHosts([]string{host}), "must derive nothing from %q", host)
+	}
+
+	// Several Gemfury credentials yield one entry per storage host.
+	assert.Equal(t,
+		append([]string{"pypi.fury.io", "npm.fury.io"}, gemfuryStorage...),
+		dynamicHosts(config.Credentials{
+			{"type": "python_index", "index-url": "https://pypi.fury.io/acme/"},
+			{"type": "npm_registry", "registry": "https://npm.fury.io/acme/"},
+		}))
+}
+
+func TestRegistryRedirectHosts_NotAddedWithoutGemfuryCredential(t *testing.T) {
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "https://pypi.internal.example.com/simple"},
+	})
+	for _, blocked := range []string{
+		"https://gemfury.s3-accelerate.dualstack.amazonaws.com/gems/x/loot",
+		"https://gemfury.s3-accelerate.amazonaws.com/gems/x/loot",
+	} {
+		assert.NotNil(t, egressResult(t, h, blocked),
+			"Gemfury storage must not be allowed for a job with no Gemfury credential: "+blocked)
+	}
+}

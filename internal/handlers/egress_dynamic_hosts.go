@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/helpers"
 )
 
 // ecrHostPattern matches the canonical private ECR registry host,
@@ -18,24 +19,54 @@ import (
 // here — it has no capture group, and its "*" spans dots.
 var ecrHostPattern = regexp.MustCompile(`^[0-9]{12}\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com$`)
 
+// registryRedirectDerivation maps a credential host to the fixed storage hosts
+// that registry redirects downloads to. The derived hosts are constants, so a
+// crafted credential cannot widen the destination.
+type registryRedirectDerivation struct {
+	// CredentialHost matches exactly, or, with a leading dot, any subdomain of
+	// that domain but not the apex.
+	CredentialHost string   `yaml:"credential_host"`
+	Derived        []string `yaml:"derived"`
+}
+
+// registryRedirectDerivations is loaded from the registry_redirect_derivations
+// section of egress_allowlist_defaults.yaml, which documents the rules for
+// adding one. Derivations whose target embeds a credential-derived value (ECR)
+// stay in registryRedirectHosts below.
+var registryRedirectDerivations []registryRedirectDerivation
+
 // registryRedirectHosts returns storage backends that a configured registry
 // redirects to on download but that appear in no credential field.
 //
-// Private ECR 307-redirects layer downloads to a per-region, AWS-owned S3
-// bucket. It is derived per job rather than globbed into the static defaults
-// because "prod-<anything>-starport-layer-bucket" is a claimable S3 name, so a
-// glob would hand every job an attacker-registrable destination.
+// Private ECR is the exception to registryRedirectDerivations: its layer bucket
+// embeds the region, so the host is interpolated from the job's own credential
+// rather than globbed into the static defaults, where
+// "prod-<anything>-starport-layer-bucket" would be an attacker-registrable name.
 func registryRedirectHosts(credHosts []string) []string {
 	var hosts []string
 	for _, h := range credHosts {
-		m := ecrHostPattern.FindStringSubmatch(h)
-		if m == nil {
-			continue
+		// hostFromValue lower-cases; drop the absolute-DNS trailing dot too.
+		h = strings.TrimSuffix(h, ".")
+
+		for _, derivation := range registryRedirectDerivations {
+			if derivation.matches(h) {
+				hosts = append(hosts, derivation.Derived...)
+			}
 		}
-		region := m[1]
-		hosts = append(hosts, fmt.Sprintf("prod-%s-starport-layer-bucket.s3.%s.amazonaws.com", region, region))
+
+		if m := ecrHostPattern.FindStringSubmatch(h); m != nil {
+			region := m[1]
+			hosts = append(hosts, fmt.Sprintf("prod-%s-starport-layer-bucket.s3.%s.amazonaws.com", region, region))
+		}
 	}
 	return hosts
+}
+
+func (d registryRedirectDerivation) matches(host string) bool {
+	if strings.HasPrefix(d.CredentialHost, ".") {
+		return strings.HasSuffix(host, d.CredentialHost)
+	}
+	return helpers.AreHostnamesEqual(host, d.CredentialHost)
 }
 
 // credentialHostKeys are the credential fields that carry a registry host or
