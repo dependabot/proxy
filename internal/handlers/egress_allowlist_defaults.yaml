@@ -609,5 +609,9 @@ ecosystem_default_domains:
   swift:
     - cocoapods.org
     - download.swift.org
+    # KARTE's (Plaid, Inc.) SDK host, serving the xcframework.zip binaryTargets
+    # declared in the vendor's own public Package.swift. Anonymous, no redirect.
+    # Exact: *.karte.io also fronts the vendor's unrelated product subdomains.
+    - sdk.karte.io
   vcpkg: []
   pre_commit: []

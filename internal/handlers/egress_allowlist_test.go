@@ -1211,6 +1211,10 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://api.opentofu.org/registry/docs/providers/hashicorp/aws/index.json",
 		"https://wp-languages.github.io/packages.json",
 		"https://pkg.go.dev/github.com/gorilla/mux",
+		// SwiftPM binaryTarget downloads for the KARTE iOS SDK; the job fails in
+		// the file parser without these, so no Swift PRs are opened at all.
+		"https://sdk.karte.io/ios/swiftpm/Core-2.39.0/KarteCore-6aa9d244.xcframework.zip",
+		"https://sdk.karte.io/ios/swiftpm/Utilities-3.16.0/KarteUtilities-6aa9d244.xcframework.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
 	}
@@ -1243,6 +1247,10 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.maven.repository.redhat.com/payload",
 		"https://evil.artifacts.alfresco.com/payload",
 		"https://evil.releases.aspose.com/payload",
+		"https://evil.sdk.karte.io/payload",
+		// karte.io serves a wildcard cert and resolves subdomains broadly, so
+		// the SDK host must not drag the vendor's parent namespace in with it.
+		"https://attacker.karte.io/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
