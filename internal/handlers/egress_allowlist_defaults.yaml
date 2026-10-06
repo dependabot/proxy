@@ -462,6 +462,16 @@ ecosystem_default_domains:
     # by .quay.io above. registry.redhat.io is deliberately absent: it requires
     # a Red Hat login and so belongs in `registries:`.
     - registry.access.redhat.com
+    # Kubernetes' official community-run registry (SIG K8s Infra). Anonymous:
+    # /v2/ advertises a Bearer realm on the same host (registry.k8s.io/token),
+    # which answers 200 without credentials. Tag, manifest and blob requests
+    # 307-redirect to the project's own Artifact Registry mirror
+    # (<region>-docker.pkg.dev/v2/k8s-artifacts-prod/images/...), covered by
+    # .pkg.dev above. Exact only: tenancy is path-based
+    # (registry.k8s.io/<subproject>/<image>) and images are published solely by
+    # the Kubernetes release infrastructure, so no subdomain is user-creatable.
+    # The `k8s.io` entry in go_modules is exact and does not cover this host.
+    - registry.k8s.io
   docker_compose: *docker_registries
   nuget:
     - api.nuget.org
