@@ -50,6 +50,11 @@ func NewRubyGemsServerHandler(creds config.Credentials, client *http.Client) *Ru
 		if proxyOnly && cred.GetString("token") == "" {
 			continue
 		}
+		// An anonymous server is allowlisted by its url field but must not have an
+		// empty Authorization header attached to its requests.
+		if credentialIsAnonymous(cred) {
+			continue
+		}
 
 		serverCred := rubyGemsServerCredentials{
 			host:      host,

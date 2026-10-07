@@ -45,6 +45,12 @@ func NewHelmRegistryHandler(creds config.Credentials, client *http.Client) *Helm
 			continue
 		}
 
+		// An anonymous registry is allowlisted by its registry field but must not
+		// have an empty Authorization header attached to its requests.
+		if credentialIsAnonymous(cred) {
+			continue
+		}
+
 		helmCred := helmRegistryCredentials{
 			registry: registry,
 			username: cred.GetString("username"),
