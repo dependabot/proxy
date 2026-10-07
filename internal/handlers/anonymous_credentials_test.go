@@ -136,6 +136,38 @@ func TestAnonymousCredentialsAreNotAuthenticated(t *testing.T) {
 				return NewDockerRegistryHandler(creds, testOIDCClient, nil)
 			},
 		},
+		{
+			name:   "nuget_feed",
+			cred:   config.Credential{"type": "nuget_feed", "url": "https://nexus.example.net/repository/nuget/index.json"},
+			target: "https://nexus.example.net/repository/nuget/index.json",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewNugetFeedHandler(creds, testOIDCClient)
+			},
+		},
+		{
+			name:   "cargo_registry",
+			cred:   config.Credential{"type": "cargo_registry", "url": "https://nexus.example.net/repository/cargo"},
+			target: "https://nexus.example.net/repository/cargo/api/v1/crates/serde",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewCargoRegistryHandler(creds, testOIDCClient)
+			},
+		},
+		{
+			name:   "terraform_registry",
+			cred:   config.Credential{"type": "terraform_registry", "url": "https://nexus.example.net/terraform"},
+			target: "https://nexus.example.net/terraform/v1/modules/foo/bar/aws/versions",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewTerraformRegistryHandler(creds, testOIDCClient)
+			},
+		},
+		{
+			name:   "pub_repository",
+			cred:   config.Credential{"type": "pub_repository", "url": "https://nexus.example.net/pub"},
+			target: "https://nexus.example.net/pub/api/packages/http",
+			handlerFactory: func(creds config.Credentials) oidcHandler {
+				return NewPubRepositoryHandler(creds, testOIDCClient)
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -146,6 +178,26 @@ func TestAnonymousCredentialsAreNotAuthenticated(t *testing.T) {
 			assertUnauthenticated(t, req, "anonymous "+tc.name+" request")
 		})
 	}
+
+	// The repo-level anonymous shape arrives as token ":" rather than as a
+	// missing key. Several handlers guard only on an empty token, so this shape
+	// reaches the request path and becomes Basic base64(":"), "Bearer :", or a
+	// raw "Authorization: :" depending on the handler.
+	t.Run("colon token", func(t *testing.T) {
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				cred := config.Credential{"token": ":"}
+				for k, v := range tc.cred {
+					cred[k] = v
+				}
+
+				handler := tc.handlerFactory(config.Credentials{cred})
+				req := httptest.NewRequestWithContext(t.Context(), "GET", tc.target, nil)
+				req = handleRequestAndClose(handler, req, nil)
+				assertUnauthenticated(t, req, "colon-token "+tc.name+" request")
+			})
+		}
+	})
 }
 
 // TestAnonymousCredentialsStillAuthenticateWhenSecretPresent guards against the

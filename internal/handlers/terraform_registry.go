@@ -49,6 +49,12 @@ func NewTerraformRegistryHandler(credentials config.Credentials, client *http.Cl
 			continue
 		}
 
+		// A ":" token passes the guard above but carries no credentials, and
+		// would be sent as "Bearer :".
+		if credentialIsAnonymous(credential) {
+			continue
+		}
+
 		terraformCred := terraformRegistryCredentials{
 			url:   url,
 			token: token,
