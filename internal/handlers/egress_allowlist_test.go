@@ -270,6 +270,12 @@ func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
 		"https://registry.k8s.io/v2/coredns/coredns/manifests/v1.14.7",
 		"https://registry.k8s.io/token?scope=repository:coredns/coredns:pull&service=registry.k8s.io",
 		"https://europe-west8-docker.pkg.dev/v2/k8s-artifacts-prod/images/coredns/coredns/tags/list",
+		// NVIDIA NGC: same-host guest token service, and blobs 307-redirect to
+		// NVIDIA's signed-URL CloudFront host.
+		"https://nvcr.io/v2/nvidia/cuda/tags/list",
+		"https://nvcr.io/v2/nvidia/distroless/go/manifests/v4.1.4",
+		"https://nvcr.io/proxy_auth?account&scope=repository:nvidia/cuda:pull&service=registry",
+		"https://layers.nvcr.io/registry/docker/registry/v2/blobs/sha256/ab/abc/data",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor OCI host allowed: "+allowed)
 	}
@@ -282,6 +288,8 @@ func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
 		"https://evil.cgr.dev/v2/",
 		"https://evil.registry.access.redhat.com/v2/",
 		"https://evil.registry.k8s.io/v2/",
+		"https://evil.nvcr.io/v2/",
+		"https://evil.layers.nvcr.io/registry/",
 		// The Go vanity-import entry for k8s.io is exact, so the apex and its
 		// other subdomains stay closed even with registry.k8s.io allowed.
 		"https://attacker.k8s.io/v2/",
