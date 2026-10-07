@@ -1447,3 +1447,79 @@ func TestEgressAllowlist_ChangelogHostsThirdWaveAllowed(t *testing.T) {
 		}
 	}
 }
+
+// TestEgressAllowlist_AnonymousCredentialAllowlistsHost pins the behaviour the
+// org-level Anonymous registry option depends on: a credential carrying only a
+// registry location, with no secret of any kind, must still contribute its host
+// to the per-job allowlist. This is why an anonymous registry has to appear in
+// the job credentials at all, and therefore why the handlers must skip
+// authenticating it rather than the config omitting it.
+func TestEgressAllowlist_AnonymousCredentialAllowlistsHost(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cred config.Credential
+		host string
+	}{
+		{
+			name: "npm_registry via registry",
+			cred: config.Credential{"type": "npm_registry", "registry": "nexus.example.net/repository/npm-all"},
+			host: "nexus.example.net",
+		},
+		{
+			name: "docker_registry via registry",
+			cred: config.Credential{"type": "docker_registry", "registry": "docker.example.net"},
+			host: "docker.example.net",
+		},
+		{
+			name: "python_index via index-url",
+			cred: config.Credential{"type": "python_index", "index-url": "https://pypi.example.net/simple"},
+			host: "pypi.example.net",
+		},
+		{
+			name: "maven_repository via url",
+			cred: config.Credential{"type": "maven_repository", "url": "https://maven.example.net/releases"},
+			host: "maven.example.net",
+		},
+		{
+			name: "nuget_feed via url",
+			cred: config.Credential{"type": "nuget_feed", "url": "https://nuget.example.net/v3/index.json"},
+			host: "nuget.example.net",
+		},
+		{
+			name: "colon token is still anonymous",
+			cred: config.Credential{"type": "npm_registry", "registry": "colon.example.net", "token": ":"},
+			host: "colon.example.net",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newEgressHandlerWithCreds(config.Credentials{tc.cred})
+			assert.Nil(t, egressResult(t, h, "https://"+tc.host+"/some/path"),
+				"anonymous credential must allowlist its host: "+tc.host)
+		})
+	}
+}
+
+// TestEgressAllowlist_AnonymousCredentialDoesNotWidenBeyondExactHost holds the
+// dynamic-host exact-match invariant for credential-free entries specifically.
+// Dynamic hosts are matched with AreHostnamesEqual only, so declaring an
+// anonymous registry must authorize that one host and nothing beneath or beside
+// it. These probes fail the moment dynamic matching is relaxed to a suffix.
+func TestEgressAllowlist_AnonymousCredentialDoesNotWidenBeyondExactHost(t *testing.T) {
+	h := newEgressHandlerWithCreds(config.Credentials{
+		config.Credential{"type": "npm_registry", "registry": "nexus.example.net/repository/npm-all"},
+	})
+
+	for _, blocked := range []string{
+		// Child probe: fails if the dynamic entry becomes a leading-dot suffix.
+		"https://evil.nexus.example.net/repository/npm-all",
+		// Sibling probe: fails if the entry is widened to its parent namespace.
+		"https://attacker.example.net/repository/npm-all",
+		// Suffix-appending lookalike.
+		"https://nexus.example.net.attacker.com/repository/npm-all",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}

@@ -76,6 +76,12 @@ func NewDockerRegistryHandler(creds config.Credentials, client *http.Client, get
 		if proxyOnly && cred.GetString("username") == "" && cred.GetString("password") == "" {
 			continue
 		}
+		// An anonymous registry is allowlisted by its registry field but must not
+		// have an empty Authorization header attached to its requests. ECR
+		// credentials carry an AWS key pair, so they are never anonymous here.
+		if credentialIsAnonymous(cred) {
+			continue
+		}
 
 		parsedRegistry, err := helpers.ParseURLLax(registryLocation)
 		if err != nil || parsedRegistry.Host == "" {

@@ -64,6 +64,12 @@ func NewPythonIndexHandler(creds config.Credentials, client *http.Client) *Pytho
 			continue
 		}
 
+		// An anonymous index is allowlisted by its index-url/url field but must not
+		// have an empty Authorization header attached to its requests.
+		if credentialIsAnonymous(cred) {
+			continue
+		}
+
 		indexCred := pythonIndexCredentials{
 			indexURL: indexURL,
 			token:    cred.GetString("token"),

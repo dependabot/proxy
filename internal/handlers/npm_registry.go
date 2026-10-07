@@ -55,6 +55,11 @@ func NewNPMRegistryHandler(creds config.Credentials, client *http.Client) *NPMRe
 		if proxyOnly && cred.GetString("token") == "" && cred.GetString("password") == "" {
 			continue
 		}
+		// An anonymous registry is allowlisted by its url/registry field but must
+		// not have an empty Authorization header attached to its requests.
+		if credentialIsAnonymous(cred) {
+			continue
+		}
 
 		npmCred := npmRegistryCredentials{
 			registry:  registry,
