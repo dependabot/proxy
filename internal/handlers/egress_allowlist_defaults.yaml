@@ -604,6 +604,16 @@ ecosystem_default_domains:
     - prometheus-community.github.io
     - grafana.github.io
     - jaegertracing.github.io
+    - kedacore.github.io
+    - kyverno.github.io
+    - argoproj.github.io
+    - open-telemetry.github.io
+    - kubernetes-sigs.github.io
+    - vmware-tanzu.github.io
+    - bitnami.github.io
+    - charts.external-secrets.io
+    # Redirect target of charts.external-secrets.io.
+    - external-secrets.io
   # GitHub-hosted or per-job configured; covered by github_infra_domains / git.
   # Note: additional per-job dependencies (e.g. pre_commit hooks that install
   # from other ecosystems) are covered because the handler applies the union of

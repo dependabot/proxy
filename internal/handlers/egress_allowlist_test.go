@@ -729,6 +729,15 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.maven.artifacts.atlassian.com/maven",
 		"https://evil.mirrors.huaweicloud.com/repository/npm",
 		"https://evil.dotnetcli.blob.core.windows.net/payload",
+		"https://evil.kedacore.github.io/payload",
+		"https://evil.kyverno.github.io/payload",
+		"https://evil.argoproj.github.io/payload",
+		"https://evil.open-telemetry.github.io/payload",
+		"https://evil.kubernetes-sigs.github.io/payload",
+		"https://evil.vmware-tanzu.github.io/payload",
+		"https://evil.bitnami.github.io/payload",
+		"https://evil.charts.external-secrets.io/payload",
+		"https://evil.external-secrets.io/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -744,6 +753,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://attacker.artifacts.atlassian.com/maven",
 		"https://attacker.huaweicloud.com/repository/npm",
 		"https://attacker.julialang.org/bin",
+		"https://attacker.external-secrets.io/payload",
 		// Cloudsmith is multi-tenant with the tenant in the URL path, and the
 		// allowlist authorizes the hostname only. Neither the tenant subdomain
 		// form nor the shared download hosts may be globally allowed.
@@ -918,6 +928,15 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 		"https://prometheus-community.github.io/helm-charts/index.yaml",
 		"https://grafana.github.io/helm-charts/index.yaml",
 		"https://jaegertracing.github.io/helm-charts/index.yaml",
+		"https://kedacore.github.io/charts/index.yaml",
+		"https://kyverno.github.io/kyverno/index.yaml",
+		"https://argoproj.github.io/argo-helm/index.yaml",
+		"https://open-telemetry.github.io/opentelemetry-helm-charts/index.yaml",
+		"https://kubernetes-sigs.github.io/external-dns/index.yaml",
+		"https://vmware-tanzu.github.io/helm-charts/index.yaml",
+		"https://bitnami.github.io/sealed-secrets/index.yaml",
+		"https://charts.external-secrets.io/index.yaml",
+		"https://external-secrets.io/index.yaml",
 		"https://cocoapods.org/pods/AFNetworking",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "added host should be allowed: "+allowed)
