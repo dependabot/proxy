@@ -604,6 +604,14 @@ ecosystem_default_domains:
     - prometheus-community.github.io
     - grafana.github.io
     - jaegertracing.github.io
+    # Traefik Labs' chart repo: traefik.github.io is the documented repo URL
+    # and serves the chart tarballs; helm.traefik.io is the legacy repo URL
+    # serving the same index.yaml (whose tarball URLs point at traefik.github.io).
+    - traefik.github.io
+    - helm.traefik.io
+    # Project Calico (Tigera) chart repo, the documented `helm repo add` URL for
+    # tigera-operator and crd.projectcalico.org.v1 (tarballs are on github.com).
+    - docs.tigera.io
   # GitHub-hosted or per-job configured; covered by github_infra_domains / git.
   # Note: additional per-job dependencies (e.g. pre_commit hooks that install
   # from other ecosystems) are covered because the handler applies the union of

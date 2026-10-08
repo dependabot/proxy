@@ -729,6 +729,9 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.maven.artifacts.atlassian.com/maven",
 		"https://evil.mirrors.huaweicloud.com/repository/npm",
 		"https://evil.dotnetcli.blob.core.windows.net/payload",
+		"https://evil.traefik.github.io/payload",
+		"https://evil.helm.traefik.io/payload",
+		"https://evil.docs.tigera.io/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -744,6 +747,8 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://attacker.artifacts.atlassian.com/maven",
 		"https://attacker.huaweicloud.com/repository/npm",
 		"https://attacker.julialang.org/bin",
+		"https://attacker.traefik.io/payload",
+		"https://attacker.tigera.io/payload",
 		// Cloudsmith is multi-tenant with the tenant in the URL path, and the
 		// allowlist authorizes the hostname only. Neither the tenant subdomain
 		// form nor the shared download hosts may be globally allowed.
@@ -918,6 +923,9 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 		"https://prometheus-community.github.io/helm-charts/index.yaml",
 		"https://grafana.github.io/helm-charts/index.yaml",
 		"https://jaegertracing.github.io/helm-charts/index.yaml",
+		"https://traefik.github.io/charts/traefik/traefik-41.6.1.tgz",
+		"https://helm.traefik.io/traefik/index.yaml",
+		"https://docs.tigera.io/calico/charts/index.yaml",
 		"https://cocoapods.org/pods/AFNetworking",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "added host should be allowed: "+allowed)
