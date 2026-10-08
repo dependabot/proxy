@@ -339,6 +339,7 @@ ecosystem_default_domains:
     - maven.fullstory.com
     - maven.lokalise.com
     - repository.medallia.com
+    - maven.configdirector.com
     - jogamp.org
     # JCenter is retired but still 301-redirects to repo1.maven.org, which is
     # already allowed; only the entry point of the chain needs listing.
