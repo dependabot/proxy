@@ -1217,6 +1217,8 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		// the file parser without these, so no Swift PRs are opened at all.
 		"https://sdk.karte.io/ios/swiftpm/Core-2.39.0/KarteCore-6aa9d244.xcframework.zip",
 		"https://sdk.karte.io/ios/swiftpm/Utilities-3.16.0/KarteUtilities-6aa9d244.xcframework.zip",
+		// Same failure mode for the Prelude Apple SDK's PreludeCore binaryTarget.
+		"https://prelude-public.s3.amazonaws.com/sdk/releases/apple/core/0.1.2/PreludeCore-0.1.2.xcframework.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
 	}
@@ -1253,6 +1255,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		// karte.io serves a wildcard cert and resolves subdomains broadly, so
 		// the SDK host must not drag the vendor's parent namespace in with it.
 		"https://attacker.karte.io/payload",
+		// The Prelude bucket is one exact S3 host: no children, no lookalike
+		// buckets, and never the path-style apex that reaches every bucket.
+		"https://evil.prelude-public.s3.amazonaws.com/payload",
+		"https://prelude-public-attacker.s3.amazonaws.com/payload",
+		"https://s3.amazonaws.com/prelude-public/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {

@@ -618,5 +618,9 @@ ecosystem_default_domains:
     # declared in the vendor's own public Package.swift. Anonymous, no redirect.
     # Exact: *.karte.io also fronts the vendor's unrelated product subdomains.
     - sdk.karte.io
+    # Prelude's SDK bucket, serving the PreludeCore xcframework.zip binaryTarget
+    # declared in the vendor's own public Package.swift. Anonymous, no redirect.
+    # Exact virtual-hosted bucket; never the path-style s3.amazonaws.com apex.
+    - prelude-public.s3.amazonaws.com
   vcpkg: []
   pre_commit: []
