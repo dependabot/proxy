@@ -446,6 +446,9 @@ ecosystem_default_domains:
     # docker.getcollate.io fronts Docker Hub via Scarf, so its token service is
     # auth.docker.io above and its blobs land on the Docker Hub CDN hosts above.
     - docker.getcollate.io
+    # Redpanda's vendor-operated public OCI registry. Anonymous pulls use
+    # auth.docker.io above for tokens. Exact host only, not *.redpanda.com.
+    - docker.redpanda.com
     # Elastic's registry, its anonymous token service, and the R2 bucket its
     # blob downloads 307-redirect to. The bucket host embeds Elastic's own
     # Cloudflare account hash, so it is exact only: a glob over

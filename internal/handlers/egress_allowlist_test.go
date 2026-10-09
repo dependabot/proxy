@@ -252,6 +252,7 @@ func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
 
 	for _, allowed := range []string{
 		"https://docker.getcollate.io/v2/openmetadata/server/tags/list",
+		"https://docker.redpanda.com/v2/redpandadata/redpanda/tags/list",
 		"https://auth.docker.io/token?service=registry.docker.io", // getcollate's token service
 		"https://docker.elastic.co/v2/elasticsearch/elasticsearch/tags/list",
 		"https://docker-auth.elastic.co/auth?service=token-service",
@@ -706,6 +707,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 	// moment its entry is changed to a leading-dot suffix, so this is the probe
 	// set that actually pins exact-host semantics.
 	childProbes := []string{
+		"https://evil.docker.redpanda.com/payload",
 		"https://evil.appboy.github.io/payload",
 		"https://evil.juliaregistries.github.io/payload",
 		"https://evil.spsprodcus3.vssps.visualstudio.com/_signin",
