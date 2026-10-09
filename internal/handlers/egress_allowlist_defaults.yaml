@@ -472,6 +472,15 @@ ecosystem_default_domains:
     # the Kubernetes release infrastructure, so no subdomain is user-creatable.
     # The `k8s.io` entry in go_modules is exact and does not cover this host.
     - registry.k8s.io
+    # NVIDIA NGC container registry. Public NGC images need no sign-in: /v2/
+    # advertises a Bearer realm on the same host (nvcr.io/proxy_auth), which
+    # issues a guest token with pull access to public repositories only. Blobs
+    # 307-redirect to layers.nvcr.io, NVIDIA's CloudFront distribution, which
+    # serves only URLs signed by nvcr.io and 403s unsigned requests. Exact only:
+    # tenancy is path-based (nvcr.io/<org>/<team>/<image>), and private org
+    # images still need an NGC API key under `registries:`.
+    - nvcr.io
+    - layers.nvcr.io
   docker_compose: *docker_registries
   nuget:
     - api.nuget.org
