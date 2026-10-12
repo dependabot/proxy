@@ -61,6 +61,12 @@ func NewPubRepositoryHandler(credentials config.Credentials, client *http.Client
 			logrus.Warnf("missing token for hosted url (%s)", pubCred.url)
 			continue
 		}
+
+		// A ":" token passes the guard above but carries no credentials, and
+		// would be sent as "Bearer :".
+		if credentialIsAnonymous(credential) {
+			continue
+		}
 		handler.credentials = append(handler.credentials, pubCred)
 	}
 	return &handler

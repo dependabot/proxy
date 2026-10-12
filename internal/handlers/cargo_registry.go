@@ -103,6 +103,12 @@ func NewCargoRegistryHandler(credentials config.Credentials, client *http.Client
 			continue
 		}
 
+		// A ":" token passes the guard above but carries no credentials, and
+		// SetRawAuthorization would send it verbatim as "Authorization: :".
+		if credentialIsAnonymous(credential) {
+			continue
+		}
+
 		handler.credentials = append(handler.credentials, cargoCred)
 	}
 	return &handler

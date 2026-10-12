@@ -339,6 +339,7 @@ ecosystem_default_domains:
     - maven.fullstory.com
     - maven.lokalise.com
     - repository.medallia.com
+    - maven.configdirector.com
     - jogamp.org
     # JCenter is retired but still 301-redirects to repo1.maven.org, which is
     # already allowed; only the entry point of the chain needs listing.
@@ -446,6 +447,9 @@ ecosystem_default_domains:
     # docker.getcollate.io fronts Docker Hub via Scarf, so its token service is
     # auth.docker.io above and its blobs land on the Docker Hub CDN hosts above.
     - docker.getcollate.io
+    # Redpanda's vendor-operated public OCI registry. Anonymous pulls use
+    # auth.docker.io above for tokens. Exact host only, not *.redpanda.com.
+    - docker.redpanda.com
     # Elastic's registry, its anonymous token service, and the R2 bucket its
     # blob downloads 307-redirect to. The bucket host embeds Elastic's own
     # Cloudflare account hash, so it is exact only: a glob over
@@ -472,6 +476,15 @@ ecosystem_default_domains:
     # the Kubernetes release infrastructure, so no subdomain is user-creatable.
     # The `k8s.io` entry in go_modules is exact and does not cover this host.
     - registry.k8s.io
+    # NVIDIA NGC container registry. Public NGC images need no sign-in: /v2/
+    # advertises a Bearer realm on the same host (nvcr.io/proxy_auth), which
+    # issues a guest token with pull access to public repositories only. Blobs
+    # 307-redirect to layers.nvcr.io, NVIDIA's CloudFront distribution, which
+    # serves only URLs signed by nvcr.io and 403s unsigned requests. Exact only:
+    # tenancy is path-based (nvcr.io/<org>/<team>/<image>), and private org
+    # images still need an NGC API key under `registries:`.
+    - nvcr.io
+    - layers.nvcr.io
   docker_compose: *docker_registries
   nuget:
     - api.nuget.org
@@ -614,6 +627,14 @@ ecosystem_default_domains:
     - charts.external-secrets.io
     # Redirect target of charts.external-secrets.io.
     - external-secrets.io
+    # Traefik Labs' chart repo: traefik.github.io is the documented repo URL
+    # and serves the chart tarballs; helm.traefik.io is the legacy repo URL
+    # serving the same index.yaml (whose tarball URLs point at traefik.github.io).
+    - traefik.github.io
+    - helm.traefik.io
+    # Project Calico (Tigera) chart repo, the documented `helm repo add` URL for
+    # tigera-operator and crd.projectcalico.org.v1 (tarballs are on github.com).
+    - docs.tigera.io
   # GitHub-hosted or per-job configured; covered by github_infra_domains / git.
   # Note: additional per-job dependencies (e.g. pre_commit hooks that install
   # from other ecosystems) are covered because the handler applies the union of
@@ -628,5 +649,9 @@ ecosystem_default_domains:
     # declared in the vendor's own public Package.swift. Anonymous, no redirect.
     # Exact: *.karte.io also fronts the vendor's unrelated product subdomains.
     - sdk.karte.io
+    # Prelude's SDK bucket, serving the PreludeCore xcframework.zip binaryTarget
+    # declared in the vendor's own public Package.swift. Anonymous, no redirect.
+    # Exact virtual-hosted bucket; never the path-style s3.amazonaws.com apex.
+    - prelude-public.s3.amazonaws.com
   vcpkg: []
   pre_commit: []

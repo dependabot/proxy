@@ -252,6 +252,7 @@ func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
 
 	for _, allowed := range []string{
 		"https://docker.getcollate.io/v2/openmetadata/server/tags/list",
+		"https://docker.redpanda.com/v2/redpandadata/redpanda/tags/list",
 		"https://auth.docker.io/token?service=registry.docker.io", // getcollate's token service
 		"https://docker.elastic.co/v2/elasticsearch/elasticsearch/tags/list",
 		"https://docker-auth.elastic.co/auth?service=token-service",
@@ -270,6 +271,12 @@ func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
 		"https://registry.k8s.io/v2/coredns/coredns/manifests/v1.14.7",
 		"https://registry.k8s.io/token?scope=repository:coredns/coredns:pull&service=registry.k8s.io",
 		"https://europe-west8-docker.pkg.dev/v2/k8s-artifacts-prod/images/coredns/coredns/tags/list",
+		// NVIDIA NGC: same-host guest token service, and blobs 307-redirect to
+		// NVIDIA's signed-URL CloudFront host.
+		"https://nvcr.io/v2/nvidia/cuda/tags/list",
+		"https://nvcr.io/v2/nvidia/distroless/go/manifests/v4.1.4",
+		"https://nvcr.io/proxy_auth?account&scope=repository:nvidia/cuda:pull&service=registry",
+		"https://layers.nvcr.io/registry/docker/registry/v2/blobs/sha256/ab/abc/data",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor OCI host allowed: "+allowed)
 	}
@@ -282,6 +289,8 @@ func TestEgressAllowlist_PublicVendorOCIRegistriesAllowed(t *testing.T) {
 		"https://evil.cgr.dev/v2/",
 		"https://evil.registry.access.redhat.com/v2/",
 		"https://evil.registry.k8s.io/v2/",
+		"https://evil.nvcr.io/v2/",
+		"https://evil.layers.nvcr.io/registry/",
 		// The Go vanity-import entry for k8s.io is exact, so the apex and its
 		// other subdomains stay closed even with registry.k8s.io allowed.
 		"https://attacker.k8s.io/v2/",
@@ -706,6 +715,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 	// moment its entry is changed to a leading-dot suffix, so this is the probe
 	// set that actually pins exact-host semantics.
 	childProbes := []string{
+		"https://evil.docker.redpanda.com/payload",
 		"https://evil.appboy.github.io/payload",
 		"https://evil.juliaregistries.github.io/payload",
 		"https://evil.spsprodcus3.vssps.visualstudio.com/_signin",
@@ -738,6 +748,9 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.bitnami.github.io/payload",
 		"https://evil.charts.external-secrets.io/payload",
 		"https://evil.external-secrets.io/payload",
+		"https://evil.traefik.github.io/payload",
+		"https://evil.helm.traefik.io/payload",
+		"https://evil.docs.tigera.io/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -754,6 +767,8 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://attacker.huaweicloud.com/repository/npm",
 		"https://attacker.julialang.org/bin",
 		"https://attacker.external-secrets.io/payload",
+		"https://attacker.traefik.io/payload",
+		"https://attacker.tigera.io/payload",
 		// Cloudsmith is multi-tenant with the tenant in the URL path, and the
 		// allowlist authorizes the hostname only. Neither the tenant subdomain
 		// form nor the shared download hosts may be globally allowed.
@@ -937,6 +952,9 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 		"https://bitnami.github.io/sealed-secrets/index.yaml",
 		"https://charts.external-secrets.io/index.yaml",
 		"https://external-secrets.io/index.yaml",
+		"https://traefik.github.io/charts/traefik/traefik-41.6.1.tgz",
+		"https://helm.traefik.io/traefik/index.yaml",
+		"https://docs.tigera.io/calico/charts/index.yaml",
 		"https://cocoapods.org/pods/AFNetworking",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "added host should be allowed: "+allowed)
@@ -1236,6 +1254,8 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		// the file parser without these, so no Swift PRs are opened at all.
 		"https://sdk.karte.io/ios/swiftpm/Core-2.39.0/KarteCore-6aa9d244.xcframework.zip",
 		"https://sdk.karte.io/ios/swiftpm/Utilities-3.16.0/KarteUtilities-6aa9d244.xcframework.zip",
+		// Same failure mode for the Prelude Apple SDK's PreludeCore binaryTarget.
+		"https://prelude-public.s3.amazonaws.com/sdk/releases/apple/core/0.1.2/PreludeCore-0.1.2.xcframework.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
 	}
@@ -1272,6 +1292,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		// karte.io serves a wildcard cert and resolves subdomains broadly, so
 		// the SDK host must not drag the vendor's parent namespace in with it.
 		"https://attacker.karte.io/payload",
+		// The Prelude bucket is one exact S3 host: no children, no lookalike
+		// buckets, and never the path-style apex that reaches every bucket.
+		"https://evil.prelude-public.s3.amazonaws.com/payload",
+		"https://prelude-public-attacker.s3.amazonaws.com/payload",
+		"https://s3.amazonaws.com/prelude-public/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
@@ -1342,6 +1367,7 @@ func TestEgressAllowlist_PublicRegistriesThirdWaveAllowed(t *testing.T) {
 		"https://maven.fullstory.com/com/fullstory/gradle-plugin/maven-metadata.xml",
 		"https://maven.lokalise.com/com/lokalise/sdk/maven-metadata.xml",
 		"https://repository.medallia.com/artifactory/public/com/medallia/maven-metadata.xml",
+		"https://maven.configdirector.com/com/configdirector/server-sdk/maven-metadata.xml",
 		"https://jogamp.org/deployment/maven/org/jogamp/gluegen/maven-metadata.xml",
 		"https://jcenter.bintray.com/com/google/guava/guava/maven-metadata.xml",
 		"https://salesforce-marketingcloud.github.io/MarketingCloudSDK-Android/maven-metadata.xml",
@@ -1397,6 +1423,7 @@ func TestEgressAllowlist_PublicRegistriesThirdWaveAllowed(t *testing.T) {
 		"https://evil.maven.fullstory.com/payload",
 		"https://evil.maven.lokalise.com/payload",
 		"https://evil.repository.medallia.com/payload",
+		"https://evil.maven.configdirector.com/payload",
 		"https://evil.jogamp.org/payload",
 		"https://evil.jcenter.bintray.com/payload",
 		"https://evil.pkg.kzu.app/payload",
@@ -1415,6 +1442,7 @@ func TestEgressAllowlist_PublicRegistriesThirdWaveAllowed(t *testing.T) {
 		"https://fullstory.com/payload",
 		"https://lokalise.com/payload",
 		"https://medallia.com/payload",
+		"https://configdirector.com/payload",
 		"https://essentialsx.net/payload",
 		"https://xposed.info/payload",
 		"https://julialang.net/payload",
@@ -1459,6 +1487,82 @@ func TestEgressAllowlist_ChangelogHostsThirdWaveAllowed(t *testing.T) {
 		// Chat and link-aggregator hosts reached via project_urls metadata.
 		"https://gitter.im/org/room",
 		"https://www.reddit.com/r/python/",
+	} {
+		resp := egressResult(t, h, blocked)
+		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		}
+	}
+}
+
+// TestEgressAllowlist_AnonymousCredentialAllowlistsHost pins the behaviour the
+// org-level Anonymous registry option depends on: a credential carrying only a
+// registry location, with no secret of any kind, must still contribute its host
+// to the per-job allowlist. This is why an anonymous registry has to appear in
+// the job credentials at all, and therefore why the handlers must skip
+// authenticating it rather than the config omitting it.
+func TestEgressAllowlist_AnonymousCredentialAllowlistsHost(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cred config.Credential
+		host string
+	}{
+		{
+			name: "npm_registry via registry",
+			cred: config.Credential{"type": "npm_registry", "registry": "nexus.example.net/repository/npm-all"},
+			host: "nexus.example.net",
+		},
+		{
+			name: "docker_registry via registry",
+			cred: config.Credential{"type": "docker_registry", "registry": "docker.example.net"},
+			host: "docker.example.net",
+		},
+		{
+			name: "python_index via index-url",
+			cred: config.Credential{"type": "python_index", "index-url": "https://pypi.example.net/simple"},
+			host: "pypi.example.net",
+		},
+		{
+			name: "maven_repository via url",
+			cred: config.Credential{"type": "maven_repository", "url": "https://maven.example.net/releases"},
+			host: "maven.example.net",
+		},
+		{
+			name: "nuget_feed via url",
+			cred: config.Credential{"type": "nuget_feed", "url": "https://nuget.example.net/v3/index.json"},
+			host: "nuget.example.net",
+		},
+		{
+			name: "colon token is still anonymous",
+			cred: config.Credential{"type": "npm_registry", "registry": "colon.example.net", "token": ":"},
+			host: "colon.example.net",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newEgressHandlerWithCreds(config.Credentials{tc.cred})
+			assert.Nil(t, egressResult(t, h, "https://"+tc.host+"/some/path"),
+				"anonymous credential must allowlist its host: "+tc.host)
+		})
+	}
+}
+
+// TestEgressAllowlist_AnonymousCredentialDoesNotWidenBeyondExactHost holds the
+// dynamic-host exact-match invariant for credential-free entries specifically.
+// Dynamic hosts are matched with AreHostnamesEqual only, so declaring an
+// anonymous registry must authorize that one host and nothing beneath or beside
+// it. These probes fail the moment dynamic matching is relaxed to a suffix.
+func TestEgressAllowlist_AnonymousCredentialDoesNotWidenBeyondExactHost(t *testing.T) {
+	h := newEgressHandlerWithCreds(config.Credentials{
+		config.Credential{"type": "npm_registry", "registry": "nexus.example.net/repository/npm-all"},
+	})
+
+	for _, blocked := range []string{
+		// Child probe: fails if the dynamic entry becomes a leading-dot suffix.
+		"https://evil.nexus.example.net/repository/npm-all",
+		// Sibling probe: fails if the entry is widened to its parent namespace.
+		"https://attacker.example.net/repository/npm-all",
+		// Suffix-appending lookalike.
+		"https://nexus.example.net.attacker.com/repository/npm-all",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
