@@ -1,7 +1,6 @@
----
 name: Label allowlist pull requests
 
-on:  # yamllint disable-line rule:truthy
+on: # yamllint disable-line rule:truthy
   pull_request_target:
     types:
       - opened
