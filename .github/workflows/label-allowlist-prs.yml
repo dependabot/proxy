@@ -1,0 +1,33 @@
+---
+name: Label allowlist pull requests
+
+on:  # yamllint disable-line rule:truthy
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+    paths:
+      - internal/handlers/egress_allowlist_defaults.yaml
+
+permissions: {}
+
+jobs:
+  label:
+    name: Add allowlist label
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+
+    steps:
+      - name: Add allowlist label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: >-
+          gh api
+          --method POST
+          "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels"
+          -f "labels[]=allowlist"
