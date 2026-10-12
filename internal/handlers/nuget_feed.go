@@ -108,6 +108,16 @@ func NewNugetFeedHandler(creds config.Credentials, client *http.Client) *NugetFe
 			}
 		}
 
+		// An anonymous feed is allowlisted by its url field but must not have an
+		// empty Authorization header attached to its requests. This runs after
+		// OIDC registration so a token minted at request time is never treated as
+		// anonymous. The guard below only tests for an empty token, so a ":" token
+		// would otherwise reach authenticateNugetRequest and become Basic
+		// base64(":").
+		if credentialIsAnonymous(cred) {
+			continue
+		}
+
 		feedCred := nugetFeedCredentials{
 			url:       url,
 			host:      host,

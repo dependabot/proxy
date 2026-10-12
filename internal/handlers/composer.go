@@ -45,6 +45,12 @@ func NewComposerHandler(creds config.Credentials, client *http.Client) *Composer
 			continue
 		}
 
+		// An anonymous registry is allowlisted by its url/registry field but must
+		// not have an empty Authorization header attached to its requests.
+		if credentialIsAnonymous(cred) {
+			continue
+		}
+
 		composerCred := composerCredentials{
 			registry: registry,
 			url:      url,
