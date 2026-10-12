@@ -18,16 +18,13 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
+      contents: read
       issues: write
 
     steps:
       - name: Add allowlist label
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPOSITORY: ${{ github.repository }}
-        run: >-
-          gh api
-          --method POST
-          "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels"
-          -f "labels[]=allowlist"
+        uses: github/issue-labeler@ccca1e16fcb66762200e616fc29b57b940c1cb67 # v3.5
+        with:
+          configuration-path: .github/allowlist-labeler.yml
+          enable-versioned-regex: 0
+          repo-token: ${{ github.token }}
