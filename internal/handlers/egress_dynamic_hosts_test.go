@@ -239,6 +239,61 @@ func TestRegistryRedirectHosts_GemfuryStorageDerived(t *testing.T) {
 	}
 }
 
+func TestRegistryRedirectHosts_TelerikDownloadCDNDerived(t *testing.T) {
+	// The licensed Telerik NuGet feed 302-redirects package downloads to a
+	// pre-signed URL on Telerik's own CDN, which appears in no credential field.
+	creds := config.Credentials{
+		{"type": "nuget_feed", "url": "https://nuget.telerik.com/v3/index.json", "username": "api-key", "password": "x"},
+	}
+	h := newEgressHandlerWithCreds(creds)
+
+	assert.Nil(t, egressResult(t, h, "https://nuget.telerik.com/v3/package/telerik.zip/2025.2.520/telerik.zip.2025.2.520.nupkg"),
+		"the configured Telerik feed must be allowed")
+	assert.Nil(t, egressResult(t, h, "https://downloads.cdn.telerik.com/542ec0c3a7622c32cb2992fe37990abc_Telerik.Zip.2025.2.520.nupkg_4.0.0?Expires=1&Signature=x"),
+		"the Telerik download CDN must be allowed for a job with a Telerik feed credential")
+
+	for _, blocked := range []string{
+		// Dynamic hosts are matched exactly, so no child or lookalike widens it.
+		"https://evil.downloads.cdn.telerik.com/loot",
+		"https://downloads.cdn.telerik.com.attacker.com/loot",
+		// The vendor's parent namespace and other hosts stay closed.
+		"https://cdn.telerik.com/loot",
+		"https://telerik.com/loot",
+		"https://www.telerik.com/loot",
+	} {
+		assert.NotNil(t, egressResult(t, h, blocked), "must remain blocked: "+blocked)
+	}
+}
+
+func TestRegistryRedirectHosts_TelerikMatchedExactly(t *testing.T) {
+	// Only nuget.telerik.com itself opens the CDN, not a lookalike.
+	assert.Equal(t,
+		[]string{"downloads.cdn.telerik.com"},
+		registryRedirectHosts([]string{"nuget.telerik.com"}))
+	assert.Equal(t,
+		[]string{"downloads.cdn.telerik.com"},
+		registryRedirectHosts([]string{"nuget.telerik.com."}),
+		"an absolute DNS name derives like its relative form")
+
+	for _, host := range []string{
+		"nuget.telerik.com.attacker.com",
+		"evil.nuget.telerik.com",
+		"telerik.com",
+		"nuget.telerik.net",
+		"notnuget.telerik.com",
+	} {
+		assert.Empty(t, registryRedirectHosts([]string{host}), "must derive nothing from %q", host)
+	}
+}
+
+func TestRegistryRedirectHosts_TelerikCDNNotAllowedWithoutCredential(t *testing.T) {
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "nuget_feed", "url": "https://nexus.internal.example.com/repository/nuget/index.json"},
+	})
+	assert.NotNil(t, egressResult(t, h, "https://downloads.cdn.telerik.com/loot"),
+		"download CDN must not be allowed for a job with no Telerik feed credential")
+}
+
 func TestRegistryRedirectHosts_OnlyGemfuryHosts(t *testing.T) {
 	gemfuryStorage := []string{
 		"gemfury.s3-accelerate.dualstack.amazonaws.com",

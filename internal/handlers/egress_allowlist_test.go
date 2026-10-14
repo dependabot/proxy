@@ -1067,6 +1067,8 @@ func TestEgressDefaults_RegistryRedirectDerivationsLoadedFromYAML(t *testing.T) 
 			"gemfury.s3-accelerate.amazonaws.com",
 		},
 		registryRedirectHosts([]string{"pypi.fury.io"}))
+	assert.Equal(t, []string{"downloads.cdn.telerik.com"},
+		registryRedirectHosts([]string{"nuget.telerik.com"}))
 }
 
 func TestValidateRegistryRedirectDerivations_RejectsUnmatchableEntries(t *testing.T) {

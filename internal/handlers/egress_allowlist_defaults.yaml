@@ -182,6 +182,14 @@ registry_redirect_derivations:
     derived:
       - gemfury.s3-accelerate.dualstack.amazonaws.com
       - gemfury.s3-accelerate.amazonaws.com
+  # The licensed Telerik NuGet feed (nuget.telerik.com, declared as a nuget-feed
+  # registry with an api-key credential) 302-redirects every package download to
+  # a pre-signed URL on Progress/Telerik's own CDN. Exact host, no user-creatable
+  # names, serves only their package artefacts; derived rather than static
+  # because only a job holding the feed credential can obtain the redirect.
+  - credential_host: nuget.telerik.com
+    derived:
+      - downloads.cdn.telerik.com
 
 # ecosystem_default_domains lists the public registry and CDN hosts each
 # Dependabot ecosystem needs. The map is kept keyed by ecosystem for provenance
