@@ -653,5 +653,10 @@ ecosystem_default_domains:
     # declared in the vendor's own public Package.swift. Anonymous, no redirect.
     # Exact virtual-hosted bucket; never the path-style s3.amazonaws.com apex.
     - prelude-public.s3.amazonaws.com
+    # Pangle's (ByteDance) SDK CDN, serving the PAGAdSDK and TikTokBusinessSDK
+    # xcframework.zip binaryTargets declared in the vendor's own public
+    # Package.swift (bytedance/AdsGlobalPackage). Anonymous, no redirect.
+    # Exact: the rest of i18n-pglstatp.com is not needed and not vetted.
+    - sf16-fe-tos-sg.i18n-pglstatp.com
   vcpkg: []
   pre_commit: []

@@ -1256,6 +1256,9 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://sdk.karte.io/ios/swiftpm/Utilities-3.16.0/KarteUtilities-6aa9d244.xcframework.zip",
 		// Same failure mode for the Prelude Apple SDK's PreludeCore binaryTarget.
 		"https://prelude-public.s3.amazonaws.com/sdk/releases/apple/core/0.1.2/PreludeCore-0.1.2.xcframework.zip",
+		// Same failure mode for Pangle's PAGAdSDK and TikTokBusinessSDK binaryTargets.
+		"https://sf16-fe-tos-sg.i18n-pglstatp.com/obj/pangle-sdk-static-va/8.3.0.8/PAGAdSDK.xcframework.zip",
+		"https://sf16-fe-tos-sg.i18n-pglstatp.com/obj/pangle-sdk-static-va/8.3.0.8/TikTokBusinessSDK.xcframework.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
 	}
@@ -1297,6 +1300,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.prelude-public.s3.amazonaws.com/payload",
 		"https://prelude-public-attacker.s3.amazonaws.com/payload",
 		"https://s3.amazonaws.com/prelude-public/payload",
+		// The Pangle CDN node is one exact host: no children, and never the
+		// vendor's parent domain or its other subdomains.
+		"https://evil.sf16-fe-tos-sg.i18n-pglstatp.com/payload",
+		"https://attacker.i18n-pglstatp.com/payload",
+		"https://i18n-pglstatp.com/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
