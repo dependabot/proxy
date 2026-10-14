@@ -107,7 +107,7 @@ Then choose the section:
 - `github_infra_domains` — GitHub/Dependabot infrastructure only. Don't add third-party hosts here.
 - `shared_registry_domains` — hosts genuinely used by more than one ecosystem.
 - `ecosystem_default_domains.<ecosystem>` — the normal case.
-- `registry_redirect_derivations` — **not** a static section: the host is allowed only for jobs whose credentials name the matching registry. Use it when a configured registry redirects downloads to a provider-owned storage host that step 1 ruled out of the static sections. Entries are `credential_host` (exact, or leading dot for any subdomain) plus `derived` (exact hosts only; globs are rejected at startup).
+- `registry_redirect_derivations` — **not** a static section: the host is allowed only for jobs whose credentials name the matching registry. Use it when a configured registry redirects downloads to a provider-owned storage host that step 1 ruled out of the static sections. Entries are `credential_host` (exact, or leading dot for any subdomain) plus `derived` (exact hosts only; globs are rejected at startup). If the redirect target is itself a shared host with the tenant in the path (e.g. path-style `s3.amazonaws.com/<bucket>/...`), use `derived_paths` (`host` plus a literal `path_prefix` such as `/bucket/`) instead of `derived`, so that only that prefix is allowed, and only for GET/HEAD.
 
 Add the host to exactly one section. Every static section is applied to every job, so listing it twice is redundant, not safer.
 

@@ -51,6 +51,9 @@ type EgressAllowlistHandler struct {
 	// glob-free, so treating them as patterns (e.g. a configured "https://*.com")
 	// would silently disable enforcement for every matching destination.
 	dynamicHosts []string
+	// dynamicPaths are per-job host and path-prefix pairs derived from the job's
+	// credentials, for storage shared by many tenants on one hostname.
+	dynamicPaths []derivedPath
 	metrics      MetricSender
 }
 
@@ -71,6 +74,7 @@ func NewEgressAllowlistHandler(cfg *config.Config, env config.ProxyEnvSettings, 
 		enforce:      cfg.Experiments.Enabled(egressEnforceExperiment),
 		allowed:      allowed,
 		dynamicHosts: dynamicHosts(cfg.Credentials),
+		dynamicPaths: registryRedirectPaths(credentialHosts(cfg.Credentials)),
 		metrics:      metricSender,
 	}
 }
@@ -86,7 +90,7 @@ func (h *EgressAllowlistHandler) HandleRequest(req *http.Request, proxyCtx *gopr
 		return req, nil
 	}
 
-	allowed := h.isAllowed(host)
+	allowed := h.isAllowed(host) || h.isPathAllowed(req, host)
 
 	// A request is actually dropped only when it is not allowlisted AND enforce
 	// mode is on; in observe-only mode a non-allowlisted host is logged but still
@@ -140,6 +144,22 @@ func (h *EgressAllowlistHandler) isAllowed(host string) bool {
 	// allowlist beyond the exact host the job was configured to reach.
 	for _, entry := range h.dynamicHosts {
 		if helpers.AreHostnamesEqual(host, entry) {
+			return true
+		}
+	}
+	return false
+}
+
+// isPathAllowed reports whether a download request matches one of the job's
+// path-scoped redirect targets. Only GET and HEAD qualify: these targets serve
+// pre-signed downloads, never uploads.
+func (h *EgressAllowlistHandler) isPathAllowed(req *http.Request, host string) bool {
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
+		return false
+	}
+	host = strings.TrimSuffix(host, ".")
+	for _, p := range h.dynamicPaths {
+		if p.allows(host, req.URL) {
 			return true
 		}
 	}

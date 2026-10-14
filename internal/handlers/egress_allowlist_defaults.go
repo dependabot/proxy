@@ -96,8 +96,8 @@ func validateRegistryRedirectDerivations(derivations []registryRedirectDerivatio
 		if isGlobPattern(d.CredentialHost) {
 			return fmt.Errorf("credential_host %q must be an exact host or a leading-dot domain, not a glob", d.CredentialHost)
 		}
-		if len(d.Derived) == 0 {
-			return fmt.Errorf("credential_host %q has no derived hosts", d.CredentialHost)
+		if len(d.Derived) == 0 && len(d.DerivedPaths) == 0 {
+			return fmt.Errorf("credential_host %q has no derived hosts or paths", d.CredentialHost)
 		}
 		for _, host := range d.Derived {
 			if host == "" {
@@ -107,6 +107,30 @@ func validateRegistryRedirectDerivations(derivations []registryRedirectDerivatio
 				return fmt.Errorf("derived host %q (credential_host %q) must be an exact host: derived hosts are matched exactly", host, d.CredentialHost)
 			}
 		}
+		for _, p := range d.DerivedPaths {
+			if p.Host == "" || isGlobPattern(p.Host) || strings.HasPrefix(p.Host, ".") {
+				return fmt.Errorf("derived_paths host %q (credential_host %q) must be an exact host", p.Host, d.CredentialHost)
+			}
+			if err := validatePathPrefix(p.PathPrefix); err != nil {
+				return fmt.Errorf("derived_paths path_prefix %q (credential_host %q): %w", p.PathPrefix, d.CredentialHost, err)
+			}
+		}
+	}
+	return nil
+}
+
+// validatePathPrefix requires a literal, normalized prefix of at least one whole
+// path segment, such as "/bucket/". The trailing slash stops "/bucket" from also
+// matching "/bucket-of-an-attacker".
+func validatePathPrefix(prefix string) error {
+	if len(prefix) < 3 || !strings.HasPrefix(prefix, "/") || !strings.HasSuffix(prefix, "/") {
+		return fmt.Errorf("must start and end with \"/\" and name at least one segment")
+	}
+	if strings.ContainsAny(prefix, "%\\?#*[") || strings.Contains(prefix, "//") {
+		return fmt.Errorf("must be a literal, normalized path")
+	}
+	if path.Clean(prefix)+"/" != prefix {
+		return fmt.Errorf("must not contain dot segments")
 	}
 	return nil
 }

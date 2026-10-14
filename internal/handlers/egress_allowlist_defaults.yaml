@@ -167,6 +167,12 @@ shared_registry_domains:
 #                    forms are rejected at startup: dynamic hosts are matched
 #                    exactly so that a crafted credential cannot widen them.
 #
+#   derived_paths:   optional {host, path_prefix} pairs for a shared host that
+#                    must not be opened whole, e.g. path-style S3, where every
+#                    bucket is a path on s3.amazonaws.com. The host is matched
+#                    exactly and the request is allowed only for GET/HEAD under
+#                    path_prefix, a literal "/segment/" ending in a slash.
+#
 # Every derived host is a constant. Targets whose name embeds a value taken from
 # the credential (e.g. the private ECR layer bucket, which interpolates the
 # region) stay in registryRedirectHosts in Go.
@@ -177,11 +183,15 @@ registry_redirect_derivations:
       - d3fo0g5hm7lbuv.cloudfront.net
   # Every Gemfury endpoint (pypi., npm., gem., ...) redirects downloads to
   # pre-signed URLs on one Gemfury-owned bucket, reachable on both its dualstack
-  # and plain Transfer Acceleration endpoints.
+  # and plain Transfer Acceleration endpoints, and for some accounts as a
+  # path-style URL on the shared S3 endpoint (dependabot/proxy#308).
   - credential_host: .fury.io
     derived:
       - gemfury.s3-accelerate.dualstack.amazonaws.com
       - gemfury.s3-accelerate.amazonaws.com
+    derived_paths:
+      - host: s3.amazonaws.com
+        path_prefix: /gemfury/
 
 # ecosystem_default_domains lists the public registry and CDN hosts each
 # Dependabot ecosystem needs. The map is kept keyed by ecosystem for provenance

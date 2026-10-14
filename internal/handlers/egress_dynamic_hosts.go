@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/dependabot/proxy/internal/config"
@@ -25,8 +26,40 @@ var ecrHostPattern = regexp.MustCompile(`^[0-9]{12}\.dkr\.ecr\.([a-z0-9-]+)\.ama
 type registryRedirectDerivation struct {
 	// CredentialHost matches exactly, or, with a leading dot, any subdomain of
 	// that domain but not the apex.
-	CredentialHost string   `yaml:"credential_host"`
-	Derived        []string `yaml:"derived"`
+	CredentialHost string        `yaml:"credential_host"`
+	Derived        []string      `yaml:"derived"`
+	DerivedPaths   []derivedPath `yaml:"derived_paths"`
+}
+
+// derivedPath allows one exact host, but only for GET/HEAD requests whose path
+// sits under a fixed prefix. It exists for shared hosts such as path-style S3
+// ("s3.amazonaws.com/<bucket>/..."), where allowing the whole host would open
+// every tenant's bucket.
+type derivedPath struct {
+	Host       string `yaml:"host"`
+	PathPrefix string `yaml:"path_prefix"`
+}
+
+// allows reports whether u is a request for p.Host under p.PathPrefix. Both the
+// escaped and decoded paths must carry the prefix, so an encoded slash
+// ("/bucket%2F..%2Fother") cannot move the request into another bucket, and dot
+// segments and backslashes are rejected in case either end normalizes them.
+func (p derivedPath) allows(host string, u *url.URL) bool {
+	if !helpers.AreHostnamesEqual(host, p.Host) || u.Opaque != "" {
+		return false
+	}
+	if !strings.HasPrefix(u.EscapedPath(), p.PathPrefix) || !strings.HasPrefix(u.Path, p.PathPrefix) {
+		return false
+	}
+	if strings.Contains(u.Path, `\`) {
+		return false
+	}
+	for _, segment := range strings.Split(u.Path, "/") {
+		if segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 // registryRedirectDerivations is loaded from the registry_redirect_derivations
@@ -60,6 +93,21 @@ func registryRedirectHosts(credHosts []string) []string {
 		}
 	}
 	return hosts
+}
+
+// registryRedirectPaths returns the path-scoped storage targets that the job's
+// configured registries redirect downloads to.
+func registryRedirectPaths(credHosts []string) []derivedPath {
+	var paths []derivedPath
+	for _, h := range credHosts {
+		h = strings.TrimSuffix(h, ".")
+		for _, derivation := range registryRedirectDerivations {
+			if derivation.matches(h) {
+				paths = append(paths, derivation.DerivedPaths...)
+			}
+		}
+	}
+	return slices.Compact(paths)
 }
 
 func (d registryRedirectDerivation) matches(host string) bool {

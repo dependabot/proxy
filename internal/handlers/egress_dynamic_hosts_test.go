@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -286,5 +288,96 @@ func TestRegistryRedirectHosts_NotAddedWithoutGemfuryCredential(t *testing.T) {
 	} {
 		assert.NotNil(t, egressResult(t, h, blocked),
 			"Gemfury storage must not be allowed for a job with no Gemfury credential: "+blocked)
+	}
+}
+
+func TestRegistryRedirectPaths_GemfuryPathStyleS3(t *testing.T) {
+	// Gemfury also redirects some downloads to its bucket in path-style form on
+	// the shared S3 endpoint (dependabot/proxy#308). Only that bucket's prefix
+	// may be reached, never the host as a whole.
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "https://pypi.fury.io/acme/"},
+	})
+
+	for _, allowed := range []string{
+		"https://s3.amazonaws.com/gemfury/gems/abc123/pkg-1.0.0-py3-none-any.whl?x-acct=acme&X-Amz-Signature=x",
+		"https://s3.amazonaws.com:443/gemfury/gems/abc123/pkg-1.0.0%2Blocal-py3-none-any.whl",
+		"https://s3.amazonaws.com./gemfury/gems/abc123/pkg.whl",
+	} {
+		assert.Nil(t, egressResult(t, h, allowed), "Gemfury path-style download must be allowed: "+allowed)
+	}
+
+	for _, blocked := range []string{
+		// Other buckets and the bare host stay closed.
+		"https://s3.amazonaws.com/",
+		"https://s3.amazonaws.com/attacker/loot",
+		"https://s3.amazonaws.com/gemfury",
+		"https://s3.amazonaws.com/gemfuryx/loot",
+		"https://s3.amazonaws.com/gemfury-attacker/loot",
+		"https://s3.amazonaws.com/GEMFURY/loot",
+		// The prefix cannot be escaped with dot segments or encoded separators.
+		"https://s3.amazonaws.com/gemfury/../attacker/loot",
+		"https://s3.amazonaws.com/gemfury/%2e%2e/attacker/loot",
+		"https://s3.amazonaws.com/gemfury%2F..%2Fattacker/loot",
+		"https://s3.amazonaws.com/gemfury%2Floot",
+		"https://s3.amazonaws.com/gemfury/gems/..%5C..%5Cattacker/loot",
+		"https://s3.amazonaws.com/gemfury/./loot",
+		// Only the exact host gets the path rule.
+		"https://evil.s3.amazonaws.com/gemfury/loot",
+		"https://s3.us-east-1.amazonaws.com/gemfury/loot",
+		"https://s3.amazonaws.com.evil.com/gemfury/loot",
+	} {
+		assert.NotNil(t, egressResult(t, h, blocked), "must remain blocked: "+blocked)
+	}
+
+	for _, method := range []string{http.MethodPut, http.MethodPost, http.MethodDelete} {
+		req := httptest.NewRequestWithContext(t.Context(), method, "https://s3.amazonaws.com/gemfury/gems/x/loot", nil)
+		_, resp := h.HandleRequest(req, nil)
+		require.NotNil(t, resp, method+" must be blocked")
+		mustClose(resp.Body)
+	}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodHead, "https://s3.amazonaws.com/gemfury/gems/x/pkg.whl", nil)
+	_, resp := h.HandleRequest(req, nil)
+	assert.Nil(t, resp, "HEAD must be allowed")
+}
+
+func TestRegistryRedirectPaths_NotAddedWithoutGemfuryCredential(t *testing.T) {
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "https://pypi.internal.example.com/simple"},
+	})
+	assert.NotNil(t, egressResult(t, h, "https://s3.amazonaws.com/gemfury/gems/x/loot"),
+		"Gemfury path-style storage must not be allowed for a job with no Gemfury credential")
+
+	assert.Empty(t, registryRedirectPaths([]string{"fury.io", "pypi.fury.io.evil.com", "evil.com"}))
+	assert.Equal(t,
+		[]derivedPath{{Host: "s3.amazonaws.com", PathPrefix: "/gemfury/"}},
+		registryRedirectPaths([]string{"pypi.fury.io", "npm.fury.io", "pypi.fury.io."}),
+		"several Gemfury credentials yield one path rule")
+}
+
+func TestValidateRegistryRedirectDerivations_PathPrefixes(t *testing.T) {
+	valid := registryRedirectDerivation{
+		CredentialHost: ".fury.io",
+		DerivedPaths:   []derivedPath{{Host: "s3.amazonaws.com", PathPrefix: "/gemfury/"}},
+	}
+	assert.NoError(t, validateRegistryRedirectDerivations([]registryRedirectDerivation{valid}),
+		"derived_paths alone is a valid derivation")
+
+	for name, p := range map[string]derivedPath{
+		"empty host":          {Host: "", PathPrefix: "/gemfury/"},
+		"glob host":           {Host: "*.amazonaws.com", PathPrefix: "/gemfury/"},
+		"leading-dot host":    {Host: ".amazonaws.com", PathPrefix: "/gemfury/"},
+		"empty prefix":        {Host: "s3.amazonaws.com", PathPrefix: ""},
+		"root prefix":         {Host: "s3.amazonaws.com", PathPrefix: "/"},
+		"no trailing slash":   {Host: "s3.amazonaws.com", PathPrefix: "/gemfury"},
+		"no leading slash":    {Host: "s3.amazonaws.com", PathPrefix: "gemfury/"},
+		"dot segment":         {Host: "s3.amazonaws.com", PathPrefix: "/gemfury/../"},
+		"double slash":        {Host: "s3.amazonaws.com", PathPrefix: "//gemfury/"},
+		"percent-encoded":     {Host: "s3.amazonaws.com", PathPrefix: "/gem%66ury/"},
+		"glob in prefix":      {Host: "s3.amazonaws.com", PathPrefix: "/gem*/"},
+		"backslash in prefix": {Host: "s3.amazonaws.com", PathPrefix: "/gem\\fury/"},
+	} {
+		d := registryRedirectDerivation{CredentialHost: ".fury.io", DerivedPaths: []derivedPath{p}}
+		assert.Errorf(t, validateRegistryRedirectDerivations([]registryRedirectDerivation{d}), "must reject %s", name)
 	}
 }
