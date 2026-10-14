@@ -171,6 +171,11 @@ shared_registry_domains:
 # the credential (e.g. the private ECR layer bucket, which interpolates the
 # region) stay in registryRedirectHosts in Go.
 registry_redirect_derivations:
+  # Wolters Kluwer's configured Artifactory npm registry redirects artifact
+  # downloads to its S3 storage bucket.
+  - credential_host: artifactory.wolterskluwer.io
+    derived:
+      - jfrog-platform.s3.eu-west-1.amazonaws.com
   # packagecloud.io redirects downloads to one CloudFront distribution it owns.
   - credential_host: packagecloud.io
     derived:
