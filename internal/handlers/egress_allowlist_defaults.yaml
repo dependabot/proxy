@@ -150,6 +150,8 @@ shared_registry_domains:
   # Public mirrors (continued).
   - mirrors.cloud.tencent.com
   - mirrors.huaweicloud.com
+  # AdsByNimbus public vendor (Gradle and Swift Package Manager).
+  - adsbynimbus-public.s3.amazonaws.com
 
 # registry_redirect_derivations are storage hosts that a configured registry
 # 302-redirects package downloads to, but that appear in no credential field.

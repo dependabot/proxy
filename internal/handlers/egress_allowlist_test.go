@@ -581,6 +581,7 @@ func TestEgressAllowlist_NewExactDomainsAllowed(t *testing.T) {
 		"https://maven.google.com/androidx/pkg.pom",
 		"https://packages.drupal.org/8/packages.json",
 		"https://packages.confluent.io/maven/pkg.jar",
+		"https://adsbynimbus-public.s3.amazonaws.com/iOS/spm/collection.json",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "new exact host allowed: "+allowed)
 	}
@@ -606,6 +607,7 @@ func TestEgressAllowlist_PublicRegistriesAllowed(t *testing.T) {
 		"https://go.googlesource.com/tools",
 		"https://android.googlesource.com/platform",
 		"https://nodejs.org/dist/index.json",
+		"https://adsbynimbus-public.s3.amazonaws.com/android/sdks",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public registry host allowed: "+allowed)
 	}
@@ -757,6 +759,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.charts.wiz.io/payload",
 		"https://evil.wiz-sec.github.io/payload",
 		"https://evil.fluent.github.io/payload",
+		"https://evil.adsbynimbus-public.s3.amazonaws.com/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
