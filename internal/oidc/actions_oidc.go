@@ -33,6 +33,10 @@ const (
 	awsCodeArtifactSTSRequestUrl = "https://sts.amazonaws.com"
 	awsCodeArtifactTokenURLPath  = "/v1/authorization-token" //nolint:gosec // URL path, not a credential
 
+	// GitHub OIDC tokens last five minutes, and direct WIF inherits their expiry.
+	// Leave room for exchange latency; a five-minute minimum rejects fresh tokens.
+	// https://github.com/google-github-actions/auth#inputs-workload-identity-federation
+	// https://github.com/dependabot/proxy/issues/262
 	gcpDirectWIFExpiryBuffer = 4 * time.Minute
 )
 

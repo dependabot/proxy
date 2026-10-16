@@ -227,6 +227,7 @@ func GetOrRefreshOIDCToken(cred *OIDCCredential, ctx context.Context) (string, e
 
 	refreshBuffer := 5 * time.Minute
 	if params, ok := cred.parameters.(*GCPOIDCParameters); ok && params.ServiceAccount == "" {
+		// A five-minute buffer would mark fresh direct WIF tokens expired in the cache.
 		refreshBuffer = gcpDirectWIFExpiryBuffer
 	}
 
