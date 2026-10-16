@@ -65,6 +65,7 @@ jobs:
       - name: ${{ matrix.suite }}
         env:
           LOCAL_GITHUB_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # The proxy under test is built locally, without a release attestation.
         run: |
           set -o pipefail
           dependabot test \
@@ -73,6 +74,7 @@ jobs:
             --cache=cache \
             --timeout=20m \
             --proxy-image=dependabot/proxy:latest \
+            --skip-image-verification \
             2>&1 | tee -a log.txt
 
       - name: Diff
