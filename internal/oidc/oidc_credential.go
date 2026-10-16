@@ -232,7 +232,7 @@ func GetOrRefreshOIDCToken(cred *OIDCCredential, ctx context.Context) (string, e
 	}
 
 	cred.cachedToken = oidcAccessToken.Token
-	cred.tokenExpiry = time.Now().Add(oidcAccessToken.ExpiresIn - refreshBuffer)
+	cred.tokenExpiry = time.Now().Add(oidcAccessToken.ExpiresIn).Add(-refreshBuffer)
 
 	return oidcAccessToken.Token, nil
 }
