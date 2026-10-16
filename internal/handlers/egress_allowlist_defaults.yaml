@@ -677,5 +677,10 @@ ecosystem_default_domains:
     # Package.swift (bytedance/AdsGlobalPackage). Anonymous, no redirect.
     # Exact: the rest of i18n-pglstatp.com is not needed and not vetted.
     - sf16-fe-tos-sg.i18n-pglstatp.com
+    # Vindral's (RealSprint) SDK host, serving the VindralStreaming zip
+    # binaryTarget declared in the vendor's own public Package.swift
+    # (RealSprint/vindral-apple-sdk-spm). Anonymous, no redirect.
+    # Exact: *.vindral.com also fronts the vendor's CDN and stage/test hosts.
+    - applesdk.vindral.com
   vcpkg: []
   pre_commit: []
