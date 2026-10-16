@@ -225,8 +225,13 @@ func GetOrRefreshOIDCToken(cred *OIDCCredential, ctx context.Context) (string, e
 		return "", fmt.Errorf("failed to get %s access token: %w", cred.Provider(), err)
 	}
 
+	refreshBuffer := 5 * time.Minute
+	if params, ok := cred.parameters.(*GCPOIDCParameters); ok && params.ServiceAccount == "" {
+		refreshBuffer = gcpDirectWIFExpiryBuffer
+	}
+
 	cred.cachedToken = oidcAccessToken.Token
-	cred.tokenExpiry = time.Now().Add(oidcAccessToken.ExpiresIn).Add(-time.Minute * 5) // refresh 5 minutes before expiry
+	cred.tokenExpiry = time.Now().Add(oidcAccessToken.ExpiresIn - refreshBuffer)
 
 	return oidcAccessToken.Token, nil
 }

@@ -73,7 +73,7 @@ Handlers can support OIDC token exchange for Azure, JFrog, or AWS. See [oidc_cre
 
 - Check `oidc.CreateOIDCCredential(cred)` to detect OIDC config
 - Use `oidc.GetOrRefreshOIDCToken(cred, ctx)` for cached token retrieval
-- Tokens are cached with 5-minute expiry buffer
+- Tokens are cached with a 5-minute expiry buffer (4 minutes for direct GCP Workload Identity Federation without service-account impersonation)
 
 ## Environment Variables
 
