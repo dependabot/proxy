@@ -41,6 +41,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Install Dependabot CLI
+        env:
+          # The CLI may require a newer Go version than the proxy.
+          GOTOOLCHAIN: auto
         run: go install github.com/dependabot/cli/cmd/dependabot@latest
 
       - name: Download smoke test
