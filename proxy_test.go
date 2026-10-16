@@ -195,6 +195,78 @@ func TestProxyDependabotAPIHost(t *testing.T) {
 	}
 }
 
+// An org-level Docker registry credential can carry a web context path, like
+// Artifactory's /artifactory/<repository-key>, that Docker Registry API
+// requests never contain. The proxy must still answer the registry's challenge
+// with that credential.
+func TestProxyDockerRegistryCredentialWithWebContextPath(t *testing.T) {
+	t.Setenv("PROXY_CACHE", "false")
+	cfg := &config.Config{
+		CA: testProxyConfig.CA,
+		Credentials: config.Credentials{{
+			"type":     "docker_registry",
+			"url":      "https://artifactory.example.com/artifactory/docker-remote",
+			"username": "docker-user",
+			"password": "docker-password",
+		}},
+	}
+
+	tests := []struct {
+		name         string
+		challenge    string
+		acceptsBasic bool
+	}{
+		{
+			name:      "token challenge",
+			challenge: `Bearer realm="https://artifactory.example.com/v2/token",service="artifactory.example.com",scope="repository:team/app:pull"`,
+		},
+		{
+			name:         "basic challenge",
+			challenge:    `Basic realm="Artifactory Realm"`,
+			acceptsBasic: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				username, password, _ := r.BasicAuth()
+				hasCredential := username == "docker-user" && password == "docker-password"
+				switch {
+				case r.URL.Path == "/v2/token" && hasCredential:
+					_, _ = io.WriteString(w, `{"token":"registry-token"}`)
+				case r.Header.Get("Authorization") == "Bearer registry-token", tt.acceptsBasic && hasCredential:
+					w.WriteHeader(http.StatusOK)
+				default:
+					w.Header().Set("WWW-Authenticate", tt.challenge)
+					w.WriteHeader(http.StatusUnauthorized)
+				}
+			}))
+			defer upstream.Close()
+
+			client, proxy := testProxyServer(t, cfg, nil, upstream.Certificate())
+			closeOnCleanup(t, proxy)
+			t.Cleanup(client.CloseIdleConnections)
+			proxyHandler := proxy.Handler.(*Proxy)
+			t.Cleanup(proxyHandler.Tr.CloseIdleConnections)
+			proxyHandler.Tr.Proxy = nil
+			proxyHandler.Tr.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, upstream.Listener.Addr().String())
+			}
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+				"https://artifactory.example.com/v2/docker-remote/team/app/manifests/latest", nil)
+			require.NoError(t, err)
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, resp.Body.Close())
+			}()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+		})
+	}
+}
+
 func TestProxyEgressAllowlistEnforceBlocks(t *testing.T) {
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
