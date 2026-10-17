@@ -1282,6 +1282,9 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://sf16-fe-tos-sg.i18n-pglstatp.com/obj/pangle-sdk-static-va/8.3.0.8/TikTokBusinessSDK.xcframework.zip",
 		// Same failure mode for the Vindral Apple SDK's VindralStreaming binaryTarget.
 		"https://applesdk.vindral.com/tag/1.2.0/VindralStreaming.zip",
+		// Same failure mode for ONNX Runtime's onnxruntime and onnxruntime_extensions binaryTargets.
+		"https://download.onnxruntime.ai/pod-archive-onnxruntime-c-1.24.2.zip",
+		"https://download.onnxruntime.ai/pod-archive-onnxruntime-extensions-c-0.13.0.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
 	}
@@ -1333,6 +1336,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.applesdk.vindral.com/payload",
 		"https://attacker.vindral.com/payload",
 		"https://vindral.com/payload",
+		// The ONNX Runtime release host is one exact host: no children, and
+		// never the project's parent domain or its other subdomains.
+		"https://evil.download.onnxruntime.ai/payload",
+		"https://attacker.onnxruntime.ai/payload",
+		"https://onnxruntime.ai/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {

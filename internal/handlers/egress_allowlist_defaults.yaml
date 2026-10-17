@@ -684,5 +684,10 @@ ecosystem_default_domains:
     # (RealSprint/vindral-apple-sdk-spm). Anonymous, no redirect.
     # Exact: *.vindral.com also fronts the vendor's CDN and stage/test hosts.
     - applesdk.vindral.com
+    # Microsoft's ONNX Runtime release host, serving the onnxruntime and
+    # onnxruntime_extensions zip binaryTargets declared in the vendor's own
+    # public Package.swift (microsoft/onnxruntime-swift-package-manager).
+    # Anonymous, no redirect. Exact: the certificate names only this host.
+    - download.onnxruntime.ai
   vcpkg: []
   pre_commit: []
