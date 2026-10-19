@@ -583,6 +583,7 @@ func TestEgressAllowlist_NewExactDomainsAllowed(t *testing.T) {
 		"https://maven.google.com/androidx/pkg.pom",
 		"https://packages.drupal.org/8/packages.json",
 		"https://packages.confluent.io/maven/pkg.jar",
+		"https://adsbynimbus-public.s3.amazonaws.com/iOS/spm/collection.json",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "new exact host allowed: "+allowed)
 	}
@@ -608,6 +609,7 @@ func TestEgressAllowlist_PublicRegistriesAllowed(t *testing.T) {
 		"https://go.googlesource.com/tools",
 		"https://android.googlesource.com/platform",
 		"https://nodejs.org/dist/index.json",
+		"https://adsbynimbus-public.s3.amazonaws.com/android/sdks",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public registry host allowed: "+allowed)
 	}
@@ -759,6 +761,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.charts.wiz.io/payload",
 		"https://evil.wiz-sec.github.io/payload",
 		"https://evil.fluent.github.io/payload",
+		"https://evil.adsbynimbus-public.s3.amazonaws.com/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -1069,6 +1072,8 @@ func TestEgressDefaults_RegistryRedirectDerivationsLoadedFromYAML(t *testing.T) 
 			"gemfury.s3-accelerate.amazonaws.com",
 		},
 		registryRedirectHosts([]string{"pypi.fury.io"}))
+	assert.Equal(t, []string{"downloads.cdn.telerik.com"},
+		registryRedirectHosts([]string{"nuget.telerik.com"}))
 }
 
 func TestValidateRegistryRedirectDerivations_RejectsUnmatchableEntries(t *testing.T) {
@@ -1277,6 +1282,8 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		// Same failure mode for Pangle's PAGAdSDK and TikTokBusinessSDK binaryTargets.
 		"https://sf16-fe-tos-sg.i18n-pglstatp.com/obj/pangle-sdk-static-va/8.3.0.8/PAGAdSDK.xcframework.zip",
 		"https://sf16-fe-tos-sg.i18n-pglstatp.com/obj/pangle-sdk-static-va/8.3.0.8/TikTokBusinessSDK.xcframework.zip",
+		// Same failure mode for the Vindral Apple SDK's VindralStreaming binaryTarget.
+		"https://applesdk.vindral.com/tag/1.2.0/VindralStreaming.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
 	}
@@ -1323,6 +1330,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.sf16-fe-tos-sg.i18n-pglstatp.com/payload",
 		"https://attacker.i18n-pglstatp.com/payload",
 		"https://i18n-pglstatp.com/payload",
+		// vindral.com serves a wildcard cert covering its CDN and stage/test
+		// hosts, so the SDK host must not open the parent or any sibling.
+		"https://evil.applesdk.vindral.com/payload",
+		"https://attacker.vindral.com/payload",
+		"https://vindral.com/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {

@@ -150,6 +150,8 @@ shared_registry_domains:
   # Public mirrors (continued).
   - mirrors.cloud.tencent.com
   - mirrors.huaweicloud.com
+  # AdsByNimbus public vendor (Gradle and Swift Package Manager).
+  - adsbynimbus-public.s3.amazonaws.com
 
 # registry_redirect_derivations are storage hosts that a configured registry
 # 302-redirects package downloads to, but that appear in no credential field.
@@ -187,6 +189,14 @@ registry_redirect_derivations:
     derived:
       - gemfury.s3-accelerate.dualstack.amazonaws.com
       - gemfury.s3-accelerate.amazonaws.com
+  # The licensed Telerik NuGet feed (nuget.telerik.com, declared as a nuget-feed
+  # registry with an api-key credential) 302-redirects every package download to
+  # a pre-signed URL on Progress/Telerik's own CDN. Exact host, no user-creatable
+  # names, serves only their package artefacts; derived rather than static
+  # because only a job holding the feed credential can obtain the redirect.
+  - credential_host: nuget.telerik.com
+    derived:
+      - downloads.cdn.telerik.com
 
 # ecosystem_default_domains lists the public registry and CDN hosts each
 # Dependabot ecosystem needs. The map is kept keyed by ecosystem for provenance
@@ -674,5 +684,10 @@ ecosystem_default_domains:
     # Package.swift (bytedance/AdsGlobalPackage). Anonymous, no redirect.
     # Exact: the rest of i18n-pglstatp.com is not needed and not vetted.
     - sf16-fe-tos-sg.i18n-pglstatp.com
+    # Vindral's (RealSprint) SDK host, serving the VindralStreaming zip
+    # binaryTarget declared in the vendor's own public Package.swift
+    # (RealSprint/vindral-apple-sdk-spm). Anonymous, no redirect.
+    # Exact: *.vindral.com also fronts the vendor's CDN and stage/test hosts.
+    - applesdk.vindral.com
   vcpkg: []
   pre_commit: []
