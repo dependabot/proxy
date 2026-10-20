@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
@@ -77,6 +79,102 @@ func TestSuccessfulAuthenticationDoesNotMakeARepeatedRequest(t *testing.T) {
 
 	// ensure only one request was actually made
 	assert.Equal(t, 1, requestsReceived, "expected only one token request due to successful authentication being cached")
+}
+
+func TestGetOrRefreshGCPToken(t *testing.T) {
+	tests := []struct {
+		name           string
+		expiresIn      int
+		serviceAccount string
+		refreshAfter   time.Duration
+		wantError      string
+	}{
+		{name: "nearly five minutes", expiresIn: 298, refreshAfter: 58 * time.Second},
+		{name: "five minutes", expiresIn: 300, refreshAfter: time.Minute},
+		{name: "just over four minutes", expiresIn: 241, refreshAfter: time.Second},
+		{name: "exactly four minutes", expiresIn: 240, wantError: "GCP STS token expires too soon"},
+		{name: "under four minutes", expiresIn: 239, wantError: "GCP STS token expires too soon"},
+		{name: "expired", expiresIn: 0, wantError: "GCP STS token expires too soon"},
+		{name: "negative lifetime", expiresIn: -1, wantError: "GCP STS token expires too soon"},
+		{name: "long-lived direct WIF", expiresIn: 3600, refreshAfter: 56 * time.Minute},
+		{
+			name:           "impersonation retains five-minute minimum",
+			expiresIn:      298,
+			serviceAccount: "my-sa@my-project.iam.gserviceaccount.com",
+			wantError:      "GCP IAM token expires too soon",
+		},
+		{
+			name:           "impersonation retains five-minute refresh buffer",
+			expiresIn:      3600,
+			serviceAccount: "my-sa@my-project.iam.gserviceaccount.com",
+			refreshAfter:   55 * time.Minute,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				t.Setenv(envActionsIDTokenRequestURL, "https://example.com/token")
+				t.Setenv(envActionsIDTokenRequestToken, "test-token")
+
+				creds, err := CreateOIDCCredential(config.Credential{
+					"workload-identity-provider": "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
+					"service-account":            tt.serviceAccount,
+				}, testHTTPClient)
+				require.NoError(t, err)
+
+				httpmock.Activate()
+				defer httpmock.DeactivateAndReset()
+				httpmock.RegisterResponder("GET", "https://example.com/token",
+					httpmock.NewStringResponder(200, `{"count":1,"value":"test-assertion"}`))
+
+				requestsReceived := 0
+				httpmock.RegisterResponder("POST", "https://sts.googleapis.com/v1/token", func(req *http.Request) (*http.Response, error) {
+					requestsReceived++
+					return httpmock.NewJsonResponse(200, gcpSTSTokenResponse{
+						AccessToken: fmt.Sprintf("gcp-token-%d", requestsReceived),
+						ExpiresIn:   tt.expiresIn,
+					})
+				})
+				if tt.serviceAccount != "" {
+					iamURL := fmt.Sprintf("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken", tt.serviceAccount)
+					httpmock.RegisterResponder("POST", iamURL, func(req *http.Request) (*http.Response, error) {
+						return httpmock.NewJsonResponse(200, gcpIAMGenerateAccessTokenResponse{
+							AccessToken: fmt.Sprintf("gcp-token-%d", requestsReceived),
+							ExpireTime:  time.Now().Add(time.Duration(tt.expiresIn) * time.Second).Format(time.RFC3339Nano),
+						})
+					})
+				}
+
+				token, err := GetOrRefreshOIDCToken(creds, t.Context())
+				if tt.wantError != "" {
+					require.ErrorContains(t, err, tt.wantError)
+					assert.Empty(t, token)
+					assert.Empty(t, creds.cachedToken)
+
+					_, err = GetOrRefreshOIDCToken(creds, t.Context())
+					require.ErrorContains(t, err, "credential has been rejected due to previous authentication failure")
+					assert.Equal(t, 1, requestsReceived)
+					return
+				}
+				require.NoError(t, err)
+				assert.Equal(t, "gcp-token-1", token)
+				assert.Equal(t, time.Now().Add(tt.refreshAfter), creds.tokenExpiry)
+
+				time.Sleep(tt.refreshAfter - time.Second)
+				token, err = GetOrRefreshOIDCToken(creds, t.Context())
+				require.NoError(t, err)
+				assert.Equal(t, "gcp-token-1", token)
+				assert.Equal(t, 1, requestsReceived, "token should be reused before the refresh boundary")
+
+				time.Sleep(time.Second)
+				token, err = GetOrRefreshOIDCToken(creds, t.Context())
+				require.NoError(t, err)
+				assert.Equal(t, "gcp-token-2", token)
+				assert.Equal(t, 2, requestsReceived, "token should be refreshed at the refresh boundary")
+			})
+		})
+	}
 }
 
 func TestFailedAuthenticationIsNotRetried(t *testing.T) {
