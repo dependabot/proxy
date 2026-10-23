@@ -760,6 +760,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.wiz-sec.github.io/payload",
 		"https://evil.fluent.github.io/payload",
 		"https://evil.adsbynimbus-public.s3.amazonaws.com/payload",
+		"https://evil.csspeechstorage.blob.core.windows.net/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -1282,6 +1283,9 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://sf16-fe-tos-sg.i18n-pglstatp.com/obj/pangle-sdk-static-va/8.3.0.8/TikTokBusinessSDK.xcframework.zip",
 		// Same failure mode for the Vindral Apple SDK's VindralStreaming binaryTarget.
 		"https://applesdk.vindral.com/tag/1.2.0/VindralStreaming.zip",
+		// Same failure mode for the Microsoft Speech SDK's XCFramework binaryTargets.
+		"https://csspeechstorage.blob.core.windows.net/drop/1.53.0/MicrosoftCognitiveServicesSpeech-XCFramework-1.53.0.zip",
+		"https://csspeechstorage.blob.core.windows.net/drop/1.53.0/MicrosoftCognitiveServicesSpeech-MacOSXCFramework-1.53.0.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
 	}
@@ -1333,6 +1337,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.applesdk.vindral.com/payload",
 		"https://attacker.vindral.com/payload",
 		"https://vindral.com/payload",
+		// The Speech SDK storage account is one exact host: no children, no
+		// lookalike accounts, and never other accounts on blob.core.windows.net.
+		"https://evil.csspeechstorage.blob.core.windows.net/payload",
+		"https://csspeechstorageattacker.blob.core.windows.net/payload",
+		"https://attacker.blob.core.windows.net/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
