@@ -597,6 +597,9 @@ ecosystem_default_domains:
     - repo.anaconda.com
   nix:
     - channels.nixos.org
+    # channels.nixos.org 302-redirects git-revision lookups and tarball
+    # downloads to immutable objects on releases.nixos.org.
+    - releases.nixos.org
   devcontainers: *docker_registries
   # helm pulls OCI charts from container registries (the docker set) and also
   # fetches from common public HTTP chart repositories. It is spelled out
