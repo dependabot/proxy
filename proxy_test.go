@@ -390,6 +390,63 @@ func TestProxyEgressAllowlistEnforceAllowsPrivateRegistryRedirectTarget(t *testi
 	assert.Equal(t, http.StatusForbidden, status, "other unlisted hosts stay blocked")
 }
 
+// The git server handler retries an auth failure with an alternate credential
+// and replaces the response. A redirect returned by that retry must still
+// allowlist its target.
+func TestProxyEgressAllowlistLearnsRedirectFromAuthRetry(t *testing.T) {
+	t.Setenv("PROXY_CACHE", "false")
+	const bucketURL = "https://bucket.example.com/archive.tar.gz?X-Amz-Signature=abc"
+	var rejected atomic.Int32
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Host {
+		case "git.example.com":
+			if _, password, _ := r.BasicAuth(); password != "good" {
+				rejected.Add(1)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			http.Redirect(w, r, bucketURL, http.StatusFound)
+		case "bucket.example.com":
+			_, _ = io.WriteString(w, "archive")
+		default:
+			w.WriteHeader(http.StatusTeapot)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := &config.Config{
+		CA:          testProxyConfig.CA,
+		Experiments: config.Experiments{"proxy-egress-enforce": true},
+		Credentials: config.Credentials{
+			{"type": "git_source", "host": "git.example.com", "username": "x-access-token", "password": "bad"},
+			{"type": "git_source", "host": "git.example.com", "username": "x-access-token", "password": "good"},
+		},
+	}
+	client, proxy := testProxyServer(t, cfg, nil, upstream.Certificate())
+	closeOnCleanup(t, proxy)
+	t.Cleanup(client.CloseIdleConnections)
+	proxyHandler := proxy.Handler.(*Proxy)
+	t.Cleanup(proxyHandler.Tr.CloseIdleConnections)
+	proxyHandler.Tr.Proxy = nil
+	proxyHandler.Tr.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, upstream.Listener.Addr().String())
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://git.example.com/org/repo/archive/v1.tar.gz", nil)
+	require.NoError(t, err)
+	rsp, err := client.Do(req)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, rsp.Body.Close())
+	}()
+	body, err := io.ReadAll(rsp.Body)
+	require.NoError(t, err)
+
+	require.Positive(t, rejected.Load(), "the first credential must fail so the retry path is exercised")
+	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+	assert.Equal(t, "archive", string(body))
+}
+
 func TestProxyHTTPSMITMFixedLengthResponseFraming(t *testing.T) {
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", "5")

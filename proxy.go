@@ -77,7 +77,6 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 
 	egressAllowlistHandler := handlers.NewEgressAllowlistHandler(cfg, envSettings, metricsClient)
 	proxy.OnRequest().DoFunc(egressAllowlistHandler.HandleRequest)
-	proxy.OnResponse().DoFunc(egressAllowlistHandler.HandleResponse)
 
 	enableCache := os.Getenv("PROXY_CACHE") == "true"
 	cacher, err := cache.New(enableCache, cacheDir)
@@ -152,6 +151,9 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 	helmRegistryHandler := handlers.NewHelmRegistryHandler(cfg.Credentials, oidcClient)
 	proxy.OnRequest().DoFunc(helmRegistryHandler.HandleRequest)
 
+	// Runs after every handler that can replace a response with an
+	// authentication retry, so a redirect returned by the retry is learned.
+	proxy.OnResponse().DoFunc(egressAllowlistHandler.HandleResponse)
 	proxy.OnResponse().DoFunc(cacher.OnResponse)
 
 	return &Proxy{

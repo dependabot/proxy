@@ -161,6 +161,11 @@ func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *go
 	if rsp == nil || proxyCtx == nil || proxyCtx.Req == nil || !isRedirectStatus(rsp.StatusCode) {
 		return rsp
 	}
+	// A plaintext response could be forged by anything on the network path, so
+	// only a redirect received over TLS from the registry is trusted.
+	if !strings.EqualFold(proxyCtx.Req.URL.Scheme, "https") {
+		return rsp
+	}
 	source := strings.TrimSuffix(helpers.GetHost(proxyCtx.Req), ".")
 	if !h.isRedirectSource(source) {
 		return rsp

@@ -1652,6 +1652,7 @@ func TestEgressAllowlist_RedirectTargetNotLearned(t *testing.T) {
 		location string
 	}{
 		{"source is not a credential host", "https://unconfigured.example.com/x", http.StatusFound, target},
+		{"plaintext source request", "http://packages.example.com/x", http.StatusFound, target},
 		{"source is a statically allowed credential host", "https://github.com/x", http.StatusFound, target},
 		{"public registry credential host", "https://registry.npmjs.org/x", http.StatusFound, target},
 		{"not a redirect status", "https://packages.example.com/x", http.StatusOK, target},
