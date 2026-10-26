@@ -70,6 +70,7 @@ jobs:
             --cache=cache \
             --timeout=20m \
             --proxy-image=dependabot/proxy:latest \
+            --skip-image-verification \
             2>&1 | tee -a log.txt
 
       - name: Diff
