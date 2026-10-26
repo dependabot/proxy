@@ -77,6 +77,7 @@ func newProxyWithCacheDir(envSettings config.ProxyEnvSettings, cfg *config.Confi
 
 	egressAllowlistHandler := handlers.NewEgressAllowlistHandler(cfg, envSettings, metricsClient)
 	proxy.OnRequest().DoFunc(egressAllowlistHandler.HandleRequest)
+	proxy.OnResponse().DoFunc(egressAllowlistHandler.HandleResponse)
 
 	enableCache := os.Getenv("PROXY_CACHE") == "true"
 	cacher, err := cache.New(enableCache, cacheDir)

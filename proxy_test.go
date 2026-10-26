@@ -327,6 +327,69 @@ func TestProxyEgressAllowlistObserveAllows(t *testing.T) {
 		"observe mode must log the non-allowlisted host")
 }
 
+// A self-hosted Artifactory redirects downloads to a presigned URL on the
+// customer's own bucket. Enforce mode must allow that exact redirect target
+// while still blocking every other unlisted host.
+func TestProxyEgressAllowlistEnforceAllowsPrivateRegistryRedirectTarget(t *testing.T) {
+	t.Setenv("PROXY_CACHE", "false")
+	const bucketURL = "https://bucket.example.com/filestore/9d/9dc0?X-Amz-Signature=abc"
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Host {
+		case "artifactory.example.com":
+			assert.NotEmpty(t, r.Header.Get("Authorization"), "registry request is authenticated")
+			http.Redirect(w, r, bucketURL, http.StatusFound)
+		case "bucket.example.com":
+			assert.Empty(t, r.Header.Get("Authorization"), "presigned request must carry no credential")
+			_, _ = io.WriteString(w, "wheel")
+		default:
+			w.WriteHeader(http.StatusTeapot)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := &config.Config{
+		CA:          testProxyConfig.CA,
+		Experiments: config.Experiments{"proxy-egress-enforce": true},
+		Credentials: config.Credentials{{
+			"type":      "python_index",
+			"index-url": "https://artifactory.example.com/artifactory/api/pypi/pypi/simple",
+			"token":     "user:secret",
+		}},
+	}
+	client, proxy := testProxyServer(t, cfg, nil, upstream.Certificate())
+	closeOnCleanup(t, proxy)
+	t.Cleanup(client.CloseIdleConnections)
+	proxyHandler := proxy.Handler.(*Proxy)
+	t.Cleanup(proxyHandler.Tr.CloseIdleConnections)
+	proxyHandler.Tr.Proxy = nil
+	proxyHandler.Tr.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, upstream.Listener.Addr().String())
+	}
+
+	get := func(rawURL string) (int, string) {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, rawURL, nil)
+		require.NoError(t, err)
+		rsp, err := client.Do(req)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, rsp.Body.Close())
+		}()
+		body, err := io.ReadAll(rsp.Body)
+		require.NoError(t, err)
+		return rsp.StatusCode, string(body)
+	}
+
+	status, _ := get(bucketURL)
+	assert.Equal(t, http.StatusForbidden, status, "bucket is blocked before the registry redirects to it")
+
+	status, body := get("https://artifactory.example.com/artifactory/api/pypi/pypi/packages/x.whl")
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "wheel", body)
+
+	status, _ = get("https://other.example.com/")
+	assert.Equal(t, http.StatusForbidden, status, "other unlisted hosts stay blocked")
+}
+
 func TestProxyHTTPSMITMFixedLengthResponseFraming(t *testing.T) {
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", "5")

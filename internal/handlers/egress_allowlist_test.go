@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/elazarl/goproxy"
+
 	"github.com/dependabot/proxy/internal/config"
 )
 
@@ -1604,5 +1606,71 @@ func TestEgressAllowlist_AnonymousCredentialDoesNotWidenBeyondExactHost(t *testi
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
 			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 		}
+	}
+}
+
+// redirectFrom runs HandleResponse for a response to sourceURL with the given
+// status and Location header.
+func redirectFrom(t *testing.T, h *EgressAllowlistHandler, sourceURL string, status int, location string) {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, sourceURL, nil)
+	rsp := &http.Response{StatusCode: status, Header: http.Header{}, Request: req}
+	if location != "" {
+		rsp.Header.Set("Location", location)
+	}
+	require.Same(t, rsp, h.HandleResponse(rsp, &goproxy.ProxyCtx{Req: req}))
+}
+
+func TestEgressAllowlist_PrivateRegistryRedirectTargetAllowed(t *testing.T) {
+	// A self-hosted Artifactory redirects downloads to a presigned URL on the
+	// customer's own per-instance bucket, which no static entry can cover.
+	const bucket = "jfrog-prod-b0fz94bdmu0ba.s3.amazonaws.com"
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "https://packages.example.com/artifactory/api/pypi/pypi/simple"},
+	})
+	require.NotNil(t, egressResult(t, h, "https://"+bucket+"/aol/filestore/9d/9dc0"), "blocked before the redirect")
+
+	redirectFrom(t, h, "https://packages.example.com/artifactory/api/pypi/pypi/packages/x.whl", http.StatusFound,
+		"https://"+bucket+"/aol/filestore/9d/9dc0?X-Amz-Signature=abc")
+
+	assert.Nil(t, egressResult(t, h, "https://"+bucket+"/aol/filestore/9d/9dc0?X-Amz-Signature=abc"))
+	for _, blocked := range []string{
+		"https://other." + bucket + "/",
+		"https://jfrog-prod-other.s3.amazonaws.com/",
+		"https://s3.amazonaws.com/",
+	} {
+		assert.NotNil(t, egressResult(t, h, blocked), "only the exact redirect target is learned: "+blocked)
+	}
+}
+
+func TestEgressAllowlist_RedirectTargetNotLearned(t *testing.T) {
+	const target = "https://attacker.example.net/file"
+	tests := []struct {
+		name     string
+		source   string
+		status   int
+		location string
+	}{
+		{"source is not a credential host", "https://unconfigured.example.com/x", http.StatusFound, target},
+		{"source is a statically allowed credential host", "https://github.com/x", http.StatusFound, target},
+		{"public registry credential host", "https://registry.npmjs.org/x", http.StatusFound, target},
+		{"not a redirect status", "https://packages.example.com/x", http.StatusOK, target},
+		{"304 is not a redirect", "https://packages.example.com/x", http.StatusNotModified, target},
+		{"plain http target", "https://packages.example.com/x", http.StatusFound, "http://attacker.example.net/file"},
+		{"IP literal target", "https://packages.example.com/x", http.StatusFound, "https://169.254.169.254/latest"},
+		{"missing Location", "https://packages.example.com/x", http.StatusFound, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newEgressHandlerWithCreds(config.Credentials{
+				{"type": "npm_registry", "registry": "packages.example.com", "token": "t"},
+				{"type": "npm_registry", "registry": "registry.npmjs.org", "token": "t"},
+				{"type": "git_source", "host": "github.com", "username": "x-access-token", "password": "p"},
+			})
+			redirectFrom(t, h, tt.source, tt.status, tt.location)
+
+			assert.NotNil(t, egressResult(t, h, target))
+			assert.NotNil(t, egressResult(t, h, "https://169.254.169.254/latest"))
+		})
 	}
 }
