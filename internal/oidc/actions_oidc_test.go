@@ -1269,7 +1269,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name: "STS token at exactly 5 minutes (direct WIF)",
+			name: "STS token at exactly 4 minutes (direct WIF)",
 			params: GCPOIDCParameters{
 				WorkloadIdentityProvider: "projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
 				Audience:                 "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/prov",
@@ -1279,7 +1279,7 @@ func TestGetGCPAccessToken(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				encodeJSONResponse(t, w, gcpSTSTokenResponse{
 					AccessToken: "federated-access-token",
-					ExpiresIn:   300,
+					ExpiresIn:   240,
 				})
 			},
 			expectError: true,

@@ -32,6 +32,12 @@ const (
 	awsCodeArtifactDateFormat    = "20060102T150405Z"
 	awsCodeArtifactSTSRequestUrl = "https://sts.amazonaws.com"
 	awsCodeArtifactTokenURLPath  = "/v1/authorization-token" //nolint:gosec // URL path, not a credential
+
+	// GitHub OIDC tokens last five minutes, and direct WIF inherits their expiry.
+	// Leave room for exchange latency; a five-minute minimum rejects fresh tokens.
+	// https://github.com/google-github-actions/auth#inputs-workload-identity-federation
+	// https://github.com/dependabot/proxy/issues/262
+	gcpDirectWIFExpiryBuffer = 4 * time.Minute
 )
 
 // tokenResponse represents the response from GitHub's OIDC provider
@@ -758,7 +764,7 @@ func GetGCPAccessToken(ctx context.Context, params GCPOIDCParameters, githubToke
 	// If no service account, return the federated token directly (direct WIF)
 	if params.ServiceAccount == "" {
 		stsExpiry := time.Duration(stsTokenResp.ExpiresIn) * time.Second
-		if stsExpiry <= 5*time.Minute {
+		if stsExpiry <= gcpDirectWIFExpiryBuffer {
 			return nil, fmt.Errorf("GCP STS token expires too soon (%v remaining)", stsExpiry)
 		}
 		return &OIDCAccessToken{
