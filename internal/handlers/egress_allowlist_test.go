@@ -684,6 +684,9 @@ func TestEgressAllowlist_ProdBlockedHostsNowAllowed(t *testing.T) {
 			"https://satis.spatie.be/packages.json",
 			"https://download.swift.org/swift-5.9-release/toolchain.tar.gz",
 			"https://releases.bazel.build/7.0.0/release/bazel-7.0.0-linux-x86_64",
+			// rules_go's go_sdk extension reads the Go release index during
+			// `bazel mod tidy` when go_sdk.download pins only a version.
+			"https://go.dev/dl/?mode=json&include=all",
 		},
 		"verification and protocol endpoints": {
 			"https://checkpoint-api.hashicorp.com/v1/check/terraform",
@@ -735,6 +738,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.codeberg.org/owner/repo",
 		"https://evil.gitlab.com/group/project",
 		"https://evil.releases.bazel.build/payload",
+		"https://evil.go.dev/payload",
 		"https://evil.data.nuget.org/payload",
 		"https://evil.repo.osgeo.org/repository",
 		"https://evil.androidx.dev/snapshots",
