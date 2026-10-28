@@ -41,6 +41,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Install Dependabot CLI
+        env:
+          # The CLI may require a newer Go version than the proxy.
+          GOTOOLCHAIN: auto
         run: go install github.com/dependabot/cli/cmd/dependabot@latest
 
       - name: Download smoke test
@@ -62,6 +65,7 @@ jobs:
       - name: ${{ matrix.suite }}
         env:
           LOCAL_GITHUB_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # The proxy under test is built locally, without a release attestation.
         run: |
           set -o pipefail
           dependabot test \
