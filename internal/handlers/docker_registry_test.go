@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dependabot/proxy/internal/config"
+	"github.com/dependabot/proxy/internal/testhelpers"
 )
 
 type ecrContextKey struct{}
@@ -100,13 +102,21 @@ func TestDockerRegistryHandler(t *testing.T) {
 	for _, requestURL := range []string{
 		"https://example.com:443/v2/dependabot/core-attacker/manifests/latest",
 		"https://example.com/v2/dependabot%2Fcore/manifests/latest",
-		"https://example.com/v2/dependabot/core/%2e%2e%2fattacker/manifests/latest",
 	} {
 		req = httptest.NewRequestWithContext(t.Context(), "GET", requestURL, nil)
 		proxyCtx = &goproxy.ProxyCtx{}
 		_ = handleRequestAndClose(handler, req, proxyCtx)
-		assert.Nil(t, proxyCtx.RoundTripper, "URL credential path scope")
+		rt, ok = proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
+		require.True(t, ok, "other repositories on the host use the host fallback")
+		trans = rt.transport.(*registry.BasicTransport)
+		assert.Equal(t, hubUser, trans.Username, "correct username is set")
+		assert.Equal(t, "https://"+req.URL.Host+"/v2", trans.URL, "host fallback is not scoped to the configured repository")
 	}
+
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://example.com/v2/dependabot/core/%2e%2e%2fattacker/manifests/latest", nil)
+	proxyCtx = &goproxy.ProxyCtx{}
+	_ = handleRequestAndClose(handler, req, proxyCtx)
+	assert.Nil(t, proxyCtx.RoundTripper, "ambiguous dot segments are not authenticated")
 
 	// Different private registry
 	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://docker.bigco.com/v2/their-repo/manifests/latest", nil)
@@ -402,6 +412,204 @@ func TestDockerRegistryHandlerURLCredentialUsesMatchedRequestOrigin(t *testing.T
 	assert.Equal(t, "encoded-user", transport.Username)
 	assert.Equal(t, "encoded-password", transport.Password)
 	assert.Equal(t, "https://example.com/v2/dependabot/core", transport.URL)
+}
+
+// Registries such as Artifactory are commonly configured with a web context
+// path, like /artifactory/<repository-key>, that never appears in Docker
+// Registry API requests.
+func TestDockerRegistryHandlerPathScopedCredentialFallsBackToHost(t *testing.T) {
+	client := &http.Client{Transport: &recordingECRTransport{}, Timeout: testOIDCClient.Timeout}
+	handler := NewDockerRegistryHandler(config.Credentials{
+		// Org-level credentials list anonymous registries before those with a
+		// secret. The host fallback must skip them.
+		{
+			"type": "docker_registry",
+			"url":  "https://artifactory.example.com/artifactory/docker-public",
+		},
+		{
+			"type":     "docker_registry",
+			"url":      "https://artifactory.example.com/artifactory/docker-remote",
+			"username": "remote-user",
+			"password": "remote-password",
+		},
+		{
+			"type":     "docker_registry",
+			"url":      "https://artifactory.example.com/artifactory/docker-local",
+			"username": "local-user",
+			"password": "local-password",
+		},
+	}, client, nil)
+
+	tests := []struct {
+		name         string
+		requestURL   string
+		username     string
+		transportURL string
+	}{
+		{
+			name:         "repository path",
+			requestURL:   "https://artifactory.example.com/v2/docker-remote/library/alpine/tags/list",
+			username:     "remote-user",
+			transportURL: "https://artifactory.example.com/v2",
+		},
+		{
+			name:         "matching configured path takes precedence",
+			requestURL:   "https://artifactory.example.com/v2/artifactory/docker-local/app/manifests/latest",
+			username:     "local-user",
+			transportURL: "https://artifactory.example.com/v2/artifactory/docker-local",
+		},
+		{
+			name:       "outside the registry API",
+			requestURL: "https://artifactory.example.com/artifactory/api/npm/npm-remote/lodash",
+		},
+		{
+			name:       "registry API prefix confusion",
+			requestURL: "https://artifactory.example.com/v2-attacker/app/manifests/latest",
+		},
+		{
+			name:       "different port",
+			requestURL: "https://artifactory.example.com:8443/v2/docker-remote/app/manifests/latest",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, test.requestURL, nil)
+			proxyCtx := &goproxy.ProxyCtx{}
+			req = handleRequestAndClose(handler, req, proxyCtx)
+
+			if test.username == "" {
+				assert.Nil(t, proxyCtx.RoundTripper, "no docker registry transport")
+				assertUnauthenticated(t, req, "no docker registry credential applies")
+				return
+			}
+			rt, ok := proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
+			require.True(t, ok, "request is assigned a docker registry transport")
+			transport := rt.transport.(*registry.BasicTransport)
+			assert.Equal(t, test.username, transport.Username)
+			assert.Equal(t, test.transportURL, transport.URL)
+		})
+	}
+}
+
+func TestDockerRegistryHandlerPathScopedOIDCCredentialFallsBackToHost(t *testing.T) {
+	const tokenURL = "https://token.actions.example.com"                       //nolint:gosec // test URL
+	const jfrogTokenURL = "https://jfrog.example.com/access/api/v1/oidc/token" //nolint:gosec // test URL
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", tokenURL)
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "request-token")
+
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	httpmock.RegisterResponder(http.MethodGet, tokenURL,
+		httpmock.NewStringResponder(http.StatusOK, `{"count":1,"value":"github-token"}`))
+
+	newHandler := func() *DockerRegistryHandler {
+		return NewDockerRegistryHandler(config.Credentials{
+			{
+				"type":     "docker_registry",
+				"url":      "https://jfrog.example.com/artifactory/docker-local",
+				"username": "static-user",
+				"password": "static-password",
+			},
+			{
+				"type":                     "docker_registry",
+				"registry":                 "jfrog.example.com",
+				"url":                      "https://jfrog.example.com/artifactory/docker-remote",
+				"jfrog-oidc-provider-name": "proxy-test",
+			},
+		}, testOIDCClient, nil)
+	}
+
+	t.Run("OIDC credential is preferred", func(t *testing.T) {
+		httpmock.RegisterResponder(http.MethodPost, jfrogTokenURL,
+			httpmock.NewStringResponder(http.StatusOK, `{"access_token":"jfrog-token","expires_in":3600}`))
+		handler := newHandler()
+
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+			"https://jfrog.example.com/v2/docker-remote/library/alpine/tags/list", nil)
+		proxyCtx := &goproxy.ProxyCtx{}
+		req = handleRequestAndClose(handler, req, proxyCtx)
+		assertHasTokenAuth(t, req, "Bearer", "jfrog-token", "OIDC host fallback")
+		assert.Nil(t, proxyCtx.RoundTripper, "OIDC host fallback")
+
+		for _, requestURL := range []string{
+			"https://other.example.com/v2/docker-remote/library/alpine/tags/list",
+			"https://jfrog.example.com:8443/v2/docker-remote/library/alpine/tags/list",
+		} {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, requestURL, nil)
+			proxyCtx := &goproxy.ProxyCtx{}
+			req = handleRequestAndClose(handler, req, proxyCtx)
+			assertUnauthenticated(t, req, "host fallback is limited to the credential origin: "+requestURL)
+			assert.Nil(t, proxyCtx.RoundTripper, "host fallback is limited to the credential origin: "+requestURL)
+		}
+	})
+
+	t.Run("failed OIDC credential", func(t *testing.T) {
+		var logs bytes.Buffer
+		testhelpers.CaptureStandardLog(t, &logs)
+		httpmock.RegisterResponder(http.MethodPost, jfrogTokenURL,
+			httpmock.NewStringResponder(http.StatusInternalServerError, "failed"))
+		handler := newHandler()
+
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+			"https://jfrog.example.com/v2/docker-remote/library/alpine/tags/list", nil)
+		proxyCtx := &goproxy.ProxyCtx{}
+		req = handleRequestAndClose(handler, req, proxyCtx)
+		assertUnauthenticated(t, req, "failed OIDC token is not set")
+		rt, ok := proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
+		require.True(t, ok, "static host fallback configures challenge transport")
+		transport := rt.transport.(*registry.BasicTransport)
+		assert.Equal(t, "static-user", transport.Username)
+		assert.Equal(t, "https://jfrog.example.com/v2", transport.URL)
+		assert.Contains(t, logs.String(), "trying host fallback OIDC credential (host: jfrog.example.com, credential path: /v2/artifactory/docker-remote)")
+		assert.Contains(t, logs.String(), "using host fallback static credential (host: jfrog.example.com, credential path: /v2/artifactory/docker-local)")
+
+		// An OIDC credential that matched the request path fails closed.
+		req = httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+			"https://jfrog.example.com/v2/artifactory/docker-remote/app/manifests/latest", nil)
+		proxyCtx = &goproxy.ProxyCtx{}
+		req = handleRequestAndClose(handler, req, proxyCtx)
+		assertUnauthenticated(t, req, "failed path-matched OIDC credential")
+		assert.Nil(t, proxyCtx.RoundTripper, "failed path-matched OIDC credential does not use the host fallback")
+	})
+}
+
+// Helm OCI charts are pulled through the same /v2 registry API as Docker
+// images, so on a host with both credentials the Docker host fallback
+// credential is sent with them, as a path-less Docker credential is.
+func TestDockerRegistryHandlerHostFallbackOnHostSharedWithHelm(t *testing.T) {
+	creds := config.Credentials{
+		{
+			"type":     "docker_registry",
+			"url":      "https://artifactory.example.com/artifactory/docker-remote",
+			"username": "docker-user",
+			"password": "docker-password",
+		},
+		{
+			"type":     "helm_registry",
+			"registry": "artifactory.example.com",
+			"username": "helm-user",
+			"password": "helm-password",
+		},
+	}
+	transport := &recordingECRTransport{}
+	client := &http.Client{Transport: transport, Timeout: testOIDCClient.Timeout}
+
+	// The proxy runs request handlers in registration order, then sends the
+	// request through the proxy context's RoundTripper.
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"https://artifactory.example.com/v2/helm-oci-local/mychart/manifests/1.0.0", nil)
+	proxyCtx := &goproxy.ProxyCtx{}
+	req = handleRequestAndClose(NewDockerRegistryHandler(creds, client, nil), req, proxyCtx)
+	req = handleRequestAndClose(NewHelmRegistryHandler(creds, client), req, proxyCtx)
+	assertHasBasicAuth(t, req, "helm-user", "helm-password", "Helm handler sets its credential")
+
+	require.NotNil(t, proxyCtx.RoundTripper, "Docker host fallback configures the registry transport")
+	resp, err := proxyCtx.RoundTripper.RoundTrip(req, proxyCtx)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.NotNil(t, transport.request)
+	assertHasBasicAuth(t, transport.request, "docker-user", "docker-password", "Docker credential is sent")
 }
 
 func TestDockerRegistryHandlerRejectsConflictingCredentialLocations(t *testing.T) {

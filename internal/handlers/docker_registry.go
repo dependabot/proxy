@@ -33,9 +33,10 @@ type getECRClient func(ctx context.Context, region, keyID, secretKey string, cli
 
 // DockerRegistryHandler handles requests to Docker registries, adding auth.
 type DockerRegistryHandler struct {
-	credentials  []*dockerRegistryCredentials
-	transport    http.RoundTripper
-	oidcRegistry *oidc.OIDCRegistry
+	credentials     []*dockerRegistryCredentials
+	oidcCredentials []*dockerOIDCCredential
+	transport       http.RoundTripper
+	oidcRegistry    *oidc.OIDCRegistry
 }
 
 // NewDockerRegistryHandler returns a new DockerRegistryHandler.
@@ -70,6 +71,11 @@ func NewDockerRegistryHandler(creds config.Credentials, client *http.Client, get
 			// OIDC credentials are not used as static credentials.
 			oidcMatchingCred, urlFields := dockerOIDCMatchingCredential(cred, matchField, matchURL)
 			if oidcCred, _, _ := handler.oidcRegistry.Register(oidcMatchingCred, urlFields, "docker registry"); oidcCred != nil {
+				handler.oidcCredentials = append(handler.oidcCredentials, &dockerOIDCCredential{
+					matchURL:   matchURL,
+					path:       path,
+					credential: oidcCred,
+				})
 				continue
 			}
 		}
@@ -146,7 +152,10 @@ func (h *DockerRegistryHandler) HandleRequest(req *http.Request, proxyCtx *gopro
 	if oidcCredential != nil {
 		return req, nil
 	}
-	h.authenticateStaticCredential(req, proxyCtx, true)
+	if h.authenticateStaticCredential(req, proxyCtx, true) {
+		return req, nil
+	}
+	h.authenticateHostFallback(req, proxyCtx)
 
 	return req, nil
 }
@@ -169,30 +178,84 @@ func (h *DockerRegistryHandler) authenticateStaticCredential(
 			continue
 		}
 
-		if cred.getECRCredentials(req.Context(), proxyCtx) {
-			logging.RequestLogf(proxyCtx, "* authenticating docker ecr request (host: %s)", req.URL.Hostname())
-			helpers.SetBasicAuthorization(req, cred.ecrUsername, cred.ecrPassword)
-		} else {
-			logging.RequestLogf(proxyCtx, "* authenticating docker registry request (host: %s)", req.URL.Hostname())
-			transport := &registry.BasicTransport{
-				Transport: &registry.TokenTransport{
-					Transport: h.transport,
-					Username:  cred.getUsername(),
-					Password:  cred.getPassword(),
-				},
-				URL:      (&url.URL{Scheme: req.URL.Scheme, Host: req.URL.Host}).String() + matchedPath,
-				Username: cred.getUsername(),
-				Password: cred.getPassword(),
-			}
-			proxyCtx.RoundTripper = &dockerRegistryRoundTripper{
-				transport: transport,
-			}
-		}
-
+		h.authenticateWithCredential(req, proxyCtx, cred, matchedPath)
 		return true
 	}
 
 	return false
+}
+
+// authenticateHostFallback authenticates registry API requests that no
+// credential path matched with the first explicit credential for the host, as
+// the proxy did before credential paths were matched. Configured paths are
+// often web context paths, such as Artifactory's /artifactory/<repository-key>,
+// that never appear in registry API requests.
+//
+// The fallback is limited to /v2, so other ecosystems on a shared host keep
+// their own credentials outside the registry API. Helm OCI requests also use
+// /v2, so a static fallback credential is sent with them instead of a Helm
+// credential, as a path-less Docker credential is.
+func (h *DockerRegistryHandler) authenticateHostFallback(req *http.Request, proxyCtx *goproxy.ProxyCtx) {
+	matchedPath, ok := helpers.MatchingPathPrefix(req.URL.EscapedPath(), "/v2")
+	if !ok {
+		return
+	}
+
+	var oidcCredential *dockerOIDCCredential
+	for _, cred := range h.oidcCredentials {
+		if helpers.CredentialURLMatchesRequest(req, cred.matchURL, false) {
+			oidcCredential = cred
+			break
+		}
+	}
+	var staticCredential *dockerRegistryCredentials
+	for _, cred := range h.credentials {
+		if !cred.proxyOnly && helpers.CredentialURLMatchesRequest(req, cred.matchURL, false) {
+			staticCredential = cred
+			break
+		}
+	}
+
+	if oidcCredential != nil {
+		logging.RequestLogf(proxyCtx, "* no docker registry credential path matched, trying host fallback OIDC credential (host: %s, credential path: %s)",
+			req.URL.Hostname(), oidcCredential.path)
+		if h.oidcRegistry.TryAuthCredential(req, proxyCtx, oidcCredential.credential) {
+			return
+		}
+	}
+	if staticCredential != nil {
+		logging.RequestLogf(proxyCtx, "* no docker registry credential path matched, using host fallback static credential (host: %s, credential path: %s)",
+			req.URL.Hostname(), staticCredential.path)
+		h.authenticateWithCredential(req, proxyCtx, staticCredential, matchedPath)
+	}
+}
+
+func (h *DockerRegistryHandler) authenticateWithCredential(
+	req *http.Request,
+	proxyCtx *goproxy.ProxyCtx,
+	cred *dockerRegistryCredentials,
+	matchedPath string,
+) {
+	if cred.getECRCredentials(req.Context(), proxyCtx) {
+		logging.RequestLogf(proxyCtx, "* authenticating docker ecr request (host: %s)", req.URL.Hostname())
+		helpers.SetBasicAuthorization(req, cred.ecrUsername, cred.ecrPassword)
+		return
+	}
+
+	logging.RequestLogf(proxyCtx, "* authenticating docker registry request (host: %s)", req.URL.Hostname())
+	transport := &registry.BasicTransport{
+		Transport: &registry.TokenTransport{
+			Transport: h.transport,
+			Username:  cred.getUsername(),
+			Password:  cred.getPassword(),
+		},
+		URL:      (&url.URL{Scheme: req.URL.Scheme, Host: req.URL.Host}).String() + matchedPath,
+		Username: cred.getUsername(),
+		Password: cred.getPassword(),
+	}
+	proxyCtx.RoundTripper = &dockerRegistryRoundTripper{
+		transport: transport,
+	}
 }
 
 func dockerCredentialMatchesRequest(
@@ -344,6 +407,12 @@ func defaultGetECRClient(ctx context.Context, region, keyID, secretKey string, c
 	}
 
 	return ecr.NewFromConfig(cfg), nil
+}
+
+type dockerOIDCCredential struct {
+	matchURL   string
+	path       string
+	credential *oidc.OIDCCredential
 }
 
 type dockerRegistryCredentials struct {

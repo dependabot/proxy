@@ -195,6 +195,78 @@ func TestProxyDependabotAPIHost(t *testing.T) {
 	}
 }
 
+// An org-level Docker registry credential can carry a web context path, like
+// Artifactory's /artifactory/<repository-key>, that Docker Registry API
+// requests never contain. The proxy must still answer the registry's challenge
+// with that credential.
+func TestProxyDockerRegistryCredentialWithWebContextPath(t *testing.T) {
+	t.Setenv("PROXY_CACHE", "false")
+	cfg := &config.Config{
+		CA: testProxyConfig.CA,
+		Credentials: config.Credentials{{
+			"type":     "docker_registry",
+			"url":      "https://artifactory.example.com/artifactory/docker-remote",
+			"username": "docker-user",
+			"password": "docker-password",
+		}},
+	}
+
+	tests := []struct {
+		name         string
+		challenge    string
+		acceptsBasic bool
+	}{
+		{
+			name:      "token challenge",
+			challenge: `Bearer realm="https://artifactory.example.com/v2/token",service="artifactory.example.com",scope="repository:team/app:pull"`,
+		},
+		{
+			name:         "basic challenge",
+			challenge:    `Basic realm="Artifactory Realm"`,
+			acceptsBasic: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				username, password, _ := r.BasicAuth()
+				hasCredential := username == "docker-user" && password == "docker-password"
+				switch {
+				case r.URL.Path == "/v2/token" && hasCredential:
+					_, _ = io.WriteString(w, `{"token":"registry-token"}`)
+				case r.Header.Get("Authorization") == "Bearer registry-token", tt.acceptsBasic && hasCredential:
+					w.WriteHeader(http.StatusOK)
+				default:
+					w.Header().Set("WWW-Authenticate", tt.challenge)
+					w.WriteHeader(http.StatusUnauthorized)
+				}
+			}))
+			defer upstream.Close()
+
+			client, proxy := testProxyServer(t, cfg, nil, upstream.Certificate())
+			closeOnCleanup(t, proxy)
+			t.Cleanup(client.CloseIdleConnections)
+			proxyHandler := proxy.Handler.(*Proxy)
+			t.Cleanup(proxyHandler.Tr.CloseIdleConnections)
+			proxyHandler.Tr.Proxy = nil
+			proxyHandler.Tr.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, upstream.Listener.Addr().String())
+			}
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+				"https://artifactory.example.com/v2/docker-remote/team/app/manifests/latest", nil)
+			require.NoError(t, err)
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, resp.Body.Close())
+			}()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+		})
+	}
+}
+
 func TestProxyEgressAllowlistEnforceBlocks(t *testing.T) {
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -253,6 +325,126 @@ func TestProxyEgressAllowlistObserveAllows(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, logs.String(), "egress not allowlisted "+upstreamHost,
 		"observe mode must log the non-allowlisted host")
+}
+
+// A self-hosted Artifactory redirects downloads to a presigned URL on the
+// customer's own bucket. Enforce mode must allow that exact redirect target
+// while still blocking every other unlisted host.
+func TestProxyEgressAllowlistEnforceAllowsPrivateRegistryRedirectTarget(t *testing.T) {
+	t.Setenv("PROXY_CACHE", "false")
+	const bucketURL = "https://bucket.example.com/filestore/9d/9dc0?X-Amz-Signature=abc"
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Host {
+		case "artifactory.example.com":
+			assert.NotEmpty(t, r.Header.Get("Authorization"), "registry request is authenticated")
+			http.Redirect(w, r, bucketURL, http.StatusFound)
+		case "bucket.example.com":
+			assert.Empty(t, r.Header.Get("Authorization"), "presigned request must carry no credential")
+			_, _ = io.WriteString(w, "wheel")
+		default:
+			w.WriteHeader(http.StatusTeapot)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := &config.Config{
+		CA:          testProxyConfig.CA,
+		Experiments: config.Experiments{"proxy-egress-enforce": true},
+		Credentials: config.Credentials{{
+			"type":      "python_index",
+			"index-url": "https://artifactory.example.com/artifactory/api/pypi/pypi/simple",
+			"token":     "user:secret",
+		}},
+	}
+	client, proxy := testProxyServer(t, cfg, nil, upstream.Certificate())
+	closeOnCleanup(t, proxy)
+	t.Cleanup(client.CloseIdleConnections)
+	proxyHandler := proxy.Handler.(*Proxy)
+	t.Cleanup(proxyHandler.Tr.CloseIdleConnections)
+	proxyHandler.Tr.Proxy = nil
+	proxyHandler.Tr.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, upstream.Listener.Addr().String())
+	}
+
+	get := func(rawURL string) (int, string) {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, rawURL, nil)
+		require.NoError(t, err)
+		rsp, err := client.Do(req)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, rsp.Body.Close())
+		}()
+		body, err := io.ReadAll(rsp.Body)
+		require.NoError(t, err)
+		return rsp.StatusCode, string(body)
+	}
+
+	status, _ := get(bucketURL)
+	assert.Equal(t, http.StatusForbidden, status, "bucket is blocked before the registry redirects to it")
+
+	status, body := get("https://artifactory.example.com/artifactory/api/pypi/pypi/packages/x.whl")
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "wheel", body)
+
+	status, _ = get("https://other.example.com/")
+	assert.Equal(t, http.StatusForbidden, status, "other unlisted hosts stay blocked")
+}
+
+// The git server handler retries an auth failure with an alternate credential
+// and replaces the response. A redirect returned by that retry must still
+// allowlist its target.
+func TestProxyEgressAllowlistLearnsRedirectFromAuthRetry(t *testing.T) {
+	t.Setenv("PROXY_CACHE", "false")
+	const bucketURL = "https://bucket.example.com/archive.tar.gz?X-Amz-Signature=abc"
+	var rejected atomic.Int32
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Host {
+		case "git.example.com":
+			if _, password, _ := r.BasicAuth(); password != "good" {
+				rejected.Add(1)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			http.Redirect(w, r, bucketURL, http.StatusFound)
+		case "bucket.example.com":
+			_, _ = io.WriteString(w, "archive")
+		default:
+			w.WriteHeader(http.StatusTeapot)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := &config.Config{
+		CA:          testProxyConfig.CA,
+		Experiments: config.Experiments{"proxy-egress-enforce": true},
+		Credentials: config.Credentials{
+			{"type": "git_source", "host": "git.example.com", "username": "x-access-token", "password": "bad"},
+			{"type": "git_source", "host": "git.example.com", "username": "x-access-token", "password": "good"},
+		},
+	}
+	client, proxy := testProxyServer(t, cfg, nil, upstream.Certificate())
+	closeOnCleanup(t, proxy)
+	t.Cleanup(client.CloseIdleConnections)
+	proxyHandler := proxy.Handler.(*Proxy)
+	t.Cleanup(proxyHandler.Tr.CloseIdleConnections)
+	proxyHandler.Tr.Proxy = nil
+	proxyHandler.Tr.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, upstream.Listener.Addr().String())
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://git.example.com/org/repo/archive/v1.tar.gz", nil)
+	require.NoError(t, err)
+	rsp, err := client.Do(req)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, rsp.Body.Close())
+	}()
+	body, err := io.ReadAll(rsp.Body)
+	require.NoError(t, err)
+
+	require.Positive(t, rejected.Load(), "the first credential must fail so the retry path is exercised")
+	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+	assert.Equal(t, "archive", string(body))
 }
 
 func TestProxyHTTPSMITMFixedLengthResponseFraming(t *testing.T) {

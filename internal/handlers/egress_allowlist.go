@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"net"
 	"net/http"
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/elazarl/goproxy"
 
@@ -51,7 +53,17 @@ type EgressAllowlistHandler struct {
 	// glob-free, so treating them as patterns (e.g. a configured "https://*.com")
 	// would silently disable enforcement for every matching destination.
 	dynamicHosts []string
-	metrics      MetricSender
+	// redirectSources are the job's credential hosts that are not already on
+	// the static allowlist, i.e. the customer's own private registries. Only
+	// redirects issued by these hosts teach the allowlist a new target.
+	redirectSources []string
+	// redirectTargets are the exact hosts learned from redirects issued by a
+	// redirectSource, such as the per-instance S3 bucket a self-hosted
+	// Artifactory sends presigned downloads to. Guarded by redirectMu because
+	// requests are handled concurrently.
+	redirectMu      sync.RWMutex
+	redirectTargets map[string]struct{}
+	metrics         MetricSender
 }
 
 // NewEgressAllowlistHandler builds the allowlist from the always-allowed GitHub
@@ -66,13 +78,24 @@ func NewEgressAllowlistHandler(cfg *config.Config, env config.ProxyEnvSettings, 
 	allowed = append(allowed, sharedRegistryDomains...)
 	allowed = append(allowed, allEcosystemDomains...)
 
-	return &EgressAllowlistHandler{
-		observe:      cfg.Experiments.Enabled(egressObserveExperiment),
-		enforce:      cfg.Experiments.Enabled(egressEnforceExperiment),
-		allowed:      allowed,
-		dynamicHosts: dynamicHosts(cfg.Credentials),
-		metrics:      metricSender,
+	h := &EgressAllowlistHandler{
+		observe:         cfg.Experiments.Enabled(egressObserveExperiment),
+		enforce:         cfg.Experiments.Enabled(egressEnforceExperiment),
+		allowed:         allowed,
+		dynamicHosts:    dynamicHosts(cfg.Credentials),
+		redirectTargets: make(map[string]struct{}),
+		metrics:         metricSender,
 	}
+	// Public registries and GitHub hosts are excluded as redirect sources: they
+	// serve user-published content, so they are not trusted to vouch for an
+	// arbitrary destination.
+	for _, host := range credentialHosts(cfg.Credentials) {
+		host = strings.TrimSuffix(host, ".")
+		if host != "" && !h.isStaticallyAllowed(host) {
+			h.redirectSources = append(h.redirectSources, host)
+		}
+	}
+	return h
 }
 
 // HandleRequest logs and/or blocks requests whose host is not on the allowlist.
@@ -125,15 +148,84 @@ func (h *EgressAllowlistHandler) recordHost(host string, allowed, blockEnforced 
 	})
 }
 
+// HandleResponse allows the exact host a private registry redirects to.
+//
+// Self-hosted registries such as Artifactory redirect downloads to a presigned
+// URL on the customer's own object-storage bucket, whose name cannot be derived
+// from the registry host. The registry is configured in the job's credentials,
+// so the destination it chooses is trusted for the remainder of the job.
+func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
+	if !h.observe && !h.enforce {
+		return rsp
+	}
+	if rsp == nil || proxyCtx == nil || proxyCtx.Req == nil || !isRedirectStatus(rsp.StatusCode) {
+		return rsp
+	}
+	// A plaintext response could be forged by anything on the network path, so
+	// only a redirect received over TLS from the registry is trusted.
+	if !strings.EqualFold(proxyCtx.Req.URL.Scheme, "https") {
+		return rsp
+	}
+	source := strings.TrimSuffix(helpers.GetHost(proxyCtx.Req), ".")
+	if !h.isRedirectSource(source) {
+		return rsp
+	}
+	location := rsp.Header.Get("Location")
+	if location == "" {
+		return rsp
+	}
+	target, err := proxyCtx.Req.URL.Parse(location)
+	if err != nil || !strings.EqualFold(target.Scheme, "https") {
+		return rsp
+	}
+	host := strings.TrimSuffix(strings.ToLower(target.Hostname()), ".")
+	// IP literals are never learned: a redirect must not open a path to
+	// internal or link-local addresses.
+	if host == "" || net.ParseIP(host) != nil || h.isAllowed(host) {
+		return rsp
+	}
+
+	h.redirectMu.Lock()
+	h.redirectTargets[host] = struct{}{}
+	h.redirectMu.Unlock()
+	logging.RequestLogf(proxyCtx, "* egress allowlisting redirect target %s from %s", host, source)
+	return rsp
+}
+
+func isRedirectStatus(status int) bool {
+	switch status {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		return true
+	}
+	return false
+}
+
+func (h *EgressAllowlistHandler) isRedirectSource(host string) bool {
+	for _, source := range h.redirectSources {
+		if helpers.AreHostnamesEqual(host, source) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *EgressAllowlistHandler) isStaticallyAllowed(host string) bool {
+	for _, entry := range h.allowed {
+		if hostMatchesAllowlistEntry(host, entry) {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *EgressAllowlistHandler) isAllowed(host string) bool {
 	// Normalize an absolute DNS name (trailing dot) so exact matches treat
 	// "registry.npmjs.org." as equivalent to "registry.npmjs.org", consistent
 	// with HostMatchesDomain's boundary handling for the suffix form.
 	host = strings.TrimSuffix(host, ".")
-	for _, entry := range h.allowed {
-		if hostMatchesAllowlistEntry(host, entry) {
-			return true
-		}
+	if h.isStaticallyAllowed(host) {
+		return true
 	}
 	// Per-job credential hosts are matched exactly only (never as globs or
 	// subdomain suffixes), so an untrusted credential value cannot widen the
@@ -143,7 +235,10 @@ func (h *EgressAllowlistHandler) isAllowed(host string) bool {
 			return true
 		}
 	}
-	return false
+	h.redirectMu.RLock()
+	_, learned := h.redirectTargets[strings.ToLower(host)]
+	h.redirectMu.RUnlock()
+	return learned
 }
 
 // hostMatchesAllowlistEntry reports whether host satisfies a single allowlist
