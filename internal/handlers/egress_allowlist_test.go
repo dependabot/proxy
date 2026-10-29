@@ -609,6 +609,7 @@ func TestEgressAllowlist_PublicRegistriesAllowed(t *testing.T) {
 		"https://go.googlesource.com/tools",
 		"https://android.googlesource.com/platform",
 		"https://nodejs.org/dist/index.json",
+		"https://rust-registry.proton.me/index/config.json",
 		"https://adsbynimbus-public.s3.amazonaws.com/android/sdks",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public registry host allowed: "+allowed)
@@ -719,6 +720,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 	// moment its entry is changed to a leading-dot suffix, so this is the probe
 	// set that actually pins exact-host semantics.
 	childProbes := []string{
+		"https://evil.rust-registry.proton.me/payload",
 		"https://evil.docker.redpanda.com/payload",
 		"https://evil.appboy.github.io/payload",
 		"https://evil.juliaregistries.github.io/payload",

@@ -378,6 +378,8 @@ ecosystem_default_domains:
     - static.crates.io
     - index.crates.io
     - rsproxy.cn
+    # Proton AG's public sparse Cargo registry (pvpnclient, muon).
+    - rust-registry.proton.me
   composer:
     - repo.packagist.org
     - packagist.org
