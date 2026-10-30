@@ -572,6 +572,17 @@ ecosystem_default_domains:
   bazel:
     - bcr.bazel.build
     - releases.bazel.build
+    # rules_go's go_sdk extension reads the Go release index from
+    # go.dev/dl/?mode=json during `bazel mod tidy` when go_sdk.download pins
+    # only a version. Exact host; it serves the JSON directly, no redirect.
+    #
+    # RISK: go.dev also serves the Go playground's /_/share endpoint, which
+    # stores arbitrary POSTed content publicly. The allowlist is host-only
+    # and applied as a union, so this opens that endpoint to every job — an
+    # accepted residual exfiltration risk taken to keep Bazel Go toolchain
+    # resolution working. Repos can avoid the fetch entirely by pinning
+    # go_sdk.download(sdks = {...}).
+    - go.dev
   julia:
     - pkg.julialang.org
     - us-east.pkg.julialang.org
