@@ -1074,6 +1074,8 @@ func TestEgressDefaults_RegistryRedirectDerivationsLoadedFromYAML(t *testing.T) 
 		registryRedirectHosts([]string{"pypi.fury.io"}))
 	assert.Equal(t, []string{"downloads.cdn.telerik.com"},
 		registryRedirectHosts([]string{"nuget.telerik.com"}))
+	assert.Equal(t, []string{"mgcdn-main2.azureedge.net"},
+		registryRedirectHosts([]string{"www.myget.org"}))
 }
 
 func TestValidateRegistryRedirectDerivations_RejectsUnmatchableEntries(t *testing.T) {
