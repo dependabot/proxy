@@ -682,6 +682,8 @@ func TestEgressAllowlist_ProdBlockedHostsNowAllowed(t *testing.T) {
 			"https://dl.fontawesome.com/releases/v6/fontawesome.zip",
 			"https://mirrors.cloud.tencent.com/gradle/gradle-8.0-bin.zip",
 			"https://satis.spatie.be/packages.json",
+			"https://mirror.mage-os.org/p2/magento/framework.json",
+			"https://shopware.github.io/conflicts/packages.json",
 			"https://download.swift.org/swift-5.9-release/toolchain.tar.gz",
 			"https://releases.bazel.build/7.0.0/release/bazel-7.0.0-linux-x86_64",
 		},
@@ -762,6 +764,8 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.wiz-sec.github.io/payload",
 		"https://evil.fluent.github.io/payload",
 		"https://evil.adsbynimbus-public.s3.amazonaws.com/payload",
+		"https://evil.mirror.mage-os.org/payload",
+		"https://evil.shopware.github.io/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -784,6 +788,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://attacker.releases.hashicorp.com/payload",
 		"https://attacker.releases.teleport.dev/payload",
 		"https://attacker.wiz.io/payload",
+		"https://attacker.mage-os.org/payload",
 		// Cloudsmith is multi-tenant with the tenant in the URL path, and the
 		// allowlist authorizes the hostname only. Neither the tenant subdomain
 		// form nor the shared download hosts may be globally allowed.

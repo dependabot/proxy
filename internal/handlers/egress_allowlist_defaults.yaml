@@ -387,9 +387,13 @@ ecosystem_default_domains:
     - asset-packagist.org
     - cdn.asset-packagist.org
     - satis.spatie.be
-    # Composer repository published via GitHub Pages. Exact only:
+    # Mage-OS public mirror of the Magento Open Source packages.
+    - mirror.mage-os.org
+    # Composer repositories published via GitHub Pages. Exact only:
     # github.io subdomains are user-creatable.
     - wp-languages.github.io
+    # Shopware's shopware/conflicts metapackage, required by shopware/core.
+    - shopware.github.io
   go_modules:
     - proxy.golang.org
     - sum.golang.org
