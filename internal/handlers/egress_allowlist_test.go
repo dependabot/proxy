@@ -565,6 +565,8 @@ func TestEgressAllowlist_JFrogS3BucketsAllowedButSharedS3Blocked(t *testing.T) {
 		"https://attacker-bucket.s3.amazonaws.com/loot",
 		"https://s3.amazonaws.com/attacker-bucket/loot",
 		"https://s3-us-west-2.amazonaws.com/attacker-bucket/loot",
+		// The Artifactory redirect bucket is only allowed for matching registry credentials.
+		"https://jfrog-platform.s3.eu-west-1.amazonaws.com/artifactory/artifact",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "shared S3 host must be blocked: "+blocked) {

@@ -208,6 +208,32 @@ func TestRegistryRedirectHosts_PackagecloudCDNNotAllowedWithoutCredential(t *tes
 		"download CDN must not be allowed for a job with no packagecloud credential")
 }
 
+func TestRegistryRedirectHosts_WoltersKluwerArtifactoryS3Derived(t *testing.T) {
+	registry := "https://artifactory.wolterskluwer.io/artifactory/api/npm/group-npm/"
+	artifact := "https://jfrog-platform.s3.eu-west-1.amazonaws.com/artifactory/c6/c6af054e3732c361e9ad8c44070f909666b5616f"
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "npm_registry", "registry": registry},
+	})
+
+	assert.Nil(t, egressResult(t, h, registry), "the configured Artifactory registry must be allowed")
+	assert.Nil(t, egressResult(t, h, artifact),
+		"the S3 artifact host must be allowed for the matching Artifactory credential")
+
+	for _, blocked := range []string{
+		"https://evil.jfrog-platform.s3.eu-west-1.amazonaws.com/artifact",
+		"https://jfrog-platform.s3.us-east-1.amazonaws.com/artifact",
+	} {
+		assert.NotNil(t, egressResult(t, h, blocked),
+			"only the exact derived S3 host must be allowed: "+blocked)
+	}
+
+	otherRegistry := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "npm_registry", "registry": "https://registry.npmjs.org"},
+	})
+	assert.NotNil(t, egressResult(t, otherRegistry, artifact),
+		"the S3 artifact host must remain blocked without the matching registry credential")
+}
+
 func TestRegistryRedirectHosts_GemfuryStorageDerived(t *testing.T) {
 	// Gemfury endpoints redirect downloads to one Gemfury-owned bucket,
 	// reachable on both its dualstack and plain accelerate endpoints.
