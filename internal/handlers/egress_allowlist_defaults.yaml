@@ -659,6 +659,8 @@ ecosystem_default_domains:
     - wiz-sec.github.io
     # Fluent's chart repo (GitHub Pages); tarballs are on github.com.
     - fluent.github.io
+    # Percona's chart repo (GitHub Pages); tarballs are on github.com.
+    - percona.github.io
   # GitHub-hosted or per-job configured; covered by github_infra_domains / git.
   # Note: additional per-job dependencies (e.g. pre_commit hooks that install
   # from other ecosystems) are covered because the handler applies the union of
