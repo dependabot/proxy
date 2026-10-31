@@ -33,6 +33,7 @@ func TestDockerRegistryHandler(t *testing.T) {
 	ecrSecretKey := "BigLongAWSSecretKey"
 	ecrDockerUser := "AWS"
 	ecrDockerPassword := "BigLongGeneratedRegistryPassword"
+	ecrPublicToken := "BigLongGeneratedPublicRegistryPassword"
 	credentials := config.Credentials{
 		config.Credential{
 			"type":     "docker_registry",
@@ -51,6 +52,12 @@ func TestDockerRegistryHandler(t *testing.T) {
 			"registry": "123456789123.dkr.ecr.us-east-2.amazonaws.com:443",
 			"username": ecrKeyID,
 			"password": ecrSecretKey,
+		},
+		config.Credential{
+			"type":     "docker_registry",
+			"registry": "public.ecr.aws",
+			"username": ecrDockerUser,
+			"password": ecrPublicToken,
 		},
 		config.Credential{
 			"type":     "docker_registry",
@@ -158,6 +165,13 @@ func TestDockerRegistryHandler(t *testing.T) {
 	_, ok = proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
 	assert.False(t, ok, "ecr request isn't assigned a docker registry transport")
 	assertUnauthenticated(t, req, "leaked ecr credentials")
+
+	// ECR Public
+	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://public.ecr.aws/v2/docker/library/alpine/manifests/latest", nil)
+	proxyCtx = &goproxy.ProxyCtx{}
+	req = handleRequestAndClose(handler, req, proxyCtx)
+	assert.Nil(t, proxyCtx.RoundTripper, "ecr public request isn't assigned a docker registry transport")
+	assertHasTokenAuth(t, req, "Bearer", base64.StdEncoding.EncodeToString([]byte(ecrDockerUser+":"+ecrPublicToken)), "has ecr public bearer token")
 
 	// Missing repo subdomain
 	req = httptest.NewRequestWithContext(t.Context(), "GET", "https://bigco.com/v2/their-repo/manifests/latest", nil)
@@ -492,6 +506,144 @@ func TestDockerRegistryHandlerPathScopedCredentialFallsBackToHost(t *testing.T) 
 	}
 }
 
+func TestDockerRegistryHandlerECRPublic(t *testing.T) {
+	client := &http.Client{Transport: &recordingECRTransport{}, Timeout: testOIDCClient.Timeout}
+	bearer := base64.StdEncoding.EncodeToString([]byte("AWS:public-password"))
+
+	tests := []struct {
+		name          string
+		credential    config.Credential
+		requestURL    string
+		authorization string
+		// bearer is the expected bearer token; empty means the request keeps
+		// the Basic token flow transport.
+		bearer string
+	}{
+		{
+			name:       "registry API",
+			credential: config.Credential{"registry": "public.ecr.aws"},
+			requestURL: "https://public.ecr.aws/v2/docker/library/alpine/manifests/latest",
+			bearer:     bearer,
+		},
+		{
+			name:       "path scoped credential",
+			credential: config.Credential{"registry": "public.ecr.aws/my-alias"},
+			requestURL: "https://public.ecr.aws/v2/my-alias/app/manifests/latest",
+			bearer:     bearer,
+		},
+		{
+			name:       "proxy-only credential",
+			credential: config.Credential{"registry": "public.ecr.aws", "proxy-only": true},
+			requestURL: "https://public.ecr.aws/v2/docker/library/alpine/manifests/latest",
+			bearer:     bearer,
+		},
+		{
+			name:          "client authorization is kept",
+			credential:    config.Credential{"registry": "public.ecr.aws"},
+			requestURL:    "https://public.ecr.aws/v2/docker/library/alpine/manifests/latest",
+			authorization: "Bearer client-token",
+			bearer:        "client-token",
+		},
+		{
+			name:       "token endpoint",
+			credential: config.Credential{"registry": "public.ecr.aws"},
+			requestURL: "https://public.ecr.aws/token/?service=public.ecr.aws&scope=repository:docker/library/alpine:pull",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cred := config.Credential{"type": "docker_registry", "username": "AWS", "password": "public-password"}
+			for key, value := range test.credential {
+				cred[key] = value
+			}
+			handler := NewDockerRegistryHandler(config.Credentials{cred}, client, nil)
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, test.requestURL, nil)
+			if test.authorization != "" {
+				req.Header.Set("Authorization", test.authorization)
+			}
+			proxyCtx := &goproxy.ProxyCtx{}
+			req = handleRequestAndClose(handler, req, proxyCtx)
+
+			if test.bearer != "" {
+				assert.Nil(t, proxyCtx.RoundTripper, "no docker registry transport")
+				assertHasTokenAuth(t, req, "Bearer", test.bearer, "has ecr public bearer token")
+				return
+			}
+			rt, ok := proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
+			require.True(t, ok, "request is assigned a docker registry transport")
+			transport := rt.transport.(*registry.BasicTransport)
+			assert.Equal(t, "AWS", transport.Username)
+			assert.Equal(t, "public-password", transport.Password)
+		})
+	}
+}
+
+func TestDockerRegistryHandlerECRPublicAccessKey(t *testing.T) {
+	const manifestURL = "https://public.ecr.aws/v2/docker/library/alpine/manifests/latest"
+	newHandler := func(username string, transport *ecrPublicTokenTransport) *DockerRegistryHandler {
+		client := &http.Client{Transport: transport, Timeout: testOIDCClient.Timeout}
+		return NewDockerRegistryHandler(config.Credentials{{
+			"type":     "docker_registry",
+			"registry": "public.ecr.aws",
+			"username": username,
+			"password": "secret-key",
+		}}, client, nil)
+	}
+
+	t.Run("registry API", func(t *testing.T) {
+		transport := &ecrPublicTokenTransport{status: http.StatusOK}
+		handler := newHandler("access-key", transport)
+
+		for range 2 {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, manifestURL, nil)
+			proxyCtx := &goproxy.ProxyCtx{}
+			req = handleRequestAndClose(handler, req, proxyCtx)
+			assert.Nil(t, proxyCtx.RoundTripper, "no docker registry transport")
+			assertHasTokenAuth(t, req, "Bearer", base64.StdEncoding.EncodeToString([]byte("AWS:fetched-password")), "has fetched bearer token")
+		}
+		assert.Equal(t, []string{"api.ecr-public.us-east-1.amazonaws.com"}, transport.hosts, "token is fetched once from us-east-1")
+	})
+
+	t.Run("token endpoint", func(t *testing.T) {
+		transport := &ecrPublicTokenTransport{status: http.StatusOK}
+		handler := newHandler("access-key", transport)
+
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+			"https://public.ecr.aws/token/?service=public.ecr.aws&scope=repository:docker/library/alpine:pull", nil)
+		proxyCtx := &goproxy.ProxyCtx{}
+		handleRequestAndClose(handler, req, proxyCtx)
+		rt, ok := proxyCtx.RoundTripper.(*dockerRegistryRoundTripper)
+		require.True(t, ok, "request is assigned a docker registry transport")
+		trans := rt.transport.(*registry.BasicTransport)
+		assert.Equal(t, "AWS", trans.Username)
+		assert.Equal(t, "fetched-password", trans.Password)
+	})
+
+	t.Run("failed token request", func(t *testing.T) {
+		transport := &ecrPublicTokenTransport{status: http.StatusBadRequest}
+		handler := newHandler("access-key", transport)
+
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, manifestURL, nil)
+		proxyCtx := &goproxy.ProxyCtx{}
+		req = handleRequestAndClose(handler, req, proxyCtx)
+		assert.Nil(t, proxyCtx.RoundTripper, "no docker registry transport")
+		assertUnauthenticated(t, req, "secret key isn't sent")
+	})
+
+	t.Run("pre-generated token", func(t *testing.T) {
+		transport := &ecrPublicTokenTransport{status: http.StatusOK}
+		handler := newHandler("AWS", transport)
+
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, manifestURL, nil)
+		proxyCtx := &goproxy.ProxyCtx{}
+		req = handleRequestAndClose(handler, req, proxyCtx)
+		assertHasTokenAuth(t, req, "Bearer", base64.StdEncoding.EncodeToString([]byte("AWS:secret-key")), "has pre-generated bearer token")
+		assert.Empty(t, transport.hosts, "no token is fetched")
+	})
+}
+
 func TestDockerRegistryHandlerPathScopedOIDCCredentialFallsBackToHost(t *testing.T) {
 	const tokenURL = "https://token.actions.example.com"                       //nolint:gosec // test URL
 	const jfrogTokenURL = "https://jfrog.example.com/access/api/v1/oidc/token" //nolint:gosec // test URL
@@ -685,6 +837,30 @@ func (t *recordingECRTransport) RoundTrip(req *http.Request) (*http.Response, er
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(`{"authorizationData":[]}`)),
 		Header:     make(http.Header),
+		Request:    req,
+	}, nil
+}
+
+// ecrPublicTokenTransport answers ECR Public GetAuthorizationToken requests
+// with a token for AWS:fetched-password, or an error for a non-200 status.
+type ecrPublicTokenTransport struct {
+	status int
+	hosts  []string
+}
+
+func (t *ecrPublicTokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.hosts = append(t.hosts, req.URL.Host)
+	body := `{"__type":"InvalidParameterException","message":"invalid"}`
+	if t.status == http.StatusOK {
+		token := base64.StdEncoding.EncodeToString([]byte("AWS:fetched-password"))
+		body = `{"authorizationData":{"authorizationToken":"` + token + `"}}`
+	}
+	header := make(http.Header)
+	header.Set("Content-Type", "application/x-amz-json-1.1")
+	return &http.Response{
+		StatusCode: t.status,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     header,
 		Request:    req,
 	}, nil
 }

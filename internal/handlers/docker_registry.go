@@ -8,9 +8,11 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
 	"github.com/elazarl/goproxy"
 	"github.com/stackrox/docker-registry-client/registry"
 
@@ -23,6 +25,16 @@ import (
 var (
 	// Format: 123456789123.dkr.ecr.us-east-2.amazonaws.com
 	ecrRe = regexp.MustCompile(`\A\d+.dkr.ecr.([a-z0-9-]+)\.amazonaws\.com\z`)
+)
+
+const (
+	ecrPublicHost = "public.ecr.aws"
+	// ECR Public only issues authorization tokens in us-east-1.
+	ecrPublicRegion = "us-east-1"
+	// ecrPublicTokenUsername is the username of a pre-generated ECR Public
+	// token from `aws ecr-public get-login-password`. Any other username is
+	// an AWS access key ID.
+	ecrPublicTokenUsername = "AWS"
 )
 
 type ecrClient interface {
@@ -242,6 +254,26 @@ func (h *DockerRegistryHandler) authenticateWithCredential(
 		return
 	}
 
+	if helpers.AreHostnamesEqual(req.URL.Hostname(), ecrPublicHost) {
+		// Without a token the request is sent anonymously, which public
+		// images still allow, rather than with the AWS secret key.
+		if !cred.getECRPublicCredentials(req.Context(), proxyCtx) {
+			return
+		}
+		// ECR Public rejects Basic auth on registry requests with a 400
+		// instead of a 401 challenge, so the token flow below would never
+		// start. Its HTTP API takes the GetAuthorizationToken token,
+		// base64("AWS:<password>"), as a bearer token, so send that
+		// directly. Other paths, such as /token, still accept Basic auth and
+		// keep the token flow below.
+		if _, ok := helpers.MatchingPathPrefix(req.URL.EscapedPath(), "/v2"); ok {
+			logging.RequestLogf(proxyCtx, "* authenticating docker ecr public request (host: %s)", req.URL.Hostname())
+			token := base64.StdEncoding.EncodeToString([]byte(cred.getUsername() + ":" + cred.getPassword()))
+			helpers.SetBearerAuthorization(req, token)
+			return
+		}
+	}
+
 	logging.RequestLogf(proxyCtx, "* authenticating docker registry request (host: %s)", req.URL.Hostname())
 	transport := &registry.BasicTransport{
 		Transport: &registry.TokenTransport{
@@ -396,17 +428,30 @@ func dockerRegistryCredentialLocation(location string, proxyOnly bool) (matchURL
 }
 
 func defaultGetECRClient(ctx context.Context, region, keyID, secretKey string, client *http.Client) (ecrClient, error) {
-	cfg, err := awsconfig.LoadDefaultConfig(
-		ctx,
-		awsconfig.WithRegion(region),
-		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(keyID, secretKey, "")),
-		awsconfig.WithHTTPClient(client),
-	)
+	cfg, err := loadAWSConfig(ctx, region, keyID, secretKey, client)
 	if err != nil {
 		return nil, err
 	}
 
 	return ecr.NewFromConfig(cfg), nil
+}
+
+func defaultGetECRPublicClient(ctx context.Context, keyID, secretKey string, client *http.Client) (*ecrpublic.Client, error) {
+	cfg, err := loadAWSConfig(ctx, ecrPublicRegion, keyID, secretKey, client)
+	if err != nil {
+		return nil, err
+	}
+
+	return ecrpublic.NewFromConfig(cfg), nil
+}
+
+func loadAWSConfig(ctx context.Context, region, keyID, secretKey string, client *http.Client) (aws.Config, error) {
+	return awsconfig.LoadDefaultConfig(
+		ctx,
+		awsconfig.WithRegion(region),
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(keyID, secretKey, "")),
+		awsconfig.WithHTTPClient(client),
+	)
 }
 
 type dockerOIDCCredential struct {
@@ -429,18 +474,19 @@ type dockerRegistryCredentials struct {
 }
 
 func (c *dockerRegistryCredentials) getECRCredentials(requestCtx context.Context, proxyCtx *goproxy.ProxyCtx) bool {
-	if c.ecrUsername != "" && c.ecrPassword != "" {
-		return true
-	}
-
 	regURL, err := helpers.ParseURLLax(c.registry)
 	if err != nil {
 		return false
 	}
 
+	// Checked before the cached token, which may be an ECR Public one.
 	match := ecrRe.FindStringSubmatch(regURL.Hostname())
 	if match == nil || len(match) != 2 {
 		return false
+	}
+
+	if c.ecrUsername != "" && c.ecrPassword != "" {
+		return true
 	}
 
 	region := match[1]
@@ -473,6 +519,41 @@ func (c *dockerRegistryCredentials) getECRCredentials(requestCtx context.Context
 		}
 	}
 	return false
+}
+
+// getECRPublicCredentials exchanges an AWS access key pair for an ECR Public
+// authorization token. A pre-generated token is used as is.
+func (c *dockerRegistryCredentials) getECRPublicCredentials(requestCtx context.Context, proxyCtx *goproxy.ProxyCtx) bool {
+	if c.username == ecrPublicTokenUsername || (c.ecrUsername != "" && c.ecrPassword != "") {
+		return true
+	}
+
+	ecrSvc, err := defaultGetECRPublicClient(requestCtx, c.username, c.password, c.httpClient)
+	if err != nil {
+		logging.RequestLogf(proxyCtx, "! failed to initialize aws ecr public client (key_id=%s)", c.username)
+		return false
+	}
+
+	rsp, err := ecrSvc.GetAuthorizationToken(requestCtx, &ecrpublic.GetAuthorizationTokenInput{})
+	if err != nil {
+		logging.RequestLogf(proxyCtx, "! failed to get ecr public authorization token (key_id=%s)", c.username)
+		return false
+	}
+	if rsp.AuthorizationData == nil || rsp.AuthorizationData.AuthorizationToken == nil {
+		return false
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(*rsp.AuthorizationData.AuthorizationToken)
+	if err != nil {
+		return false
+	}
+	username, password, found := strings.Cut(string(decoded), ":")
+	if !found {
+		return false
+	}
+	c.ecrUsername = username
+	c.ecrPassword = password
+	return true
 }
 
 func (c *dockerRegistryCredentials) getUsername() string {
