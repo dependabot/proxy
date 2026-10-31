@@ -687,5 +687,10 @@ ecosystem_default_domains:
     # (RealSprint/vindral-apple-sdk-spm). Anonymous, no redirect.
     # Exact: *.vindral.com also fronts the vendor's CDN and stage/test hosts.
     - applesdk.vindral.com
+    # Microsoft's Speech SDK storage account, serving the
+    # MicrosoftCognitiveServicesSpeech XCFramework zip binaryTargets declared in
+    # the vendor's own public Package.swift (microsoft/speech-sdk-spm).
+    # Anonymous, no redirect.
+    - csspeechstorage.blob.core.windows.net
   vcpkg: []
   pre_commit: []
