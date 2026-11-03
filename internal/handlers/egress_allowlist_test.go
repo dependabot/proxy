@@ -769,6 +769,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.adsbynimbus-public.s3.amazonaws.com/payload",
 		"https://evil.mirror.mage-os.org/payload",
 		"https://evil.shopware.github.io/payload",
+		"https://evil.percona.github.io/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -986,6 +987,7 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 		"https://fluent.github.io/helm-charts/index.yaml",
 		"https://castai.github.io/helm-charts/index.yaml",
 		"https://cocoapods.org/pods/AFNetworking",
+		"https://percona.github.io/percona-helm-charts/index.yaml",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "added host should be allowed: "+allowed)
 	}
