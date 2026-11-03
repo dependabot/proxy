@@ -674,6 +674,9 @@ ecosystem_default_domains:
     # Istio's chart repo: one exact, Istio-owned virtual-hosted GCS bucket that
     # serves index.yaml and tarballs. Other buckets stay blocked.
     - istio-release.storage.googleapis.com
+    # Istio's documented Helm repo redirects to this fixed R2 chart host.
+    - blob.istio.io
+    - istio-release.r2.istio.io
     # Kong's chart repo; tarballs are on github.com.
     - charts.konghq.com
     # AWS's chart repos (eks-charts, secrets-store-csi-driver-provider-aws, ...).
