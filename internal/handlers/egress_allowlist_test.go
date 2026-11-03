@@ -766,6 +766,11 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.wiz-sec.github.io/payload",
 		"https://evil.fluent.github.io/payload",
 		"https://evil.castai.github.io/payload",
+		"https://evil.istio-release.storage.googleapis.com/payload",
+		"https://evil.charts.konghq.com/payload",
+		"https://evil.aws.github.io/payload",
+		"https://evil.charts.fairwinds.com/payload",
+		"https://evil.open-policy-agent.github.io/payload",
 		"https://evil.adsbynimbus-public.s3.amazonaws.com/payload",
 		"https://evil.mirror.mage-os.org/payload",
 		"https://evil.shopware.github.io/payload",
@@ -985,6 +990,11 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 		"https://wiz-sec.github.io/charts/wiz-kubernetes-integration-0.2.0.tgz",
 		"https://fluent.github.io/helm-charts/index.yaml",
 		"https://castai.github.io/helm-charts/index.yaml",
+		"https://istio-release.storage.googleapis.com/charts/index.yaml",
+		"https://charts.konghq.com/index.yaml",
+		"https://aws.github.io/eks-charts/index.yaml",
+		"https://charts.fairwinds.com/stable/index.yaml",
+		"https://open-policy-agent.github.io/gatekeeper/charts/index.yaml",
 		"https://cocoapods.org/pods/AFNetworking",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "added host should be allowed: "+allowed)

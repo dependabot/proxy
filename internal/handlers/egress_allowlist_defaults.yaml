@@ -671,6 +671,17 @@ ecosystem_default_domains:
     - fluent.github.io
     # CAST AI's chart repo (GitHub Pages); tarballs are on github.com.
     - castai.github.io
+    # Istio's chart repo: one exact, Istio-owned virtual-hosted GCS bucket that
+    # serves index.yaml and tarballs. Other buckets stay blocked.
+    - istio-release.storage.googleapis.com
+    # Kong's chart repo; tarballs are on github.com.
+    - charts.konghq.com
+    # AWS's chart repos (eks-charts, secrets-store-csi-driver-provider-aws, ...).
+    - aws.github.io
+    # Fairwinds' chart repo; index and tarballs are on the same host.
+    - charts.fairwinds.com
+    # Open Policy Agent's chart repo (Gatekeeper); index and tarballs on the same host.
+    - open-policy-agent.github.io
   # GitHub-hosted or per-job configured; covered by github_infra_domains / git.
   # Note: additional per-job dependencies (e.g. pre_commit hooks that install
   # from other ecosystems) are covered because the handler applies the union of
