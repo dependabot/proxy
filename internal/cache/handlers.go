@@ -147,6 +147,7 @@ func New(enabled bool, cacheDir string) (*DB, error) {
 	if err != nil {
 		return db, nil
 	}
+	defer func() { _ = f.Close() }()
 	var in []Out
 	if err := yaml.NewDecoder(f).Decode(&in); err != nil {
 		logrus.Errorln("db.yaml is unreadable:", err.Error())
@@ -164,6 +165,10 @@ const (
 	wasCached = "cached-response"
 	keyValue  = "key"
 )
+
+func shouldCacheResponse(statusCode int) bool {
+	return statusCode < http.StatusInternalServerError
+}
 
 // bodyless reports whether an HTTP response must not carry a message body, per
 // RFC 7230 3.3.3: any response to a HEAD request, all 1xx (informational)
@@ -217,6 +222,11 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 	key := key(r)
 	proxyctx.SetValue(proxyCtx, keyValue, key)
 	if entry, ok := d.cacheDB[key]; ok {
+		if !shouldCacheResponse(entry.Status) {
+			// Discard server errors recorded by older versions of the proxy.
+			delete(d.cacheDB, key)
+			return r, nil
+		}
 		resp := &http.Response{}
 		resp.Request = r
 		resp.Header = entry.ResponseHeaders
@@ -267,7 +277,7 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 	return r, nil
 }
 
-// OnResponse caches responses except upgrades and pending asynchronous operations.
+// OnResponse caches responses except upgrades, pending operations, and server errors.
 func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if d == nil {
 		// caching disabled
@@ -317,6 +327,9 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 
 	// Polling must reach upstream again while an asynchronous operation is pending.
 	if resp.StatusCode == http.StatusAccepted {
+		return resp
+	}
+	if !shouldCacheResponse(resp.StatusCode) {
 		return resp
 	}
 
@@ -381,7 +394,7 @@ func (d *DB) Statistics() {
 }
 
 // WriteToDisk outputs the db in the cache directory for scenario use.
-func (d *DB) WriteToDisk() error {
+func (d *DB) WriteToDisk() (err error) {
 	d.Lock()
 	defer d.Unlock()
 
@@ -390,6 +403,7 @@ func (d *DB) WriteToDisk() error {
 		logrus.Errorln("Failed to create db file:", err.Error())
 		return err
 	}
+	defer func() { err = errors.Join(err, f.Close()) }()
 	var out []Out
 	for key, entry := range d.cacheDB {
 		k := key
