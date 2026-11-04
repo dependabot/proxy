@@ -183,6 +183,88 @@ func TestCache_PreviouslyRecordedError(t *testing.T) {
 	}
 }
 
+func TestCache_FileCollisionAfterEvictionAndReload(t *testing.T) {
+	for _, orphan := range []bool{false, true} {
+		t.Run("orphan="+strconv.FormatBool(orphan), func(t *testing.T) {
+			cacheDir := t.TempDir()
+			cacher, err := New(true, cacheDir)
+			require.NoError(t, err)
+
+			errorURL := "https://cache.example.com/error"
+			retainedURL := "https://cache.example.com/retained"
+			newURL := "https://cache.example.com/new"
+			for i, target := range []string{errorURL, retainedURL} {
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+				bodyPath := filepath.Join(cacheDir, "00000"+strconv.Itoa(i+1)+"-cache-example-com")
+				status, body := http.StatusOK, "retained body"
+				if i == 0 {
+					status, body = http.StatusServiceUnavailable, "unavailable"
+				}
+				require.NoError(t, os.WriteFile(bodyPath, []byte(body), 0600))
+				cacher.cacheDB[key(req)] = &Entry{Status: status, FilePath: bodyPath}
+			}
+			orphanPath := filepath.Join(cacheDir, "000003-cache-example-com")
+			if orphan {
+				require.NoError(t, os.WriteFile(orphanPath, []byte("orphan body"), 0600))
+			}
+			require.NoError(t, cacher.WriteToDisk())
+
+			record := func(db *DB, target string, status int, body string) {
+				t.Helper()
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+				ctx := &goproxy.ProxyCtx{Req: req}
+				_, hit := db.OnRequest(req, ctx)
+				require.Nil(t, hit)
+				resp := db.OnResponse(&http.Response{
+					Request:       req,
+					StatusCode:    status,
+					Body:          io.NopCloser(strings.NewReader(body)),
+					ContentLength: -1,
+				}, ctx)
+				result, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+				assert.Equal(t, body, string(result))
+			}
+			assertCachedBody := func(db *DB, target, body string) {
+				t.Helper()
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+				_, hit := db.OnRequest(req, &goproxy.ProxyCtx{Req: req})
+				require.NotNil(t, hit)
+				assert.Equal(t, http.StatusOK, hit.StatusCode)
+				result, err := io.ReadAll(hit.Body)
+				require.NoError(t, err)
+				require.NoError(t, hit.Body.Close())
+				assert.Equal(t, body, string(result))
+			}
+
+			cacher, err = New(true, cacheDir)
+			require.NoError(t, err)
+			record(cacher, errorURL, http.StatusServiceUnavailable, "still unavailable")
+			require.Len(t, cacher.cacheDB, 1)
+			require.NoError(t, cacher.WriteToDisk())
+
+			cacher, err = New(true, cacheDir)
+			require.NoError(t, err)
+			assertCachedBody(cacher, retainedURL, "retained body")
+			record(cacher, newURL, http.StatusOK, "new body")
+			assertCachedBody(cacher, retainedURL, "retained body")
+			assertCachedBody(cacher, newURL, "new body")
+			require.NoError(t, cacher.WriteToDisk())
+
+			cacher, err = New(true, cacheDir)
+			require.NoError(t, err)
+			assertCachedBody(cacher, retainedURL, "retained body")
+			assertCachedBody(cacher, newURL, "new body")
+			if orphan {
+				body, err := os.ReadFile(orphanPath)
+				require.NoError(t, err)
+				assert.Equal(t, "orphan body", string(body))
+			}
+		})
+	}
+}
+
 func TestCache(t *testing.T) {
 	const enabled = true
 	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))

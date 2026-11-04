@@ -156,7 +156,7 @@ func New(enabled bool, cacheDir string) (*DB, error) {
 	for i := range in {
 		db.cacheDB[in[i].Key] = in[i].Entry
 	}
-	// prevent successive runs from overwriting previous cache entries
+	// Use the entry count as a starting point; exclusive creation handles collisions.
 	db.callCursor = len(db.cacheDB)
 	return db, nil
 }
@@ -341,11 +341,19 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 
-	fileName := fmt.Sprintf("%06d-%v", d.nextNumber(), sanitize(resp.Request.Host))
-	f, err := os.Create(filepath.Clean(filepath.Join(d.cacheDir, fileName)))
-	if err != nil {
-		logrus.Warnln("Failed to write to cache:", err.Error())
-		return resp
+	var f *os.File
+	for {
+		fileName := fmt.Sprintf("%06d-%v", d.nextNumber(), sanitize(resp.Request.Host))
+		var err error
+		f, err = os.OpenFile(filepath.Clean(filepath.Join(d.cacheDir, fileName)), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0666)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			logrus.Warnln("Failed to write to cache:", err.Error())
+			return resp
+		}
+		break
 	}
 
 	resp.Body = TeeReadCloser(resp.Body, f, resp.ContentLength, func() {
