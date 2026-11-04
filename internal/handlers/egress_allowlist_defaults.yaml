@@ -712,5 +712,11 @@ ecosystem_default_domains:
     # (RealSprint/vindral-apple-sdk-spm). Anonymous, no redirect.
     # Exact: *.vindral.com also fronts the vendor's CDN and stage/test hosts.
     - applesdk.vindral.com
+    # edna's (edna.ru) public Sonatype Nexus, serving the ChatCenterUI
+    # xcframework.zip binaryTarget declared in the vendor's own public
+    # Package.swift (edna-ru/chatcenterui-ios). Anonymous, no redirect.
+    # Exact: *.edna.ru is a wildcard cert that also fronts the vendor's
+    # product, docs and API hosts.
+    - maven-pub.edna.ru
   vcpkg: []
   pre_commit: []
