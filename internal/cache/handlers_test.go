@@ -76,6 +76,195 @@ func TestCache_Disabled(t *testing.T) {
 	assert.Same(t, originalBody, resp3.Body)
 }
 
+func TestCache_ErrorResponsePolicy(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, status := range []int{200, 202, 204, 301, 304, 399, 400, 401, 403, 404, 429, 499, 500, 503, 599, 600} {
+			t.Run(method+"/"+strconv.Itoa(status), func(t *testing.T) {
+				cacheDir := t.TempDir()
+				cacher, err := New(true, cacheDir)
+				require.NoError(t, err)
+
+				req := httptest.NewRequestWithContext(t.Context(), method, URL, nil)
+				ctx := &goproxy.ProxyCtx{Req: req}
+				_, hit := cacher.OnRequest(req, ctx)
+				require.Nil(t, hit)
+
+				originalBody := &closeTrackingReadCloser{Reader: strings.NewReader("response")}
+				resp := &http.Response{
+					Request:       req,
+					StatusCode:    status,
+					Body:          originalBody,
+					ContentLength: -1,
+				}
+				result := cacher.OnResponse(resp, ctx)
+				require.Same(t, resp, result)
+				if status >= 500 && method == http.MethodGet {
+					assert.Same(t, originalBody, result.Body)
+				}
+				_, err = io.ReadAll(result.Body)
+				require.NoError(t, err)
+				require.NoError(t, result.Body.Close())
+
+				wantCached := status < 500 && status != http.StatusAccepted
+				if wantCached {
+					assert.Len(t, cacher.cacheDB, 1)
+				} else {
+					assert.Empty(t, cacher.cacheDB)
+					files, err := os.ReadDir(cacheDir)
+					require.NoError(t, err)
+					assert.Empty(t, files)
+				}
+
+				retry := httptest.NewRequestWithContext(t.Context(), method, URL, nil)
+				retryCtx := &goproxy.ProxyCtx{Req: retry}
+				_, hit = cacher.OnRequest(retry, retryCtx)
+				if wantCached {
+					require.NotNil(t, hit)
+					assert.Equal(t, status, hit.StatusCode)
+					require.NoError(t, hit.Body.Close())
+				} else {
+					assert.Nil(t, hit)
+				}
+				assert.Equal(t, wantCached, WasResponseCached(retryCtx))
+			})
+		}
+	}
+}
+
+func TestCache_PreviouslyRecordedResponse(t *testing.T) {
+	for _, status := range []int{http.StatusAccepted, http.StatusNotFound, http.StatusServiceUnavailable} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			cacheDir := t.TempDir()
+			recorder, err := New(true, cacheDir)
+			require.NoError(t, err)
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+			bodyPath := filepath.Join(cacheDir, "legacy-error")
+			require.NoError(t, os.WriteFile(bodyPath, []byte("unavailable"), 0600))
+			recorder.cacheDB[key(req)] = &Entry{Status: status, FilePath: bodyPath}
+			require.NoError(t, recorder.WriteToDisk())
+
+			cacher, err := New(true, cacheDir)
+			require.NoError(t, err)
+			require.Len(t, cacher.cacheDB, 1)
+
+			req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+			ctx := &goproxy.ProxyCtx{Req: req}
+			_, hit := cacher.OnRequest(req, ctx)
+			if status < 500 && status != http.StatusAccepted {
+				require.NotNil(t, hit)
+				assert.Equal(t, status, hit.StatusCode)
+				require.NoError(t, hit.Body.Close())
+				return
+			}
+			require.Nil(t, hit)
+			assert.False(t, WasResponseCached(ctx))
+			assert.Empty(t, cacher.cacheDB)
+
+			resp := cacher.OnResponse(&http.Response{
+				Request:       req,
+				StatusCode:    http.StatusOK,
+				Body:          io.NopCloser(strings.NewReader("recovered")),
+				ContentLength: -1,
+			}, ctx)
+			_, err = io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+
+			retry := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+			_, hit = cacher.OnRequest(retry, &goproxy.ProxyCtx{Req: retry})
+			require.NotNil(t, hit)
+			assert.Equal(t, http.StatusOK, hit.StatusCode)
+			body, err := io.ReadAll(hit.Body)
+			require.NoError(t, err)
+			require.NoError(t, hit.Body.Close())
+			assert.Equal(t, "recovered", string(body))
+		})
+	}
+}
+
+func TestCache_FileCollisionAfterEvictionAndReload(t *testing.T) {
+	for _, orphan := range []bool{false, true} {
+		t.Run("orphan="+strconv.FormatBool(orphan), func(t *testing.T) {
+			cacheDir := t.TempDir()
+			cacher, err := New(true, cacheDir)
+			require.NoError(t, err)
+
+			errorURL := "https://cache.example.com/error"
+			retainedURL := "https://cache.example.com/retained"
+			newURL := "https://cache.example.com/new"
+			for i, target := range []string{errorURL, retainedURL} {
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+				bodyPath := filepath.Join(cacheDir, "00000"+strconv.Itoa(i+1)+"-cache-example-com")
+				status, body := http.StatusOK, "retained body"
+				if i == 0 {
+					status, body = http.StatusServiceUnavailable, "unavailable"
+				}
+				require.NoError(t, os.WriteFile(bodyPath, []byte(body), 0600))
+				cacher.cacheDB[key(req)] = &Entry{Status: status, FilePath: bodyPath}
+			}
+			orphanPath := filepath.Join(cacheDir, "000003-cache-example-com")
+			if orphan {
+				require.NoError(t, os.WriteFile(orphanPath, []byte("orphan body"), 0600))
+			}
+			require.NoError(t, cacher.WriteToDisk())
+
+			record := func(db *DB, target string, status int, body string) {
+				t.Helper()
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+				ctx := &goproxy.ProxyCtx{Req: req}
+				_, hit := db.OnRequest(req, ctx)
+				require.Nil(t, hit)
+				resp := db.OnResponse(&http.Response{
+					Request:       req,
+					StatusCode:    status,
+					Body:          io.NopCloser(strings.NewReader(body)),
+					ContentLength: -1,
+				}, ctx)
+				result, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+				assert.Equal(t, body, string(result))
+			}
+			assertCachedBody := func(db *DB, target, body string) {
+				t.Helper()
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+				_, hit := db.OnRequest(req, &goproxy.ProxyCtx{Req: req})
+				require.NotNil(t, hit)
+				assert.Equal(t, http.StatusOK, hit.StatusCode)
+				result, err := io.ReadAll(hit.Body)
+				require.NoError(t, err)
+				require.NoError(t, hit.Body.Close())
+				assert.Equal(t, body, string(result))
+			}
+
+			cacher, err = New(true, cacheDir)
+			require.NoError(t, err)
+			record(cacher, errorURL, http.StatusServiceUnavailable, "still unavailable")
+			require.Len(t, cacher.cacheDB, 1)
+			require.NoError(t, cacher.WriteToDisk())
+
+			cacher, err = New(true, cacheDir)
+			require.NoError(t, err)
+			assertCachedBody(cacher, retainedURL, "retained body")
+			record(cacher, newURL, http.StatusOK, "new body")
+			assertCachedBody(cacher, retainedURL, "retained body")
+			assertCachedBody(cacher, newURL, "new body")
+			require.NoError(t, cacher.WriteToDisk())
+
+			cacher, err = New(true, cacheDir)
+			require.NoError(t, err)
+			assertCachedBody(cacher, retainedURL, "retained body")
+			assertCachedBody(cacher, newURL, "new body")
+			if orphan {
+				body, err := os.ReadFile(orphanPath)
+				require.NoError(t, err)
+				assert.Equal(t, "orphan body", string(body))
+			}
+		})
+	}
+}
+
 func TestCache(t *testing.T) {
 	const enabled = true
 	cacheDir := filepath.Join(os.TempDir(), strconv.Itoa(time.Now().Nanosecond()))

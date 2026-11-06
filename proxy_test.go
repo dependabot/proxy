@@ -267,6 +267,58 @@ func TestProxyDockerRegistryCredentialWithWebContextPath(t *testing.T) {
 	}
 }
 
+func TestProxyCacheSkipServerErrorResponses(t *testing.T) {
+	t.Setenv("PROXY_CACHE", "true")
+	tests := []struct {
+		name       string
+		statusCode int
+	}{
+		{name: "client error cached", statusCode: http.StatusNotFound},
+		{name: "server error not cached", statusCode: http.StatusServiceUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var upstreamHits atomic.Int32
+			upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if upstreamHits.Add(1) == 1 {
+					w.WriteHeader(tt.statusCode)
+					_, _ = io.WriteString(w, "unavailable")
+					return
+				}
+				_, _ = io.WriteString(w, "recovered")
+			}))
+			defer upstream.Close()
+
+			client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+			closeOnCleanup(t, proxy)
+			t.Cleanup(client.CloseIdleConnections)
+
+			for i := range 3 {
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+				require.NoError(t, err)
+				resp, err := client.Do(req)
+				require.NoError(t, err)
+				body, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+
+				if tt.statusCode >= 500 && i > 0 {
+					assert.Equal(t, http.StatusOK, resp.StatusCode)
+					assert.Equal(t, "recovered", string(body))
+				} else {
+					assert.Equal(t, tt.statusCode, resp.StatusCode)
+					assert.Equal(t, "unavailable", string(body))
+				}
+			}
+			if tt.statusCode >= 500 {
+				assert.Equal(t, int32(2), upstreamHits.Load())
+			} else {
+				assert.Equal(t, int32(1), upstreamHits.Load())
+			}
+		})
+	}
+}
+
 func TestProxyEgressAllowlistEnforceBlocks(t *testing.T) {
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

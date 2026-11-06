@@ -147,6 +147,7 @@ func New(enabled bool, cacheDir string) (*DB, error) {
 	if err != nil {
 		return db, nil
 	}
+	defer func() { _ = f.Close() }()
 	var in []Out
 	if err := yaml.NewDecoder(f).Decode(&in); err != nil {
 		logrus.Errorln("db.yaml is unreadable:", err.Error())
@@ -155,7 +156,7 @@ func New(enabled bool, cacheDir string) (*DB, error) {
 	for i := range in {
 		db.cacheDB[in[i].Key] = in[i].Entry
 	}
-	// prevent successive runs from overwriting previous cache entries
+	// Use the entry count as a starting point; exclusive creation handles collisions.
 	db.callCursor = len(db.cacheDB)
 	return db, nil
 }
@@ -164,6 +165,14 @@ const (
 	wasCached = "cached-response"
 	keyValue  = "key"
 )
+
+func shouldCacheResponse(statusCode int) bool {
+	// Polling must reach upstream again while an asynchronous operation is pending.
+	if statusCode == http.StatusAccepted {
+		return false
+	}
+	return statusCode < http.StatusInternalServerError
+}
 
 // bodyless reports whether an HTTP response must not carry a message body, per
 // RFC 7230 3.3.3: any response to a HEAD request, all 1xx (informational)
@@ -217,6 +226,11 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 	key := key(r)
 	proxyctx.SetValue(proxyCtx, keyValue, key)
 	if entry, ok := d.cacheDB[key]; ok {
+		if !shouldCacheResponse(entry.Status) {
+			// Discard responses recorded before they were excluded from caching.
+			delete(d.cacheDB, key)
+			return r, nil
+		}
 		resp := &http.Response{}
 		resp.Request = r
 		resp.Header = entry.ResponseHeaders
@@ -267,7 +281,7 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 	return r, nil
 }
 
-// OnResponse caches responses except upgrades and pending asynchronous operations.
+// OnResponse caches responses except upgrades, pending operations, and server errors.
 func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if d == nil {
 		// caching disabled
@@ -315,8 +329,7 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		}
 	}
 
-	// Polling must reach upstream again while an asynchronous operation is pending.
-	if resp.StatusCode == http.StatusAccepted {
+	if !shouldCacheResponse(resp.StatusCode) {
 		return resp
 	}
 
@@ -328,11 +341,19 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		return resp
 	}
 
-	fileName := fmt.Sprintf("%06d-%v", d.nextNumber(), sanitize(resp.Request.Host))
-	f, err := os.Create(filepath.Clean(filepath.Join(d.cacheDir, fileName)))
-	if err != nil {
-		logrus.Warnln("Failed to write to cache:", err.Error())
-		return resp
+	var f *os.File
+	for {
+		fileName := fmt.Sprintf("%06d-%v", d.nextNumber(), sanitize(resp.Request.Host))
+		var err error
+		f, err = os.OpenFile(filepath.Clean(filepath.Join(d.cacheDir, fileName)), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0666)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			logrus.Warnln("Failed to write to cache:", err.Error())
+			return resp
+		}
+		break
 	}
 
 	resp.Body = TeeReadCloser(resp.Body, f, resp.ContentLength, func() {
@@ -381,7 +402,7 @@ func (d *DB) Statistics() {
 }
 
 // WriteToDisk outputs the db in the cache directory for scenario use.
-func (d *DB) WriteToDisk() error {
+func (d *DB) WriteToDisk() (err error) {
 	d.Lock()
 	defer d.Unlock()
 
@@ -390,6 +411,7 @@ func (d *DB) WriteToDisk() error {
 		logrus.Errorln("Failed to create db file:", err.Error())
 		return err
 	}
+	defer func() { err = errors.Join(err, f.Close()) }()
 	var out []Out
 	for key, entry := range d.cacheDB {
 		k := key
