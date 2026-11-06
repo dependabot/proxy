@@ -167,6 +167,10 @@ const (
 )
 
 func shouldCacheResponse(statusCode int) bool {
+	// Polling must reach upstream again while an asynchronous operation is pending.
+	if statusCode == http.StatusAccepted {
+		return false
+	}
 	return statusCode < http.StatusInternalServerError
 }
 
@@ -223,7 +227,7 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 	proxyctx.SetValue(proxyCtx, keyValue, key)
 	if entry, ok := d.cacheDB[key]; ok {
 		if !shouldCacheResponse(entry.Status) {
-			// Discard server errors recorded by older versions of the proxy.
+			// Discard responses recorded before they were excluded from caching.
 			delete(d.cacheDB, key)
 			return r, nil
 		}
@@ -325,10 +329,6 @@ func (d *DB) OnResponse(resp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.R
 		}
 	}
 
-	// Polling must reach upstream again while an asynchronous operation is pending.
-	if resp.StatusCode == http.StatusAccepted {
-		return resp
-	}
 	if !shouldCacheResponse(resp.StatusCode) {
 		return resp
 	}

@@ -78,7 +78,7 @@ func TestCache_Disabled(t *testing.T) {
 
 func TestCache_ErrorResponsePolicy(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		for _, status := range []int{200, 204, 301, 304, 399, 400, 401, 403, 404, 429, 499, 500, 503, 599, 600} {
+		for _, status := range []int{200, 202, 204, 301, 304, 399, 400, 401, 403, 404, 429, 499, 500, 503, 599, 600} {
 			t.Run(method+"/"+strconv.Itoa(status), func(t *testing.T) {
 				cacheDir := t.TempDir()
 				cacher, err := New(true, cacheDir)
@@ -105,7 +105,7 @@ func TestCache_ErrorResponsePolicy(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, result.Body.Close())
 
-				wantCached := status < 500
+				wantCached := status < 500 && status != http.StatusAccepted
 				if wantCached {
 					assert.Len(t, cacher.cacheDB, 1)
 				} else {
@@ -131,8 +131,8 @@ func TestCache_ErrorResponsePolicy(t *testing.T) {
 	}
 }
 
-func TestCache_PreviouslyRecordedError(t *testing.T) {
-	for _, status := range []int{http.StatusNotFound, http.StatusServiceUnavailable} {
+func TestCache_PreviouslyRecordedResponse(t *testing.T) {
+	for _, status := range []int{http.StatusAccepted, http.StatusNotFound, http.StatusServiceUnavailable} {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			cacheDir := t.TempDir()
 			recorder, err := New(true, cacheDir)
@@ -151,7 +151,7 @@ func TestCache_PreviouslyRecordedError(t *testing.T) {
 			req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
 			ctx := &goproxy.ProxyCtx{Req: req}
 			_, hit := cacher.OnRequest(req, ctx)
-			if status < 500 {
+			if status < 500 && status != http.StatusAccepted {
 				require.NotNil(t, hit)
 				assert.Equal(t, status, hit.StatusCode)
 				require.NoError(t, hit.Body.Close())
