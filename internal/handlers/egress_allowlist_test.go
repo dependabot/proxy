@@ -1301,6 +1301,8 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://sf16-fe-tos-sg.i18n-pglstatp.com/obj/pangle-sdk-static-va/8.3.0.8/TikTokBusinessSDK.xcframework.zip",
 		// Same failure mode for the Vindral Apple SDK's VindralStreaming binaryTarget.
 		"https://applesdk.vindral.com/tag/1.2.0/VindralStreaming.zip",
+		// Same failure mode for the edna ChatCenterUI SDK binaryTarget.
+		"https://maven-pub.edna.ru/repository/maven-releases/edna/chatcenter/ui/ios/5.13.0.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
 	}
@@ -1352,6 +1354,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.applesdk.vindral.com/payload",
 		"https://attacker.vindral.com/payload",
 		"https://vindral.com/payload",
+		// edna.ru serves a wildcard cert covering its product, docs and API
+		// hosts, so the Nexus host must not open the parent or any sibling.
+		"https://evil.maven-pub.edna.ru/payload",
+		"https://attacker.edna.ru/payload",
+		"https://edna.ru/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
