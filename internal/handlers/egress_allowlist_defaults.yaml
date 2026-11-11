@@ -682,6 +682,20 @@ ecosystem_default_domains:
     - fluent.github.io
     # CAST AI's chart repo (GitHub Pages); tarballs are on github.com.
     - castai.github.io
+    # Istio's chart repo: one exact, Istio-owned virtual-hosted GCS bucket that
+    # serves index.yaml and tarballs. Other buckets stay blocked.
+    - istio-release.storage.googleapis.com
+    # Istio's documented Helm repo redirects to this fixed R2 chart host.
+    - blob.istio.io
+    - istio-release.r2.istio.io
+    # Kong's chart repo; tarballs are on github.com.
+    - charts.konghq.com
+    # AWS's chart repos (eks-charts, secrets-store-csi-driver-provider-aws, ...).
+    - aws.github.io
+    # Fairwinds' chart repo; index and tarballs are on the same host.
+    - charts.fairwinds.com
+    # Open Policy Agent's chart repo (Gatekeeper); index and tarballs on the same host.
+    - open-policy-agent.github.io
     # Percona's chart repo (GitHub Pages); tarballs are on github.com.
     - percona.github.io
   # GitHub-hosted or per-job configured; covered by github_infra_domains / git.
@@ -712,6 +726,11 @@ ecosystem_default_domains:
     # (RealSprint/vindral-apple-sdk-spm). Anonymous, no redirect.
     # Exact: *.vindral.com also fronts the vendor's CDN and stage/test hosts.
     - applesdk.vindral.com
+    # Microsoft's Speech SDK storage account, serving the
+    # MicrosoftCognitiveServicesSpeech XCFramework zip binaryTargets declared in
+    # the vendor's own public Package.swift (microsoft/speech-sdk-spm).
+    # Anonymous, no redirect.
+    - csspeechstorage.blob.core.windows.net
     # edna's (edna.ru) public Sonatype Nexus, serving the ChatCenterUI
     # xcframework.zip binaryTarget declared in the vendor's own public
     # Package.swift (edna-ru/chatcenterui-ios). Anonymous, no redirect.
