@@ -782,6 +782,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.shopware.github.io/payload",
 		"https://evil.percona.github.io/payload",
 		"https://evil.csspeechstorage.blob.core.windows.net/payload",
+		"https://evil.models.enviouswispr.com/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -1319,6 +1320,8 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		// Same failure mode for the Microsoft Speech SDK's XCFramework binaryTargets.
 		"https://csspeechstorage.blob.core.windows.net/drop/1.53.0/MicrosoftCognitiveServicesSpeech-XCFramework-1.53.0.zip",
 		"https://csspeechstorage.blob.core.windows.net/drop/1.53.0/MicrosoftCognitiveServicesSpeech-MacOSXCFramework-1.53.0.zip",
+		// Same failure mode for EnviousWispr's CWebRTCAEC binaryTarget.
+		"https://models.enviouswispr.com/frameworks/cwebrtcaec/ew-4355.3/CWebRTCAEC.xcframework.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
 	}
@@ -1375,6 +1378,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.csspeechstorage.blob.core.windows.net/payload",
 		"https://csspeechstorageattacker.blob.core.windows.net/payload",
 		"https://attacker.blob.core.windows.net/payload",
+		// The EnviousWispr artifact host is one exact host: no children, and
+		// never the product website on the parent domain or its subdomains.
+		"https://evil.models.enviouswispr.com/payload",
+		"https://attacker.enviouswispr.com/payload",
+		"https://enviouswispr.com/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
