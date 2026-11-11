@@ -770,10 +770,18 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.wiz-sec.github.io/payload",
 		"https://evil.fluent.github.io/payload",
 		"https://evil.castai.github.io/payload",
+		"https://evil.istio-release.storage.googleapis.com/payload",
+		"https://evil.blob.istio.io/payload",
+		"https://evil.istio-release.r2.istio.io/payload",
+		"https://evil.charts.konghq.com/payload",
+		"https://evil.aws.github.io/payload",
+		"https://evil.charts.fairwinds.com/payload",
+		"https://evil.open-policy-agent.github.io/payload",
 		"https://evil.adsbynimbus-public.s3.amazonaws.com/payload",
 		"https://evil.mirror.mage-os.org/payload",
 		"https://evil.shopware.github.io/payload",
 		"https://evil.percona.github.io/payload",
+		"https://evil.csspeechstorage.blob.core.windows.net/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -990,6 +998,13 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 		"https://wiz-sec.github.io/charts/wiz-kubernetes-integration-0.2.0.tgz",
 		"https://fluent.github.io/helm-charts/index.yaml",
 		"https://castai.github.io/helm-charts/index.yaml",
+		"https://istio-release.storage.googleapis.com/charts/index.yaml",
+		"https://blob.istio.io/istio-release/charts/index.yaml",
+		"https://istio-release.r2.istio.io/charts/index.yaml",
+		"https://charts.konghq.com/index.yaml",
+		"https://aws.github.io/eks-charts/index.yaml",
+		"https://charts.fairwinds.com/stable/index.yaml",
+		"https://open-policy-agent.github.io/gatekeeper/charts/index.yaml",
 		"https://cocoapods.org/pods/AFNetworking",
 		"https://percona.github.io/percona-helm-charts/index.yaml",
 	} {
@@ -1301,6 +1316,9 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://sf16-fe-tos-sg.i18n-pglstatp.com/obj/pangle-sdk-static-va/8.3.0.8/TikTokBusinessSDK.xcframework.zip",
 		// Same failure mode for the Vindral Apple SDK's VindralStreaming binaryTarget.
 		"https://applesdk.vindral.com/tag/1.2.0/VindralStreaming.zip",
+		// Same failure mode for the Microsoft Speech SDK's XCFramework binaryTargets.
+		"https://csspeechstorage.blob.core.windows.net/drop/1.53.0/MicrosoftCognitiveServicesSpeech-XCFramework-1.53.0.zip",
+		"https://csspeechstorage.blob.core.windows.net/drop/1.53.0/MicrosoftCognitiveServicesSpeech-MacOSXCFramework-1.53.0.zip",
 		// Same failure mode for AppLovin's AppLovinSDK and mediation adapter binaryTargets.
 		"https://artifacts.applovin.com/ios/com/applovin/applovin-sdk/AppLovinSDK-13.7.0.xcframework.zip",
 		"https://artifacts.applovin.com/ios/com/applovin/mediation/google-adapter/AppLovinMediationGoogleAdapter-13.12.0.0.zip",
@@ -1361,6 +1379,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.applesdk.vindral.com/payload",
 		"https://attacker.vindral.com/payload",
 		"https://vindral.com/payload",
+		// The Speech SDK storage account is one exact host: no children, no
+		// lookalike accounts, and never other accounts on blob.core.windows.net.
+		"https://evil.csspeechstorage.blob.core.windows.net/payload",
+		"https://csspeechstorageattacker.blob.core.windows.net/payload",
+		"https://attacker.blob.core.windows.net/payload",
 		// The AppLovin SDK host is one exact host: no children, and never the
 		// vendor's parent domain or its other subdomains.
 		"https://evil.artifacts.applovin.com/payload",
