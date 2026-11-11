@@ -731,5 +731,10 @@ ecosystem_default_domains:
     # the vendor's own public Package.swift (microsoft/speech-sdk-spm).
     # Anonymous, no redirect.
     - csspeechstorage.blob.core.windows.net
+    # EnviousWispr's public artifact host (Cloudflare R2 custom domain), serving
+    # the CWebRTCAEC xcframework.zip binaryTarget declared in the app's own
+    # public Package.swift (saurabhav88/EnviousWispr). Anonymous, no redirect.
+    # Exact: the rest of enviouswispr.com is the product website, not needed.
+    - models.enviouswispr.com
   vcpkg: []
   pre_commit: []
