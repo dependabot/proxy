@@ -1,4 +1,4 @@
-FROM docker.io/library/golang:1.27.2-alpine3.23 AS builder-base
+FROM docker.io/library/golang:1.27.3-alpine3.23 AS builder-base
 
 ENV GOOS=linux GOARCH=amd64
 
@@ -28,7 +28,7 @@ RUN go build -o $GOPATH/bin/dependabot-proxy -ldflags="-w ${INJECTED_VARS} -s"
 
 # ============================================================================
 
-FROM docker.io/library/alpine:3.24.2
+FROM docker.io/library/alpine:3.24.4
 
 LABEL org.opencontainers.image.source="https://github.com/dependabot/proxy"
 

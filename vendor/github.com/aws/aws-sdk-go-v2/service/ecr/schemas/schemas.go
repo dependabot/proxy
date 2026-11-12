@@ -118,6 +118,11 @@ var DescribeRegistry = smithy.NewSchema(smithy.ShapeID{
 	Name:      "DescribeRegistry",
 }, smithy.ShapeTypeOperation, 0)
 
+var DescribeReplicationBackfillResults = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "DescribeReplicationBackfillResults",
+}, smithy.ShapeTypeOperation, 0)
+
 var DescribeRepositories = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "DescribeRepositories",
@@ -193,6 +198,11 @@ var ListPullTimeUpdateExclusions = smithy.NewSchema(smithy.ShapeID{
 	Name:      "ListPullTimeUpdateExclusions",
 }, smithy.ShapeTypeOperation, 0)
 
+var ListReplicationBackfills = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ListReplicationBackfills",
+}, smithy.ShapeTypeOperation, 0)
+
 var ListTagsForResource = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ListTagsForResource",
@@ -261,6 +271,16 @@ var StartImageScan = smithy.NewSchema(smithy.ShapeID{
 var StartLifecyclePolicyPreview = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "StartLifecyclePolicyPreview",
+}, smithy.ShapeTypeOperation, 0)
+
+var StartReplicationBackfill = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "StartReplicationBackfill",
+}, smithy.ShapeTypeOperation, 0)
+
+var StopReplicationBackfill = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "StopReplicationBackfill",
 }, smithy.ShapeTypeOperation, 0)
 
 var TagResource = smithy.NewSchema(smithy.ShapeID{
@@ -459,7 +479,7 @@ var _BatchedOperationLayerDigestList_member *smithy.Schema
 var BlockedByOrganizationPolicyException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "BlockedByOrganizationPolicyException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var BlockedByOrganizationPolicyException_message *smithy.Schema
 
 var _CreationTimestamp = smithy.NewSchema(smithy.ShapeID{
@@ -539,7 +559,7 @@ var DescribeImagesFilter_imageStatus *smithy.Schema
 var EmptyUploadException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "EmptyUploadException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var EmptyUploadException_message *smithy.Schema
 
 var EncryptionConfiguration = smithy.NewSchema(smithy.ShapeID{
@@ -630,13 +650,13 @@ var _ExceptionMessage = smithy.NewSchema(smithy.ShapeID{
 var ExclusionAlreadyExistsException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ExclusionAlreadyExistsException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var ExclusionAlreadyExistsException_message *smithy.Schema
 
 var ExclusionNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ExclusionNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var ExclusionNotFoundException_message *smithy.Schema
 
 var _ExpirationTimestamp = smithy.NewSchema(smithy.ShapeID{
@@ -744,13 +764,13 @@ var ImageActionType_TRANSITION *smithy.Schema
 var ImageAlreadyExistsException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ImageAlreadyExistsException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var ImageAlreadyExistsException_message *smithy.Schema
 
 var ImageArchivedException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ImageArchivedException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var ImageArchivedException_message *smithy.Schema
 
 var _ImageCount = smithy.NewSchema(smithy.ShapeID{
@@ -806,7 +826,7 @@ var _ImageDigest = smithy.NewSchema(smithy.ShapeID{
 var ImageDigestDoesNotMatchException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ImageDigestDoesNotMatchException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var ImageDigestDoesNotMatchException_message *smithy.Schema
 
 var ImageFailure = smithy.NewSchema(smithy.ShapeID{
@@ -884,7 +904,7 @@ var _ImageManifest = smithy.NewSchema(smithy.ShapeID{
 var ImageNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ImageNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var ImageNotFoundException_message *smithy.Schema
 
 var ImageReferrer = smithy.NewSchema(smithy.ShapeID{
@@ -1033,7 +1053,7 @@ var ImageStatusFilter_ANY *smithy.Schema
 var ImageStorageClassUpdateNotSupportedException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ImageStorageClassUpdateNotSupportedException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var ImageStorageClassUpdateNotSupportedException_message *smithy.Schema
 
 var _ImageTag = smithy.NewSchema(smithy.ShapeID{
@@ -1044,7 +1064,7 @@ var _ImageTag = smithy.NewSchema(smithy.ShapeID{
 var ImageTagAlreadyExistsException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ImageTagAlreadyExistsException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var ImageTagAlreadyExistsException_message *smithy.Schema
 
 var _ImageTagList = smithy.NewSchema(smithy.ShapeID{
@@ -1104,13 +1124,13 @@ var _InUseCount = smithy.NewSchema(smithy.ShapeID{
 var InvalidLayerException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "InvalidLayerException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var InvalidLayerException_message *smithy.Schema
 
 var InvalidLayerPartException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "InvalidLayerPartException",
-}, smithy.ShapeTypeStructure, 5)
+}, smithy.ShapeTypeStructure, 5, &smithytraits.Error{Type: "client"})
 var InvalidLayerPartException_registryId *smithy.Schema
 
 var InvalidLayerPartException_repositoryName *smithy.Schema
@@ -1124,13 +1144,13 @@ var InvalidLayerPartException_message *smithy.Schema
 var InvalidParameterException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "InvalidParameterException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var InvalidParameterException_message *smithy.Schema
 
 var InvalidTagParameterException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "InvalidTagParameterException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var InvalidTagParameterException_message *smithy.Schema
 
 var _IsPTCRuleValid = smithy.NewSchema(smithy.ShapeID{
@@ -1146,7 +1166,7 @@ var _KmsError = smithy.NewSchema(smithy.ShapeID{
 var KmsException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "KmsException",
-}, smithy.ShapeTypeStructure, 2)
+}, smithy.ShapeTypeStructure, 2, &smithytraits.Error{Type: "client"})
 var KmsException_message *smithy.Schema
 
 var KmsException_kmsError *smithy.Schema
@@ -1186,7 +1206,7 @@ var Layer_mediaType *smithy.Schema
 var LayerAlreadyExistsException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "LayerAlreadyExistsException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var LayerAlreadyExistsException_message *smithy.Schema
 
 var LayerAvailability = smithy.NewSchema(smithy.ShapeID{
@@ -1242,7 +1262,7 @@ var _LayerFailureReason = smithy.NewSchema(smithy.ShapeID{
 var LayerInaccessibleException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "LayerInaccessibleException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var LayerInaccessibleException_message *smithy.Schema
 
 var _LayerList = smithy.NewSchema(smithy.ShapeID{
@@ -1259,7 +1279,7 @@ var _LayerPartBlob = smithy.NewSchema(smithy.ShapeID{
 var LayerPartTooSmallException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "LayerPartTooSmallException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var LayerPartTooSmallException_message *smithy.Schema
 
 var _LayerSizeInBytes = smithy.NewSchema(smithy.ShapeID{
@@ -1270,13 +1290,13 @@ var _LayerSizeInBytes = smithy.NewSchema(smithy.ShapeID{
 var LayersNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "LayersNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var LayersNotFoundException_message *smithy.Schema
 
 var LifecyclePolicyNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "LifecyclePolicyNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var LifecyclePolicyNotFoundException_message *smithy.Schema
 
 var LifecyclePolicyPreviewFilter = smithy.NewSchema(smithy.ShapeID{
@@ -1288,13 +1308,13 @@ var LifecyclePolicyPreviewFilter_tagStatus *smithy.Schema
 var LifecyclePolicyPreviewInProgressException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "LifecyclePolicyPreviewInProgressException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var LifecyclePolicyPreviewInProgressException_message *smithy.Schema
 
 var LifecyclePolicyPreviewNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "LifecyclePolicyPreviewNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var LifecyclePolicyPreviewNotFoundException_message *smithy.Schema
 
 var LifecyclePolicyPreviewResult = smithy.NewSchema(smithy.ShapeID{
@@ -1384,7 +1404,7 @@ var _LifecyclePreviewMaxResults = smithy.NewSchema(smithy.ShapeID{
 var LimitExceededException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "LimitExceededException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var LimitExceededException_message *smithy.Schema
 
 var ListImageReferrersFilter = smithy.NewSchema(smithy.ShapeID{
@@ -1428,6 +1448,11 @@ var _NextToken = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "NextToken",
 }, smithy.ShapeTypeString, 0)
+
+var _NonNegativeInteger = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "NonNegativeInteger",
+}, smithy.ShapeTypeInteger, 0)
 
 var _PackageManager = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
@@ -1519,7 +1544,7 @@ var PullThroughCacheRule_updatedAt *smithy.Schema
 var PullThroughCacheRuleAlreadyExistsException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "PullThroughCacheRuleAlreadyExistsException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var PullThroughCacheRuleAlreadyExistsException_message *smithy.Schema
 
 var _PullThroughCacheRuleList = smithy.NewSchema(smithy.ShapeID{
@@ -1531,7 +1556,7 @@ var _PullThroughCacheRuleList_member *smithy.Schema
 var PullThroughCacheRuleNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "PullThroughCacheRuleNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var PullThroughCacheRuleNotFoundException_message *smithy.Schema
 
 var _PullThroughCacheRuleRepositoryPrefix = smithy.NewSchema(smithy.ShapeID{
@@ -1598,7 +1623,7 @@ var _RecordedPullTimestamp = smithy.NewSchema(smithy.ShapeID{
 var ReferencedImagesNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ReferencedImagesNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var ReferencedImagesNotFoundException_message *smithy.Schema
 
 var _ReferenceUrlsList = smithy.NewSchema(smithy.ShapeID{
@@ -1620,7 +1645,7 @@ var _RegistryId = smithy.NewSchema(smithy.ShapeID{
 var RegistryPolicyNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "RegistryPolicyNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var RegistryPolicyNotFoundException_message *smithy.Schema
 
 var _RegistryPolicyText = smithy.NewSchema(smithy.ShapeID{
@@ -1672,6 +1697,114 @@ var Remediation = smithy.NewSchema(smithy.ShapeID{
 }, smithy.ShapeTypeStructure, 1)
 var Remediation_recommendation *smithy.Schema
 
+var _ReplicationBackfillError = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillError",
+}, smithy.ShapeTypeString, 0)
+
+var _ReplicationBackfillId = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillId",
+}, smithy.ShapeTypeString, 0)
+
+var ReplicationBackfillInProgressException = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillInProgressException",
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
+var ReplicationBackfillInProgressException_message *smithy.Schema
+
+var ReplicationBackfillInvalidStatusException = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillInvalidStatusException",
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
+var ReplicationBackfillInvalidStatusException_message *smithy.Schema
+
+var ReplicationBackfillNotFoundException = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillNotFoundException",
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
+var ReplicationBackfillNotFoundException_message *smithy.Schema
+
+var ReplicationBackfillProgress = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillProgress",
+}, smithy.ShapeTypeStructure, 4)
+var ReplicationBackfillProgress_totalReplicationCount *smithy.Schema
+
+var ReplicationBackfillProgress_completedReplicationCount *smithy.Schema
+
+var ReplicationBackfillProgress_failedReplicationCount *smithy.Schema
+
+var ReplicationBackfillProgress_failureCodes *smithy.Schema
+
+var ReplicationBackfillResult = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillResult",
+}, smithy.ShapeTypeStructure, 5)
+var ReplicationBackfillResult_repositoryName *smithy.Schema
+
+var ReplicationBackfillResult_imageId *smithy.Schema
+
+var ReplicationBackfillResult_status *smithy.Schema
+
+var ReplicationBackfillResult_failureCode *smithy.Schema
+
+var ReplicationBackfillResult_subImageFailureCodes *smithy.Schema
+
+var _ReplicationBackfillResultList = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillResultList",
+}, smithy.ShapeTypeList, 1)
+var _ReplicationBackfillResultList_member *smithy.Schema
+
+var ReplicationBackfillResultStatus = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillResultStatus",
+}, smithy.ShapeTypeEnum, 2)
+var ReplicationBackfillResultStatus_COMPLETE *smithy.Schema
+
+var ReplicationBackfillResultStatus_FAILED *smithy.Schema
+
+var ReplicationBackfillStatus = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillStatus",
+}, smithy.ShapeTypeEnum, 6)
+var ReplicationBackfillStatus_PREPARING *smithy.Schema
+
+var ReplicationBackfillStatus_IN_PROGRESS *smithy.Schema
+
+var ReplicationBackfillStatus_COMPLETE *smithy.Schema
+
+var ReplicationBackfillStatus_FAILED *smithy.Schema
+
+var ReplicationBackfillStatus_STOPPING *smithy.Schema
+
+var ReplicationBackfillStatus_STOPPED *smithy.Schema
+
+var ReplicationBackfillSummary = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillSummary",
+}, smithy.ShapeTypeStructure, 7)
+var ReplicationBackfillSummary_replicationBackfillId *smithy.Schema
+
+var ReplicationBackfillSummary_destination *smithy.Schema
+
+var ReplicationBackfillSummary_status *smithy.Schema
+
+var ReplicationBackfillSummary_failureCode *smithy.Schema
+
+var ReplicationBackfillSummary_progress *smithy.Schema
+
+var ReplicationBackfillSummary_startedAt *smithy.Schema
+
+var ReplicationBackfillSummary_endedAt *smithy.Schema
+
+var _ReplicationBackfillSummaryList = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationBackfillSummaryList",
+}, smithy.ShapeTypeList, 1)
+var _ReplicationBackfillSummaryList_member *smithy.Schema
+
 var ReplicationConfiguration = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ReplicationConfiguration",
@@ -1696,6 +1829,12 @@ var _ReplicationError = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ReplicationError",
 }, smithy.ShapeTypeString, 0)
+
+var _ReplicationErrorList = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ReplicationErrorList",
+}, smithy.ShapeTypeList, 1)
+var _ReplicationErrorList_member *smithy.Schema
 
 var ReplicationRule = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
@@ -1746,7 +1885,7 @@ var Repository_encryptionConfiguration *smithy.Schema
 var RepositoryAlreadyExistsException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "RepositoryAlreadyExistsException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var RepositoryAlreadyExistsException_message *smithy.Schema
 
 var RepositoryCreationTemplate = smithy.NewSchema(smithy.ShapeID{
@@ -1828,19 +1967,19 @@ var _RepositoryNameList_member *smithy.Schema
 var RepositoryNotEmptyException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "RepositoryNotEmptyException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var RepositoryNotEmptyException_message *smithy.Schema
 
 var RepositoryNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "RepositoryNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var RepositoryNotFoundException_message *smithy.Schema
 
 var RepositoryPolicyNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "RepositoryPolicyNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var RepositoryPolicyNotFoundException_message *smithy.Schema
 
 var _RepositoryPolicyText = smithy.NewSchema(smithy.ShapeID{
@@ -1973,7 +2112,7 @@ var _ScanningRepositoryFilterValue = smithy.NewSchema(smithy.ShapeID{
 var ScanNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ScanNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var ScanNotFoundException_message *smithy.Schema
 
 var _ScanOnPushFlag = smithy.NewSchema(smithy.ShapeID{
@@ -2042,13 +2181,13 @@ var _ScoringVector = smithy.NewSchema(smithy.ShapeID{
 var SecretNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "SecretNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var SecretNotFoundException_message *smithy.Schema
 
 var ServerException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ServerException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "server"})
 var ServerException_message *smithy.Schema
 
 var _Severity = smithy.NewSchema(smithy.ShapeID{
@@ -2070,7 +2209,7 @@ var SigningConfiguration_rules *smithy.Schema
 var SigningConfigurationNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "SigningConfigurationNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var SigningConfigurationNotFoundException_message *smithy.Schema
 
 var _SigningProfileArn = smithy.NewSchema(smithy.ShapeID{
@@ -2222,13 +2361,13 @@ var TargetStorageClass_ARCHIVE *smithy.Schema
 var TemplateAlreadyExistsException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "TemplateAlreadyExistsException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var TemplateAlreadyExistsException_message *smithy.Schema
 
 var TemplateNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "TemplateNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var TemplateNotFoundException_message *smithy.Schema
 
 var _Title = smithy.NewSchema(smithy.ShapeID{
@@ -2239,7 +2378,7 @@ var _Title = smithy.NewSchema(smithy.ShapeID{
 var TooManyTagsException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "TooManyTagsException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var TooManyTagsException_message *smithy.Schema
 
 var TransitioningImageTotalCount = smithy.NewSchema(smithy.ShapeID{
@@ -2264,43 +2403,43 @@ var _Type = smithy.NewSchema(smithy.ShapeID{
 var UnableToAccessSecretException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "UnableToAccessSecretException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var UnableToAccessSecretException_message *smithy.Schema
 
 var UnableToDecryptSecretValueException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "UnableToDecryptSecretValueException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var UnableToDecryptSecretValueException_message *smithy.Schema
 
 var UnableToGetUpstreamImageException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "UnableToGetUpstreamImageException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var UnableToGetUpstreamImageException_message *smithy.Schema
 
 var UnableToGetUpstreamLayerException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "UnableToGetUpstreamLayerException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var UnableToGetUpstreamLayerException_message *smithy.Schema
 
 var UnableToListUpstreamImageReferrersException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "UnableToListUpstreamImageReferrersException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var UnableToListUpstreamImageReferrersException_message *smithy.Schema
 
 var UnsupportedImageTypeException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "UnsupportedImageTypeException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var UnsupportedImageTypeException_message *smithy.Schema
 
 var UnsupportedUpstreamRegistryException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "UnsupportedUpstreamRegistryException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var UnsupportedUpstreamRegistryException_message *smithy.Schema
 
 var _UpdatedTimestamp = smithy.NewSchema(smithy.ShapeID{
@@ -2316,7 +2455,7 @@ var _UploadId = smithy.NewSchema(smithy.ShapeID{
 var UploadNotFoundException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "UploadNotFoundException",
-}, smithy.ShapeTypeStructure, 1)
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"})
 var UploadNotFoundException_message *smithy.Schema
 
 var UpstreamRegistry = smithy.NewSchema(smithy.ShapeID{
@@ -2349,7 +2488,8 @@ var _Url = smithy.NewSchema(smithy.ShapeID{
 var ValidationException = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ValidationException",
-}, smithy.ShapeTypeStructure, 1, &smithytraits.HTTPError{Code: 400})
+}, smithy.ShapeTypeStructure, 1, &smithytraits.Error{Type: "client"},
+	&smithytraits.HTTPError{Code: 400})
 var ValidationException_message *smithy.Schema
 
 var _Version = smithy.NewSchema(smithy.ShapeID{
@@ -2849,6 +2989,44 @@ var DescribeRegistryResponse_registryId *smithy.Schema
 
 var DescribeRegistryResponse_replicationConfiguration *smithy.Schema
 
+var DescribeReplicationBackfillResultsRequest = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "DescribeReplicationBackfillResultsRequest",
+}, smithy.ShapeTypeStructure, 5)
+var DescribeReplicationBackfillResultsRequest_registryId *smithy.Schema
+
+var DescribeReplicationBackfillResultsRequest_replicationBackfillId *smithy.Schema
+
+var DescribeReplicationBackfillResultsRequest_resultStatusFilter *smithy.Schema
+
+var DescribeReplicationBackfillResultsRequest_maxResults *smithy.Schema
+
+var DescribeReplicationBackfillResultsRequest_nextToken *smithy.Schema
+
+var DescribeReplicationBackfillResultsResponse = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "DescribeReplicationBackfillResultsResponse",
+}, smithy.ShapeTypeStructure, 10)
+var DescribeReplicationBackfillResultsResponse_registryId *smithy.Schema
+
+var DescribeReplicationBackfillResultsResponse_replicationBackfillId *smithy.Schema
+
+var DescribeReplicationBackfillResultsResponse_destination *smithy.Schema
+
+var DescribeReplicationBackfillResultsResponse_status *smithy.Schema
+
+var DescribeReplicationBackfillResultsResponse_failureCode *smithy.Schema
+
+var DescribeReplicationBackfillResultsResponse_progress *smithy.Schema
+
+var DescribeReplicationBackfillResultsResponse_results *smithy.Schema
+
+var DescribeReplicationBackfillResultsResponse_startedAt *smithy.Schema
+
+var DescribeReplicationBackfillResultsResponse_endedAt *smithy.Schema
+
+var DescribeReplicationBackfillResultsResponse_nextToken *smithy.Schema
+
 var DescribeRepositoriesRequest = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "DescribeRepositoriesRequest",
@@ -3122,6 +3300,26 @@ var ListPullTimeUpdateExclusionsResponse_pullTimeUpdateExclusions *smithy.Schema
 
 var ListPullTimeUpdateExclusionsResponse_nextToken *smithy.Schema
 
+var ListReplicationBackfillsRequest = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ListReplicationBackfillsRequest",
+}, smithy.ShapeTypeStructure, 3)
+var ListReplicationBackfillsRequest_registryId *smithy.Schema
+
+var ListReplicationBackfillsRequest_maxResults *smithy.Schema
+
+var ListReplicationBackfillsRequest_nextToken *smithy.Schema
+
+var ListReplicationBackfillsResponse = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "ListReplicationBackfillsResponse",
+}, smithy.ShapeTypeStructure, 3)
+var ListReplicationBackfillsResponse_registryId *smithy.Schema
+
+var ListReplicationBackfillsResponse_backfills *smithy.Schema
+
+var ListReplicationBackfillsResponse_nextToken *smithy.Schema
+
 var ListTagsForResourceRequest = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
 	Name:      "ListTagsForResourceRequest",
@@ -3367,6 +3565,50 @@ var StartLifecyclePolicyPreviewResponse_repositoryName *smithy.Schema
 var StartLifecyclePolicyPreviewResponse_lifecyclePolicyText *smithy.Schema
 
 var StartLifecyclePolicyPreviewResponse_status *smithy.Schema
+
+var StartReplicationBackfillRequest = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "StartReplicationBackfillRequest",
+}, smithy.ShapeTypeStructure, 2)
+var StartReplicationBackfillRequest_registryId *smithy.Schema
+
+var StartReplicationBackfillRequest_destination *smithy.Schema
+
+var StartReplicationBackfillResponse = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "StartReplicationBackfillResponse",
+}, smithy.ShapeTypeStructure, 5)
+var StartReplicationBackfillResponse_replicationBackfillId *smithy.Schema
+
+var StartReplicationBackfillResponse_registryId *smithy.Schema
+
+var StartReplicationBackfillResponse_destination *smithy.Schema
+
+var StartReplicationBackfillResponse_status *smithy.Schema
+
+var StartReplicationBackfillResponse_startedAt *smithy.Schema
+
+var StopReplicationBackfillRequest = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "StopReplicationBackfillRequest",
+}, smithy.ShapeTypeStructure, 2)
+var StopReplicationBackfillRequest_registryId *smithy.Schema
+
+var StopReplicationBackfillRequest_replicationBackfillId *smithy.Schema
+
+var StopReplicationBackfillResponse = smithy.NewSchema(smithy.ShapeID{
+	Namespace: "com.amazonaws.ecr",
+	Name:      "StopReplicationBackfillResponse",
+}, smithy.ShapeTypeStructure, 5)
+var StopReplicationBackfillResponse_registryId *smithy.Schema
+
+var StopReplicationBackfillResponse_replicationBackfillId *smithy.Schema
+
+var StopReplicationBackfillResponse_destination *smithy.Schema
+
+var StopReplicationBackfillResponse_status *smithy.Schema
+
+var StopReplicationBackfillResponse_startedAt *smithy.Schema
 
 var TagResourceRequest = smithy.NewSchema(smithy.ShapeID{
 	Namespace: "com.amazonaws.ecr",
@@ -4211,9 +4453,69 @@ func init() {
 
 	RegistryScanningConfiguration_rules = RegistryScanningConfiguration.AddMember("rules", _RegistryScanningRuleList)
 
+	ReplicationBackfillInProgressException_message = ReplicationBackfillInProgressException.AddMember("message", _ExceptionMessage)
+
+	ReplicationBackfillInvalidStatusException_message = ReplicationBackfillInvalidStatusException.AddMember("message", _ExceptionMessage)
+
+	ReplicationBackfillNotFoundException_message = ReplicationBackfillNotFoundException.AddMember("message", _ExceptionMessage)
+
+	_ReplicationErrorList_member = _ReplicationErrorList.AddMember("member", _ReplicationError)
+
+	ReplicationBackfillProgress_totalReplicationCount = ReplicationBackfillProgress.AddMember("totalReplicationCount", _NonNegativeInteger)
+
+	ReplicationBackfillProgress_completedReplicationCount = ReplicationBackfillProgress.AddMember("completedReplicationCount", _NonNegativeInteger)
+
+	ReplicationBackfillProgress_failedReplicationCount = ReplicationBackfillProgress.AddMember("failedReplicationCount", _NonNegativeInteger)
+
+	ReplicationBackfillProgress_failureCodes = ReplicationBackfillProgress.AddMember("failureCodes", _ReplicationErrorList)
+
+	ReplicationBackfillResultStatus_COMPLETE = ReplicationBackfillResultStatus.AddMember("COMPLETE", smithyprelude.Unit)
+
+	ReplicationBackfillResultStatus_FAILED = ReplicationBackfillResultStatus.AddMember("FAILED", smithyprelude.Unit)
+
+	ReplicationBackfillResult_repositoryName = ReplicationBackfillResult.AddMember("repositoryName", _RepositoryName)
+
+	ReplicationBackfillResult_imageId = ReplicationBackfillResult.AddMember("imageId", ImageIdentifier)
+
+	ReplicationBackfillResult_status = ReplicationBackfillResult.AddMember("status", ReplicationBackfillResultStatus)
+
+	ReplicationBackfillResult_failureCode = ReplicationBackfillResult.AddMember("failureCode", _ReplicationError)
+
+	ReplicationBackfillResult_subImageFailureCodes = ReplicationBackfillResult.AddMember("subImageFailureCodes", _ReplicationErrorList)
+
+	_ReplicationBackfillResultList_member = _ReplicationBackfillResultList.AddMember("member", ReplicationBackfillResult)
+
+	ReplicationBackfillStatus_PREPARING = ReplicationBackfillStatus.AddMember("PREPARING", smithyprelude.Unit)
+
+	ReplicationBackfillStatus_IN_PROGRESS = ReplicationBackfillStatus.AddMember("IN_PROGRESS", smithyprelude.Unit)
+
+	ReplicationBackfillStatus_COMPLETE = ReplicationBackfillStatus.AddMember("COMPLETE", smithyprelude.Unit)
+
+	ReplicationBackfillStatus_FAILED = ReplicationBackfillStatus.AddMember("FAILED", smithyprelude.Unit)
+
+	ReplicationBackfillStatus_STOPPING = ReplicationBackfillStatus.AddMember("STOPPING", smithyprelude.Unit)
+
+	ReplicationBackfillStatus_STOPPED = ReplicationBackfillStatus.AddMember("STOPPED", smithyprelude.Unit)
+
 	ReplicationDestination_region = ReplicationDestination.AddMember("region", _Region)
 
 	ReplicationDestination_registryId = ReplicationDestination.AddMember("registryId", _RegistryId)
+
+	ReplicationBackfillSummary_replicationBackfillId = ReplicationBackfillSummary.AddMember("replicationBackfillId", _ReplicationBackfillId)
+
+	ReplicationBackfillSummary_destination = ReplicationBackfillSummary.AddMember("destination", ReplicationDestination)
+
+	ReplicationBackfillSummary_status = ReplicationBackfillSummary.AddMember("status", ReplicationBackfillStatus)
+
+	ReplicationBackfillSummary_failureCode = ReplicationBackfillSummary.AddMember("failureCode", _ReplicationBackfillError)
+
+	ReplicationBackfillSummary_progress = ReplicationBackfillSummary.AddMember("progress", ReplicationBackfillProgress)
+
+	ReplicationBackfillSummary_startedAt = ReplicationBackfillSummary.AddMember("startedAt", _Date)
+
+	ReplicationBackfillSummary_endedAt = ReplicationBackfillSummary.AddMember("endedAt", _Date)
+
+	_ReplicationBackfillSummaryList_member = _ReplicationBackfillSummaryList.AddMember("member", ReplicationBackfillSummary)
 
 	_ReplicationDestinationList_member = _ReplicationDestinationList.AddMember("member", ReplicationDestination)
 
@@ -4645,6 +4947,36 @@ func init() {
 
 	DescribeRegistryResponse_replicationConfiguration = DescribeRegistryResponse.AddMember("replicationConfiguration", ReplicationConfiguration)
 
+	DescribeReplicationBackfillResultsRequest_registryId = DescribeReplicationBackfillResultsRequest.AddMember("registryId", _RegistryId)
+
+	DescribeReplicationBackfillResultsRequest_replicationBackfillId = DescribeReplicationBackfillResultsRequest.AddMember("replicationBackfillId", _ReplicationBackfillId)
+
+	DescribeReplicationBackfillResultsRequest_resultStatusFilter = DescribeReplicationBackfillResultsRequest.AddMember("resultStatusFilter", ReplicationBackfillResultStatus)
+
+	DescribeReplicationBackfillResultsRequest_maxResults = DescribeReplicationBackfillResultsRequest.AddMember("maxResults", _MaxResults)
+
+	DescribeReplicationBackfillResultsRequest_nextToken = DescribeReplicationBackfillResultsRequest.AddMember("nextToken", _NextToken)
+
+	DescribeReplicationBackfillResultsResponse_registryId = DescribeReplicationBackfillResultsResponse.AddMember("registryId", _RegistryId)
+
+	DescribeReplicationBackfillResultsResponse_replicationBackfillId = DescribeReplicationBackfillResultsResponse.AddMember("replicationBackfillId", _ReplicationBackfillId)
+
+	DescribeReplicationBackfillResultsResponse_destination = DescribeReplicationBackfillResultsResponse.AddMember("destination", ReplicationDestination)
+
+	DescribeReplicationBackfillResultsResponse_status = DescribeReplicationBackfillResultsResponse.AddMember("status", ReplicationBackfillStatus)
+
+	DescribeReplicationBackfillResultsResponse_failureCode = DescribeReplicationBackfillResultsResponse.AddMember("failureCode", _ReplicationBackfillError)
+
+	DescribeReplicationBackfillResultsResponse_progress = DescribeReplicationBackfillResultsResponse.AddMember("progress", ReplicationBackfillProgress)
+
+	DescribeReplicationBackfillResultsResponse_results = DescribeReplicationBackfillResultsResponse.AddMember("results", _ReplicationBackfillResultList)
+
+	DescribeReplicationBackfillResultsResponse_startedAt = DescribeReplicationBackfillResultsResponse.AddMember("startedAt", _Date)
+
+	DescribeReplicationBackfillResultsResponse_endedAt = DescribeReplicationBackfillResultsResponse.AddMember("endedAt", _Date)
+
+	DescribeReplicationBackfillResultsResponse_nextToken = DescribeReplicationBackfillResultsResponse.AddMember("nextToken", _NextToken)
+
 	DescribeRepositoriesRequest_registryId = DescribeRepositoriesRequest.AddMember("registryId", _RegistryId)
 
 	DescribeRepositoriesRequest_repositoryNames = DescribeRepositoriesRequest.AddMember("repositoryNames", _RepositoryNameList)
@@ -4795,6 +5127,18 @@ func init() {
 
 	ListPullTimeUpdateExclusionsResponse_nextToken = ListPullTimeUpdateExclusionsResponse.AddMember("nextToken", _NextToken)
 
+	ListReplicationBackfillsRequest_registryId = ListReplicationBackfillsRequest.AddMember("registryId", _RegistryId)
+
+	ListReplicationBackfillsRequest_maxResults = ListReplicationBackfillsRequest.AddMember("maxResults", _FiftyMaxResults)
+
+	ListReplicationBackfillsRequest_nextToken = ListReplicationBackfillsRequest.AddMember("nextToken", _NextToken)
+
+	ListReplicationBackfillsResponse_registryId = ListReplicationBackfillsResponse.AddMember("registryId", _RegistryId)
+
+	ListReplicationBackfillsResponse_backfills = ListReplicationBackfillsResponse.AddMember("backfills", _ReplicationBackfillSummaryList)
+
+	ListReplicationBackfillsResponse_nextToken = ListReplicationBackfillsResponse.AddMember("nextToken", _NextToken)
+
 	ListTagsForResourceRequest_resourceArn = ListTagsForResourceRequest.AddMember("resourceArn", _Arn)
 
 	ListTagsForResourceResponse_tags = ListTagsForResourceResponse.AddMember("tags", _TagList)
@@ -4928,6 +5272,34 @@ func init() {
 	StartLifecyclePolicyPreviewResponse_lifecyclePolicyText = StartLifecyclePolicyPreviewResponse.AddMember("lifecyclePolicyText", _LifecyclePolicyText)
 
 	StartLifecyclePolicyPreviewResponse_status = StartLifecyclePolicyPreviewResponse.AddMember("status", LifecyclePolicyPreviewStatus)
+
+	StartReplicationBackfillRequest_registryId = StartReplicationBackfillRequest.AddMember("registryId", _RegistryId)
+
+	StartReplicationBackfillRequest_destination = StartReplicationBackfillRequest.AddMember("destination", ReplicationDestination)
+
+	StartReplicationBackfillResponse_replicationBackfillId = StartReplicationBackfillResponse.AddMember("replicationBackfillId", _ReplicationBackfillId)
+
+	StartReplicationBackfillResponse_registryId = StartReplicationBackfillResponse.AddMember("registryId", _RegistryId)
+
+	StartReplicationBackfillResponse_destination = StartReplicationBackfillResponse.AddMember("destination", ReplicationDestination)
+
+	StartReplicationBackfillResponse_status = StartReplicationBackfillResponse.AddMember("status", ReplicationBackfillStatus)
+
+	StartReplicationBackfillResponse_startedAt = StartReplicationBackfillResponse.AddMember("startedAt", _Date)
+
+	StopReplicationBackfillRequest_registryId = StopReplicationBackfillRequest.AddMember("registryId", _RegistryId)
+
+	StopReplicationBackfillRequest_replicationBackfillId = StopReplicationBackfillRequest.AddMember("replicationBackfillId", _ReplicationBackfillId)
+
+	StopReplicationBackfillResponse_registryId = StopReplicationBackfillResponse.AddMember("registryId", _RegistryId)
+
+	StopReplicationBackfillResponse_replicationBackfillId = StopReplicationBackfillResponse.AddMember("replicationBackfillId", _ReplicationBackfillId)
+
+	StopReplicationBackfillResponse_destination = StopReplicationBackfillResponse.AddMember("destination", ReplicationDestination)
+
+	StopReplicationBackfillResponse_status = StopReplicationBackfillResponse.AddMember("status", ReplicationBackfillStatus)
+
+	StopReplicationBackfillResponse_startedAt = StopReplicationBackfillResponse.AddMember("startedAt", _Date)
 
 	TagResourceRequest_resourceArn = TagResourceRequest.AddMember("resourceArn", _Arn)
 
