@@ -781,6 +781,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.mirror.mage-os.org/payload",
 		"https://evil.shopware.github.io/payload",
 		"https://evil.percona.github.io/payload",
+		"https://evil.registry.coder.com/payload",
 		"https://evil.csspeechstorage.blob.core.windows.net/payload",
 	}
 
@@ -1007,6 +1008,7 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 		"https://open-policy-agent.github.io/gatekeeper/charts/index.yaml",
 		"https://cocoapods.org/pods/AFNetworking",
 		"https://percona.github.io/percona-helm-charts/index.yaml",
+		"https://registry.coder.com/terraform_protocol/coder/code-server/coder/versions",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "added host should be allowed: "+allowed)
 	}

@@ -567,6 +567,9 @@ ecosystem_default_domains:
     - checkpoint-api.hashicorp.com
     # Module archive downloads from the public registry.
     - archivist.terraform.io
+    # Coder's public module registry (registry.coder.com), serving Coder
+    # workspace modules. Module archives are served from the same host.
+    - registry.coder.com
   opentofu:
     - registry.opentofu.org
     - releases.hashicorp.com
