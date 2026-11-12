@@ -756,5 +756,10 @@ ecosystem_default_domains:
     # (inner-active/DTExchangeSDK-iOS-SPM). Anonymous, no redirect.
     # Exact: *.inner-active.mobi fronts the vendor's unrelated product subdomains.
     - cdn2.inner-active.mobi
+    # adjoe's Playtime Monetize SDK host, serving the PlaytimeMonetize zip
+    # binaryTarget declared in the vendor's own public Package.swift
+    # (adjoeio/adjoe-monetize-spm). Anonymous, no redirect.
+    # Exact: adjoe.io itself fronts the vendor's unrelated marketing site.
+    - releases.adjoe.io
   vcpkg: []
   pre_commit: []
