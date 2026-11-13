@@ -295,6 +295,7 @@ ecosystem_default_domains:
   uv: *python_registries
   bundler:
     - rubygems.org
+    - www.rubygems.org
     - index.rubygems.org
     - gems.rubygems.org
     - rails-assets.org
