@@ -783,6 +783,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.percona.github.io/payload",
 		"https://evil.registry.coder.com/payload",
 		"https://evil.csspeechstorage.blob.core.windows.net/payload",
+		"https://evil.releases.adjoe.io/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -1330,6 +1331,8 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://dl.inmobi.com/inmobi-sdk/IM/InMobi-Ads-SDK-SPM-11.5.0.zip",
 		// Same failure mode for Digital Turbine Exchange SDK's IASDKCore binaryTarget.
 		"https://cdn2.inner-active.mobi/fmp-sdk/files/DTExchangeSDK-iOS-SPM-8.5.2.zip",
+		// Same failure mode for adjoe Playtime Monetize SDK's PlaytimeMonetize binaryTarget.
+		"https://releases.adjoe.io/files/playtime/ios/monetize/4.5.4/PlaytimeMonetize.zip",
 		// Same failure mode for the edna ChatCenterUI SDK binaryTarget.
 		"https://maven-pub.edna.ru/repository/maven-releases/edna/chatcenter/ui/ios/5.13.0.zip",
 	} {
@@ -1408,6 +1411,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.cdn2.inner-active.mobi/payload",
 		"https://attacker.inner-active.mobi/payload",
 		"https://inner-active.mobi/payload",
+		// The adjoe SDK host is one exact host: no children, and never the
+		// vendor's parent domain or its other subdomains.
+		"https://evil.releases.adjoe.io/payload",
+		"https://attacker.adjoe.io/payload",
+		"https://adjoe.io/payload",
 		// edna.ru serves a wildcard cert covering its product, docs and API
 		// hosts, so the Nexus host must not open the parent or any sibling.
 		"https://evil.maven-pub.edna.ru/payload",
