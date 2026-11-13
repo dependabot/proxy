@@ -761,5 +761,11 @@ ecosystem_default_domains:
     # (adjoeio/adjoe-monetize-spm). Anonymous, no redirect.
     # Exact: adjoe.io itself fronts the vendor's unrelated marketing site.
     - releases.adjoe.io
+    # edna's (edna.ru) public Sonatype Nexus, serving the ChatCenterUI
+    # xcframework.zip binaryTarget declared in the vendor's own public
+    # Package.swift (edna-ru/chatcenterui-ios). Anonymous, no redirect.
+    # Exact: *.edna.ru is a wildcard cert that also fronts the vendor's
+    # product, docs and API hosts.
+    - maven-pub.edna.ru
   vcpkg: []
   pre_commit: []

@@ -1333,6 +1333,8 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://cdn2.inner-active.mobi/fmp-sdk/files/DTExchangeSDK-iOS-SPM-8.5.2.zip",
 		// Same failure mode for adjoe Playtime Monetize SDK's PlaytimeMonetize binaryTarget.
 		"https://releases.adjoe.io/files/playtime/ios/monetize/4.5.4/PlaytimeMonetize.zip",
+		// Same failure mode for the edna ChatCenterUI SDK binaryTarget.
+		"https://maven-pub.edna.ru/repository/maven-releases/edna/chatcenter/ui/ios/5.13.0.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
 	}
@@ -1414,6 +1416,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.releases.adjoe.io/payload",
 		"https://attacker.adjoe.io/payload",
 		"https://adjoe.io/payload",
+		// edna.ru serves a wildcard cert covering its product, docs and API
+		// hosts, so the Nexus host must not open the parent or any sibling.
+		"https://evil.maven-pub.edna.ru/payload",
+		"https://attacker.edna.ru/payload",
+		"https://edna.ru/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
