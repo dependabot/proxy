@@ -781,6 +781,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.mirror.mage-os.org/payload",
 		"https://evil.shopware.github.io/payload",
 		"https://evil.percona.github.io/payload",
+		"https://evil.registry.coder.com/payload",
 		"https://evil.csspeechstorage.blob.core.windows.net/payload",
 	}
 
@@ -1007,6 +1008,7 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 		"https://open-policy-agent.github.io/gatekeeper/charts/index.yaml",
 		"https://cocoapods.org/pods/AFNetworking",
 		"https://percona.github.io/percona-helm-charts/index.yaml",
+		"https://registry.coder.com/terraform_protocol/coder/code-server/coder/versions",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "added host should be allowed: "+allowed)
 	}
@@ -1319,6 +1321,15 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		// Same failure mode for the Microsoft Speech SDK's XCFramework binaryTargets.
 		"https://csspeechstorage.blob.core.windows.net/drop/1.53.0/MicrosoftCognitiveServicesSpeech-XCFramework-1.53.0.zip",
 		"https://csspeechstorage.blob.core.windows.net/drop/1.53.0/MicrosoftCognitiveServicesSpeech-MacOSXCFramework-1.53.0.zip",
+		// Same failure mode for AppLovin's AppLovinSDK and mediation adapter binaryTargets.
+		"https://artifacts.applovin.com/ios/com/applovin/applovin-sdk/AppLovinSDK-13.7.0.xcframework.zip",
+		"https://artifacts.applovin.com/ios/com/applovin/mediation/google-adapter/AppLovinMediationGoogleAdapter-13.12.0.0.zip",
+		// Same failure mode for Liftoff Monetize SDK's VungleAdsSDK binaryTarget.
+		"https://vungle2-cdn-prod.s3.amazonaws.com/sdks/ios/SwiftPackageManager/VungleAds-7.8.0.zip",
+		// Same failure mode for InMobi's InMobiSDK binaryTarget.
+		"https://dl.inmobi.com/inmobi-sdk/IM/InMobi-Ads-SDK-SPM-11.5.0.zip",
+		// Same failure mode for Digital Turbine Exchange SDK's IASDKCore binaryTarget.
+		"https://cdn2.inner-active.mobi/fmp-sdk/files/DTExchangeSDK-iOS-SPM-8.5.2.zip",
 		// Same failure mode for the edna ChatCenterUI SDK binaryTarget.
 		"https://maven-pub.edna.ru/repository/maven-releases/edna/chatcenter/ui/ios/5.13.0.zip",
 	} {
@@ -1377,6 +1388,26 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.csspeechstorage.blob.core.windows.net/payload",
 		"https://csspeechstorageattacker.blob.core.windows.net/payload",
 		"https://attacker.blob.core.windows.net/payload",
+		// The AppLovin SDK host is one exact host: no children, and never the
+		// vendor's parent domain or its other subdomains.
+		"https://evil.artifacts.applovin.com/payload",
+		"https://attacker.applovin.com/payload",
+		"https://applovin.com/payload",
+		// The Liftoff Monetize (Vungle) bucket is one exact S3 host: no children,
+		// no lookalike buckets, and never the path-style apex that reaches every bucket.
+		"https://evil.vungle2-cdn-prod.s3.amazonaws.com/payload",
+		"https://vungle2-cdn-prod-attacker.s3.amazonaws.com/payload",
+		"https://s3.amazonaws.com/vungle2-cdn-prod/payload",
+		// The InMobi SDK host is one exact host: no children, and never the
+		// vendor's parent domain or its other subdomains.
+		"https://evil.dl.inmobi.com/payload",
+		"https://attacker.inmobi.com/payload",
+		"https://inmobi.com/payload",
+		// The DT Exchange SDK host is one exact host: no children, and never the
+		// vendor's parent domain or its other subdomains.
+		"https://evil.cdn2.inner-active.mobi/payload",
+		"https://attacker.inner-active.mobi/payload",
+		"https://inner-active.mobi/payload",
 		// edna.ru serves a wildcard cert covering its product, docs and API
 		// hosts, so the Nexus host must not open the parent or any sibling.
 		"https://evil.maven-pub.edna.ru/payload",

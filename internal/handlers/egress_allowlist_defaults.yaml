@@ -295,6 +295,7 @@ ecosystem_default_domains:
   uv: *python_registries
   bundler:
     - rubygems.org
+    - www.rubygems.org
     - index.rubygems.org
     - gems.rubygems.org
     - rails-assets.org
@@ -567,6 +568,9 @@ ecosystem_default_domains:
     - checkpoint-api.hashicorp.com
     # Module archive downloads from the public registry.
     - archivist.terraform.io
+    # Coder's public module registry (registry.coder.com), serving Coder
+    # workspace modules. Module archives are served from the same host.
+    - registry.coder.com
   opentofu:
     - registry.opentofu.org
     - releases.hashicorp.com
@@ -731,6 +735,27 @@ ecosystem_default_domains:
     # the vendor's own public Package.swift (microsoft/speech-sdk-spm).
     # Anonymous, no redirect.
     - csspeechstorage.blob.core.windows.net
+    # AppLovin's SDK host, serving the AppLovinSDK xcframework.zip binaryTarget
+    # (AppLovin/AppLovin-MAX-Swift-Package) and the mediation adapter zip
+    # binaryTargets (e.g. AppLovin/AppLovin-MAX-Swift-Package-Google), each
+    # declared in the vendor's own public Package.swift. Anonymous, no redirect.
+    # Exact: *.applovin.com fronts the vendor's unrelated product subdomains.
+    - artifacts.applovin.com
+    # Liftoff Monetize (VungleAds) SDK's bucket, serving the VungleAdsSDK zip
+    # binaryTarget declared in the vendor's own public Package.swift
+    # (Vungle/VungleAdsSDK-SwiftPackageManager). Anonymous, no redirect.
+    # Exact virtual-hosted bucket; never the path-style s3.amazonaws.com apex.
+    - vungle2-cdn-prod.s3.amazonaws.com
+    # InMobi Ads SDK host, serving the InMobiSDK zip binaryTarget declared in
+    # the vendor's own public Package.swift (InMobi/InMobiSDK-Swift-Package).
+    # Anonymous, no redirect.
+    # Exact: *.inmobi.com fronts the vendor's unrelated product subdomains.
+    - dl.inmobi.com
+    # Digital Turbine Exchange (DT Exchange) SDK host, serving the IASDKCore zip
+    # binaryTarget declared in the vendor's own public Package.swift
+    # (inner-active/DTExchangeSDK-iOS-SPM). Anonymous, no redirect.
+    # Exact: *.inner-active.mobi fronts the vendor's unrelated product subdomains.
+    - cdn2.inner-active.mobi
     # edna's (edna.ru) public Sonatype Nexus, serving the ChatCenterUI
     # xcframework.zip binaryTarget declared in the vendor's own public
     # Package.swift (edna-ru/chatcenterui-ios). Anonymous, no redirect.
