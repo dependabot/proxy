@@ -53,6 +53,8 @@ var ignoreHeaders = map[string]struct{}{
 	"Keep-Alive":      {},
 	// Hopefully should not change the response
 	"User-Agent": {},
+	// Revalidation hints vary between client versions
+	"Cache-Control": {},
 	// NPM specific
 	"Npm-Command": {},
 	// NuGet Session ID changes each run
@@ -67,6 +69,16 @@ var ignoreHeaders = map[string]struct{}{
 
 // generates the key used in the DB, includes a hash of the body
 func key(r *http.Request) Key {
+	return computeKey(r, false)
+}
+
+// legacyKey matches entries recorded before Cache-Control was left out of the key;
+// it can go once those recordings are re-cached.
+func legacyKey(r *http.Request) Key {
+	return computeKey(r, true)
+}
+
+func computeKey(r *http.Request, withCacheControl bool) Key {
 	data, _ := io.ReadAll(r.Body)
 	if err := r.Body.Close(); err != nil {
 		logrus.Warnf("failed to close request body while generating cache key: %v", err)
@@ -79,7 +91,7 @@ func key(r *http.Request) Key {
 	// sort the headers to have a consistent hash
 	var headers []string
 	for headerKey := range r.Header {
-		if _, ok := ignoreHeaders[headerKey]; ok {
+		if _, ok := ignoreHeaders[headerKey]; ok && (!withCacheControl || headerKey != "Cache-Control") {
 			continue
 		}
 		headers = append(headers, headerKey)
@@ -225,12 +237,23 @@ func (d *DB) OnRequest(r *http.Request, proxyCtx *goproxy.ProxyCtx) (*http.Reque
 
 	key := key(r)
 	proxyctx.SetValue(proxyCtx, keyValue, key)
-	if entry, ok := d.cacheDB[key]; ok {
+	entryKey := key
+	entry, ok := d.cacheDB[key]
+	if !ok {
+		if legacy := legacyKey(r); legacy != key {
+			if entry, ok = d.cacheDB[legacy]; ok {
+				entryKey = legacy
+			}
+		}
+	}
+	if ok {
 		if !shouldCacheResponse(entry.Status) {
 			// Discard responses recorded before they were excluded from caching.
-			delete(d.cacheDB, key)
+			delete(d.cacheDB, entryKey)
 			return r, nil
 		}
+		// Point OnResponse at the entry being served so it isn't recorded again.
+		proxyctx.SetValue(proxyCtx, keyValue, entryKey)
 		resp := &http.Response{}
 		resp.Request = r
 		resp.Header = entry.ResponseHeaders

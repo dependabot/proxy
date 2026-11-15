@@ -739,6 +739,41 @@ func TestProxyHTTPSConditionalNotModifiedPreservesCachedResponse(t *testing.T) {
 	assert.Equal(t, int32(1), proxyDials.Load())
 }
 
+// TestProxyHTTPSCacheIgnoresCacheControl verifies that a response recorded for a
+// request with Cache-Control is replayed for the same request without it, as
+// happens when a client stops sending the header (pip 26.2 on Simple API pages).
+func TestProxyHTTPSCacheIgnoresCacheControl(t *testing.T) {
+	const body = "index page"
+	var upstreamRequests atomic.Int32
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamRequests.Add(1)
+		_, err := io.WriteString(w, body)
+		assert.NoError(t, err)
+	}))
+	defer upstream.Close()
+
+	t.Setenv("PROXY_CACHE", "true")
+	client, proxy := testProxyServer(t, testProxyConfig, nil, upstream.Certificate())
+	closeOnCleanup(t, proxy)
+
+	for _, cacheControl := range []string{"max-age=0", ""} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+		require.NoError(t, err)
+		if cacheControl != "" {
+			req.Header.Set("Cache-Control", cacheControl)
+		}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		responseBody, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, body, string(responseBody))
+	}
+
+	assert.Equal(t, int32(1), upstreamRequests.Load())
+}
+
 // TestProxyUpstreamCloseIsNotCachedAsBodylessResponse verifies that an upstream
 // connection failure (goproxy returns no response, synthesizes a 500) is logged
 // distinctly and NOT cached as if it were a valid bodyless response, so a later

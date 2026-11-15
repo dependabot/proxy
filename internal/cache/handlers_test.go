@@ -183,6 +183,61 @@ func TestCache_PreviouslyRecordedResponse(t *testing.T) {
 	}
 }
 
+func TestCache_RecordedWithCacheControlStillHits(t *testing.T) {
+	cacheDir := t.TempDir()
+	recorder, err := New(true, cacheDir)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	req.Header.Set("Cache-Control", "max-age=0")
+	bodyPath := filepath.Join(cacheDir, "legacy-recording")
+	require.NoError(t, os.WriteFile(bodyPath, []byte("recorded"), 0600))
+	recorder.cacheDB[legacyKey(req)] = &Entry{Status: http.StatusOK, FilePath: bodyPath}
+	require.NoError(t, recorder.WriteToDisk())
+
+	cacher, err := New(true, cacheDir)
+	require.NoError(t, err)
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	req.Header.Set("Cache-Control", "max-age=0")
+	ctx := &goproxy.ProxyCtx{Req: req}
+	_, hit := cacher.OnRequest(req, ctx)
+	require.NotNil(t, hit)
+	assert.True(t, WasResponseCached(ctx))
+	resp := cacher.OnResponse(hit, ctx)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, "recorded", string(body))
+	assert.Len(t, cacher.cacheDB, 1, "a legacy hit must not be recorded again under the new key")
+}
+
+func TestCache_StaleRecordingWithCacheControlIsReplacedUnderNewKey(t *testing.T) {
+	cacheDir := t.TempDir()
+	cacher, err := New(true, cacheDir)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, URL, nil)
+	req.Header.Set("Cache-Control", "max-age=0")
+	cacher.cacheDB[legacyKey(req)] = &Entry{Status: http.StatusServiceUnavailable}
+
+	ctx := &goproxy.ProxyCtx{Req: req}
+	_, hit := cacher.OnRequest(req, ctx)
+	require.Nil(t, hit)
+	resp := cacher.OnResponse(&http.Response{
+		Request:       req,
+		StatusCode:    http.StatusOK,
+		Body:          io.NopCloser(strings.NewReader("fresh")),
+		ContentLength: -1,
+	}, ctx)
+	_, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	assert.NotContains(t, cacher.cacheDB, legacyKey(req))
+	assert.Contains(t, cacher.cacheDB, key(req))
+}
+
 func TestCache_FileCollisionAfterEvictionAndReload(t *testing.T) {
 	for _, orphan := range []bool{false, true} {
 		t.Run("orphan="+strconv.FormatBool(orphan), func(t *testing.T) {
@@ -742,6 +797,32 @@ func Test_key(t *testing.T) {
 		key1 := key(req)
 		key2 := key(req2)
 		assert.Equal(t, key1, key2)
+	})
+
+	t.Run("Cache-Control is inconsequential to the cache", func(t *testing.T) {
+		req2 := req.Clone(context.Background())
+		req2.Header.Set("Cache-Control", "max-age=0")
+
+		key1 := key(req)
+		key2 := key(req2)
+		assert.Equal(t, key1, key2)
+	})
+
+	t.Run("Legacy key still hashes Cache-Control", func(t *testing.T) {
+		req2 := req.Clone(context.Background())
+		req2.Header.Set("Cache-Control", "max-age=0")
+
+		assert.Equal(t, key(req), legacyKey(req))
+		assert.NotEqual(t, key(req2), legacyKey(req2))
+	})
+
+	t.Run("Conditional request headers still change the key", func(t *testing.T) {
+		req2 := req.Clone(context.Background())
+		req2.Header.Set("If-None-Match", `"abc"`)
+
+		key1 := key(req)
+		key2 := key(req2)
+		assert.NotEqual(t, key1, key2)
 	})
 
 	t.Run("Headers not equal", func(t *testing.T) {
