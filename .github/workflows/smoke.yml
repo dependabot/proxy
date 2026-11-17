@@ -12,17 +12,34 @@ on: # yamllint disable-line rule:truthy
       - README.md
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  DEPENDABOT_CLI_VERSION: v1.97.0
+  # These published updater images passed the complete Smoke matrix in run
+  # 43020457786. Newer images disagree with the current canonical fixtures;
+  # update each pin together with its compatible smoke-tests recordings.
+  SMOKE_UPDATER_IMAGES: >-
+    {"docker":"ghcr.io/dependabot/dependabot-updater-docker@sha256:da9ae78139849f96b0f0a910a972aa5cfaee35eaf159dbe3636ee5e9c5a6a010",
+    "nix":"ghcr.io/dependabot/dependabot-updater-nix@sha256:423666dfb5f03e5a2612dd1cb6aa21d4a06060ac95b082c50b25168833134fad",
+    "npm_and_yarn":"ghcr.io/dependabot/dependabot-updater-npm@sha256:852d5bab9183c8d2e403fb25d58ca945c930fb0739b07fd904998de881fe0239"}
 jobs:
   suites:
     runs-on: ubuntu-latest
     steps:
       - id: gather
         run: |
-          URL="https://api.github.com/repos/dependabot/smoke-tests/contents/tests"
-          DATA="$(gh api $URL | jq -r '.[].name'  | sed 's/smoke-//' | sed 's/.yaml$//' | jq -R | jq -sc)"
-          echo "suite=$DATA" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          fixtures_sha=$(gh api repos/dependabot/smoke-tests/commits/main --jq .sha)
+          if ! [[ "$fixtures_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Smoke fixture commit identity is invalid."
+            exit 1
+          fi
+          URL="https://api.github.com/repos/dependabot/smoke-tests/contents/tests?ref=$fixtures_sha"
+          DATA=$(gh api "$URL" | jq -ce '[.[] | select(.type == "file") | .name | select(startswith("smoke-") and endswith(".yaml")) | ltrimstr("smoke-") | rtrimstr(".yaml")]')
+          jq -e 'length > 0 and all(.[]; test("^[a-z0-9][a-z0-9-]*$"))' <<< "$DATA" > /dev/null
+          echo "suite=$DATA" >> "$GITHUB_OUTPUT"
+          echo "fixtures_sha=$fixtures_sha" >> "$GITHUB_OUTPUT"
     outputs:
       suites: ${{ steps.gather.outputs.suite }}
+      fixtures_sha: ${{ steps.gather.outputs.fixtures_sha }}
   e2e:
     runs-on: ubuntu-latest
     needs: suites
@@ -41,13 +58,14 @@ jobs:
           go-version-file: go.mod
 
       - name: Install Dependabot CLI
-        run: go install github.com/dependabot/cli/cmd/dependabot@latest
+        run: go install "github.com/dependabot/cli/cmd/dependabot@${DEPENDABOT_CLI_VERSION}"
 
       - name: Download smoke test
         env:
           SUITE: ${{ matrix.suite }}
+          FIXTURES_SHA: ${{ needs.suites.outputs.fixtures_sha }}
         run: |
-          gh api "repos/dependabot/smoke-tests/contents/tests/smoke-${SUITE}.yaml" -H "Accept: application/vnd.github.raw" > smoke.yaml
+          gh api "repos/dependabot/smoke-tests/contents/tests/smoke-${SUITE}.yaml?ref=${FIXTURES_SHA}" -H "Accept: application/vnd.github.raw" > smoke.yaml
 
       # Download the Proxy cache. The job is ideally 100% cached so no real calls are made.
       - name: Download cache
@@ -64,6 +82,12 @@ jobs:
           LOCAL_GITHUB_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -o pipefail
+          package_manager=$(sed -n 's/^[[:space:]]*package-manager: //p' smoke.yaml)
+          updater_image=$(jq -r --arg manager "$package_manager" '.[$manager] // empty' <<< "$SMOKE_UPDATER_IMAGES")
+          updater_args=()
+          if [ -n "$updater_image" ]; then
+            updater_args+=("--updater-image=$updater_image")
+          fi
           dependabot test \
             -f=smoke.yaml \
             -o=result.yaml \
@@ -71,6 +95,7 @@ jobs:
             --timeout=20m \
             --proxy-image=dependabot/proxy:latest \
             --skip-image-verification \
+            "${updater_args[@]}" \
             2>&1 | tee -a log.txt
 
       - name: Diff
@@ -79,7 +104,7 @@ jobs:
         run: diff --ignore-space-change smoke.yaml result.yaml && echo "Contents are identical"
 
       - name: Create summary
-        run: tail -n100 log.txt | grep -P '\d+/\d+ calls cached \(\d+%\)' >> $GITHUB_STEP_SUMMARY
+        run: tail -n100 log.txt | grep -P '\d+/\d+ calls cached \(\d+%\)' >> "$GITHUB_STEP_SUMMARY"
 
       # No upload at the end:
       # - If a test is uncachable in some regard, the cache would grow unbound.
