@@ -12,14 +12,6 @@ on: # yamllint disable-line rule:truthy
       - README.md
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  DEPENDABOT_CLI_VERSION: v1.97.0
-  # These published updater images passed the complete Smoke matrix in run
-  # 43020457786. Newer images disagree with the current canonical fixtures;
-  # update each pin together with its compatible smoke-tests recordings.
-  SMOKE_UPDATER_IMAGES: >-
-    {"docker":"ghcr.io/dependabot/dependabot-updater-docker@sha256:da9ae78139849f96b0f0a910a972aa5cfaee35eaf159dbe3636ee5e9c5a6a010",
-    "nix":"ghcr.io/dependabot/dependabot-updater-nix@sha256:423666dfb5f03e5a2612dd1cb6aa21d4a06060ac95b082c50b25168833134fad",
-    "npm_and_yarn":"ghcr.io/dependabot/dependabot-updater-npm@sha256:852d5bab9183c8d2e403fb25d58ca945c930fb0739b07fd904998de881fe0239"}
 jobs:
   suites:
     runs-on: ubuntu-latest
@@ -58,7 +50,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install Dependabot CLI
-        run: go install "github.com/dependabot/cli/cmd/dependabot@${DEPENDABOT_CLI_VERSION}"
+        run: go install github.com/dependabot/cli/cmd/dependabot@latest
 
       - name: Download smoke test
         env:
@@ -82,12 +74,6 @@ jobs:
           LOCAL_GITHUB_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -o pipefail
-          package_manager=$(sed -n 's/^[[:space:]]*package-manager: //p' smoke.yaml)
-          updater_image=$(jq -r --arg manager "$package_manager" '.[$manager] // empty' <<< "$SMOKE_UPDATER_IMAGES")
-          updater_args=()
-          if [ -n "$updater_image" ]; then
-            updater_args+=("--updater-image=$updater_image")
-          fi
           dependabot test \
             -f=smoke.yaml \
             -o=result.yaml \
@@ -95,7 +81,6 @@ jobs:
             --timeout=20m \
             --proxy-image=dependabot/proxy:latest \
             --skip-image-verification \
-            "${updater_args[@]}" \
             2>&1 | tee -a log.txt
 
       - name: Diff
