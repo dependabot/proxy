@@ -686,6 +686,9 @@ ecosystem_default_domains:
     - fluent.github.io
     # CAST AI's chart repo (GitHub Pages); tarballs are on github.com.
     - castai.github.io
+    # Temporal's chart repo and its GitHub Pages hostname; tarballs are on github.com.
+    - go.temporal.io
+    - temporalio.github.io
     # Istio's chart repo: one exact, Istio-owned virtual-hosted GCS bucket that
     # serves index.yaml and tarballs. Other buckets stay blocked.
     - istio-release.storage.googleapis.com

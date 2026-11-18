@@ -770,6 +770,8 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.wiz-sec.github.io/payload",
 		"https://evil.fluent.github.io/payload",
 		"https://evil.castai.github.io/payload",
+		"https://evil.go.temporal.io/payload",
+		"https://evil.temporalio.github.io/payload",
 		"https://evil.istio-release.storage.googleapis.com/payload",
 		"https://evil.blob.istio.io/payload",
 		"https://evil.istio-release.r2.istio.io/payload",
@@ -806,6 +808,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://attacker.releases.hashicorp.com/payload",
 		"https://attacker.releases.teleport.dev/payload",
 		"https://attacker.wiz.io/payload",
+		"https://attacker.temporal.io/payload",
 		"https://attacker.mage-os.org/payload",
 		// Cloudsmith is multi-tenant with the tenant in the URL path, and the
 		// allowlist authorizes the hostname only. Neither the tenant subdomain
@@ -1000,6 +1003,8 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 		"https://wiz-sec.github.io/charts/wiz-kubernetes-integration-0.2.0.tgz",
 		"https://fluent.github.io/helm-charts/index.yaml",
 		"https://castai.github.io/helm-charts/index.yaml",
+		"https://go.temporal.io:443/helm-charts/index.yaml",
+		"https://temporalio.github.io/helm-charts/index.yaml",
 		"https://istio-release.storage.googleapis.com/charts/index.yaml",
 		"https://blob.istio.io/istio-release/charts/index.yaml",
 		"https://istio-release.r2.istio.io/charts/index.yaml",
