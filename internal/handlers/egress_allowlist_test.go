@@ -1342,6 +1342,9 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://releases.adjoe.io/files/playtime/ios/monetize/4.5.4/PlaytimeMonetize.zip",
 		// Same failure mode for the edna ChatCenterUI SDK binaryTarget.
 		"https://maven-pub.edna.ru/repository/maven-releases/edna/chatcenter/ui/ios/5.13.0.zip",
+		// Same failure mode for the AWS SDK for iOS (aws-sdk-ios-spm) binaryTargets.
+		"https://releases.amplify.aws/aws-sdk-ios/AWSCore-2.41.0.zip",
+		"https://releases.amplify.aws/aws-sdk-ios/AWSConnectParticipant-2.41.0.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public vendor registry allowed: "+allowed)
 	}
@@ -1432,6 +1435,11 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://bitdrift.io/payload",
 		"https://attacker.bitdrift.io/payload",
 		"https://dl.bitdrift.io.attacker.com/payload",
+		// The AWS SDK host must not open amplify.aws's parent or sibling hosts.
+		"https://evil.releases.amplify.aws/payload",
+		"https://attacker.amplify.aws/payload",
+		"https://amplify.aws/payload",
+		"https://releases.amplify.aws.attacker.com/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {
