@@ -18,11 +18,20 @@ jobs:
     steps:
       - id: gather
         run: |
-          URL="https://api.github.com/repos/dependabot/smoke-tests/contents/tests"
-          DATA="$(gh api $URL | jq -r '.[].name'  | sed 's/smoke-//' | sed 's/.yaml$//' | jq -R | jq -sc)"
-          echo "suite=$DATA" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          fixtures_sha=$(gh api repos/dependabot/smoke-tests/commits/main --jq .sha)
+          if ! [[ "$fixtures_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Smoke fixture commit identity is invalid."
+            exit 1
+          fi
+          URL="https://api.github.com/repos/dependabot/smoke-tests/contents/tests?ref=$fixtures_sha"
+          DATA=$(gh api "$URL" | jq -ce '[.[] | select(.type == "file") | .name | select(startswith("smoke-") and endswith(".yaml")) | ltrimstr("smoke-") | rtrimstr(".yaml")]')
+          jq -e 'length > 0 and all(.[]; test("^[a-z0-9][a-z0-9-]*$"))' <<< "$DATA" > /dev/null
+          echo "suite=$DATA" >> "$GITHUB_OUTPUT"
+          echo "fixtures_sha=$fixtures_sha" >> "$GITHUB_OUTPUT"
     outputs:
       suites: ${{ steps.gather.outputs.suite }}
+      fixtures_sha: ${{ steps.gather.outputs.fixtures_sha }}
   e2e:
     runs-on: ubuntu-latest
     needs: suites
@@ -46,8 +55,9 @@ jobs:
       - name: Download smoke test
         env:
           SUITE: ${{ matrix.suite }}
+          FIXTURES_SHA: ${{ needs.suites.outputs.fixtures_sha }}
         run: |
-          gh api "repos/dependabot/smoke-tests/contents/tests/smoke-${SUITE}.yaml" -H "Accept: application/vnd.github.raw" > smoke.yaml
+          gh api "repos/dependabot/smoke-tests/contents/tests/smoke-${SUITE}.yaml?ref=${FIXTURES_SHA}" -H "Accept: application/vnd.github.raw" > smoke.yaml
 
       # Download the Proxy cache. The job is ideally 100% cached so no real calls are made.
       - name: Download cache
@@ -79,7 +89,7 @@ jobs:
         run: diff --ignore-space-change smoke.yaml result.yaml && echo "Contents are identical"
 
       - name: Create summary
-        run: tail -n100 log.txt | grep -P '\d+/\d+ calls cached \(\d+%\)' >> $GITHUB_STEP_SUMMARY
+        run: tail -n100 log.txt | grep -P '\d+/\d+ calls cached \(\d+%\)' >> "$GITHUB_STEP_SUMMARY"
 
       # No upload at the end:
       # - If a test is uncachable in some regard, the cache would grow unbound.

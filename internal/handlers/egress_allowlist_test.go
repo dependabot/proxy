@@ -584,6 +584,7 @@ func TestEgressAllowlist_NewExactDomainsAllowed(t *testing.T) {
 		"https://packages.drupal.org/8/packages.json",
 		"https://packages.confluent.io/maven/pkg.jar",
 		"https://adsbynimbus-public.s3.amazonaws.com/iOS/spm/collection.json",
+		"https://dl.bitdrift.io/sdk/ios/capture-0.51.0/Capture-swift-6.4.zip",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "new exact host allowed: "+allowed)
 	}
@@ -725,6 +726,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 	// moment its entry is changed to a leading-dot suffix, so this is the probe
 	// set that actually pins exact-host semantics.
 	childProbes := []string{
+		"https://evil.dl.bitdrift.io/payload",
 		"https://evil.rust-registry.proton.me/payload",
 		"https://evil.docker.redpanda.com/payload",
 		"https://evil.appboy.github.io/payload",
@@ -1426,6 +1428,10 @@ func TestEgressAllowlist_PublicVendorRegistriesAllowed(t *testing.T) {
 		"https://evil.maven-pub.edna.ru/payload",
 		"https://attacker.edna.ru/payload",
 		"https://edna.ru/payload",
+		// The Capture SDK host must not open bitdrift's parent or sibling hosts.
+		"https://bitdrift.io/payload",
+		"https://attacker.bitdrift.io/payload",
+		"https://dl.bitdrift.io.attacker.com/payload",
 	} {
 		resp := egressResult(t, h, blocked)
 		if assert.NotNil(t, resp, "must stay blocked: "+blocked) {

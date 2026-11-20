@@ -770,5 +770,9 @@ ecosystem_default_domains:
     # Exact: *.edna.ru is a wildcard cert that also fronts the vendor's
     # product, docs and API hosts.
     - maven-pub.edna.ru
+    # bitdrift's public iOS SDK host, serving the Capture XCFramework zip
+    # binaryTarget declared in bitdriftlabs/capture-ios Package.swift.
+    # Anonymous, no redirect. Exact: other bitdrift.io product hosts are unrelated.
+    - dl.bitdrift.io
   vcpkg: []
   pre_commit: []
