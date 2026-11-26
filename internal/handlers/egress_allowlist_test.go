@@ -1751,6 +1751,18 @@ func TestEgressAllowlist_UnderscorePrivateRegistryRedirectTargetAllowed(t *testi
 	assert.Nil(t, egressResult(t, h, "https://"+target+"/file.whl"))
 }
 
+func TestEgressAllowlist_UnicodeRedirectTargetAllowed(t *testing.T) {
+	const source = "packages.example.com"
+	const target = "downloads\u3002example.net"
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "https://" + source + "/simple"},
+	})
+
+	redirectFrom(t, h, "https://"+source+"/packages/file.whl", http.StatusFound, "https://"+target+"/file.whl")
+	assert.Nil(t, egressResult(t, h, "https://"+target+"/file.whl"))
+	assert.Nil(t, egressResult(t, h, "https://downloads.example.net/file.whl"))
+}
+
 func TestEgressAllowlist_RedirectTargetNotLearned(t *testing.T) {
 	const target = "https://attacker.example.net/file"
 	tests := []struct {

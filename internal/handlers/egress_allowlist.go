@@ -372,10 +372,13 @@ func (h *EgressAllowlistHandler) isStaticallyAllowed(host string) bool {
 }
 
 func (h *EgressAllowlistHandler) isAllowed(host string) bool {
-	// Normalize an absolute DNS name (trailing dot) so exact matches treat
-	// "registry.npmjs.org." as equivalent to "registry.npmjs.org", consistent
-	// with HostMatchesDomain's boundary handling for the suffix form.
-	host = strings.TrimSuffix(host, ".")
+	// Use the same hostname normalization for lookups as when redirect targets
+	// are learned, so Unicode and ASCII forms of a hostname match consistently.
+	var ok bool
+	host, ok = normalizeHostname(host)
+	if !ok {
+		return false
+	}
 	if h.isStaticallyAllowed(host) {
 		return true
 	}
@@ -388,7 +391,7 @@ func (h *EgressAllowlistHandler) isAllowed(host string) bool {
 		}
 	}
 	h.redirectMu.RLock()
-	_, learned := h.redirectTargets[strings.ToLower(host)]
+	_, learned := h.redirectTargets[host]
 	h.redirectMu.RUnlock()
 	return learned
 }
