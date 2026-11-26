@@ -529,6 +529,14 @@ ecosystem_default_domains:
     - "*vsblobprod*.blob.core.windows.net"
     # Public community NuGet feed, serving an anonymous v3 service index.
     - pkg.kzu.app
+    # Sitecore's public NuGet feed (anonymous v3 service index). It is hosted on
+    # Cloudsmith under Sitecore's own custom domains: the index is served from
+    # nuget.sitecore.com and its PackageBaseAddress (version lists and .nupkg
+    # downloads) from artifacts.sitecore.com. Both domains are bound to the one
+    # Sitecore namespace, so unlike the shared dl.cloudsmith.io no other tenant's
+    # content is reachable through them. Exact hosts only.
+    - nuget.sitecore.com
+    - artifacts.sitecore.com
     - "*.vsblob.vsassets.io"
     # Certificate revocation endpoints. NuGet validates author/repository
     # signatures on restore, so blocking these stalls or fails verification of

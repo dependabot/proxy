@@ -788,6 +788,8 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://evil.registry.coder.com/payload",
 		"https://evil.csspeechstorage.blob.core.windows.net/payload",
 		"https://evil.releases.adjoe.io/payload",
+		"https://evil.nuget.sitecore.com/payload",
+		"https://evil.artifacts.sitecore.com/payload",
 	}
 
 	// Sibling hosts: names sharing a parent with an added entry. These pin the
@@ -812,6 +814,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 		"https://attacker.wiz.io/payload",
 		"https://attacker.temporal.io/payload",
 		"https://attacker.mage-os.org/payload",
+		"https://attacker.sitecore.com/payload",
 		// Cloudsmith is multi-tenant with the tenant in the URL path, and the
 		// allowlist authorizes the hostname only. Neither the tenant subdomain
 		// form nor the shared download hosts may be globally allowed.
@@ -1017,6 +1020,8 @@ func TestEgressAllowlist_AddedMissingDomainsAllowed(t *testing.T) {
 		"https://cocoapods.org/pods/AFNetworking",
 		"https://percona.github.io/percona-helm-charts/index.yaml",
 		"https://registry.coder.com/terraform_protocol/coder/code-server/coder/versions",
+		"https://nuget.sitecore.com/resources/v3/index.json",
+		"https://artifacts.sitecore.com/public/resources/nuget/sitecore.kernel/index.json",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "added host should be allowed: "+allowed)
 	}
