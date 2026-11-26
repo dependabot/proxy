@@ -93,7 +93,7 @@ func hostFromValue(v string) string {
 	}
 	// url.Parse only populates Hostname() when an authority is present, so add
 	// the "//" marker for scheme-less values (bare host, host:port, host/path).
-	if !strings.Contains(v, "://") {
+	if !strings.Contains(v, "://") && !strings.HasPrefix(v, "//") {
 		v = "//" + v
 	}
 	u, err := url.Parse(v)
