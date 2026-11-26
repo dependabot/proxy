@@ -17,6 +17,7 @@ func TestHostFromValue(t *testing.T) {
 		"registry.example.com/foo/bar":       "registry.example.com",
 		"https://user:pass@host.example.com": "host.example.com",
 		"HTTPS://Registry.Example.COM":       "registry.example.com",
+		"//registry.example.com/path":        "registry.example.com",
 		"":                                   "",
 		"   ":                                "",
 	}

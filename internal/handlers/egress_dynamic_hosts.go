@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"net/url"
 	"regexp"
 	"strings"
 
@@ -91,12 +90,7 @@ func hostFromValue(v string) string {
 	if v == "" {
 		return ""
 	}
-	// url.Parse only populates Hostname() when an authority is present, so add
-	// the "//" marker for scheme-less values (bare host, host:port, host/path).
-	if !strings.Contains(v, "://") {
-		v = "//" + v
-	}
-	u, err := url.Parse(v)
+	u, err := helpers.ParseURLLax(v)
 	if err != nil {
 		return ""
 	}

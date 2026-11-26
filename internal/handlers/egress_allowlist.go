@@ -3,12 +3,15 @@ package handlers
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/elazarl/goproxy"
+	"golang.org/x/net/idna"
 
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/helpers"
@@ -57,6 +60,10 @@ type EgressAllowlistHandler struct {
 	// the static allowlist, i.e. the customer's own private registries. Only
 	// redirects issued by these hosts teach the allowlist a new target.
 	redirectSources []string
+	// azureArtifactsSources are the job's Azure Artifacts feeds. Redirects from
+	// these feeds are subject to the Azure storage target restriction, whether
+	// or not their hosts are also generic redirect sources.
+	azureArtifactsSources []azureArtifactsSource
 	// redirectTargets are the exact hosts learned from redirects issued by a
 	// redirectSource, such as the per-instance S3 bucket a self-hosted
 	// Artifactory sends presigned downloads to. Guarded by redirectMu because
@@ -90,11 +97,12 @@ func NewEgressAllowlistHandler(cfg *config.Config, env config.ProxyEnvSettings, 
 	// serve user-published content, so they are not trusted to vouch for an
 	// arbitrary destination.
 	for _, host := range credentialHosts(cfg.Credentials) {
-		host = strings.TrimSuffix(host, ".")
-		if host != "" && !h.isStaticallyAllowed(host) {
+		host, ok := normalizeHostname(host)
+		if ok && host != "" && !h.isStaticallyAllowed(host) {
 			h.redirectSources = append(h.redirectSources, host)
 		}
 	}
+	h.azureArtifactsSources = azureArtifactsSources(cfg.Credentials)
 	return h
 }
 
@@ -154,6 +162,10 @@ func (h *EgressAllowlistHandler) recordHost(host string, allowed, blockEnforced 
 // URL on the customer's own object-storage bucket, whose name cannot be derived
 // from the registry host. The registry is configured in the job's credentials,
 // so the destination it chooses is trusted for the remainder of the job.
+//
+// Azure Artifacts feeds are handled separately as well: a redirect from a
+// configured feed teaches only the exact Azure Blob or vsblob host that package
+// downloads are sent to.
 func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if !h.observe && !h.enforce {
 		return rsp
@@ -166,8 +178,13 @@ func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *go
 	if !strings.EqualFold(proxyCtx.Req.URL.Scheme, "https") {
 		return rsp
 	}
-	source := strings.TrimSuffix(helpers.GetHost(proxyCtx.Req), ".")
-	if !h.isRedirectSource(source) {
+	source, ok := normalizeHostname(helpers.GetHost(proxyCtx.Req))
+	if !ok {
+		return rsp
+	}
+	privateRegistry := h.isRedirectSource(source) && !h.isStaticallyAllowed(source)
+	azureArtifacts := h.isAzureArtifactsRedirectSource(source, proxyCtx.Req.URL.EscapedPath())
+	if !privateRegistry && !azureArtifacts {
 		return rsp
 	}
 	location := rsp.Header.Get("Location")
@@ -178,10 +195,18 @@ func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *go
 	if err != nil || !strings.EqualFold(target.Scheme, "https") {
 		return rsp
 	}
-	host := strings.TrimSuffix(strings.ToLower(target.Hostname()), ".")
+	host, ok := normalizeHostname(target.Hostname())
+	if !ok {
+		return rsp
+	}
 	// IP literals are never learned: a redirect must not open a path to
 	// internal or link-local addresses.
 	if host == "" || net.ParseIP(host) != nil || h.isAllowed(host) {
+		return rsp
+	}
+	// Redirects from Azure Artifacts feeds are restricted to known download
+	// storage backends, even when their hosts are generic redirect sources.
+	if azureArtifacts && !isAzureArtifactsStorageHost(host) {
 		return rsp
 	}
 
@@ -210,6 +235,133 @@ func (h *EgressAllowlistHandler) isRedirectSource(host string) bool {
 	return false
 }
 
+// azureArtifactsSource is an Azure Artifacts feed configured for the job.
+// pkgs.dev.azure.com is shared by every Azure DevOps organization, so org is
+// the first path segment that a request must match. For
+// <org>.pkgs.visualstudio.com the organization is in the host and org is empty.
+type azureArtifactsSource struct {
+	host string
+	org  string
+}
+
+func azureArtifactsSources(creds config.Credentials) []azureArtifactsSource {
+	var sources []azureArtifactsSource
+	for _, c := range creds {
+		for _, key := range credentialHostKeys {
+			if source, ok := azureArtifactsSourceFromValue(c.GetString(key)); ok {
+				sources = append(sources, source)
+			}
+		}
+	}
+	return sources
+}
+
+func azureArtifactsSourceFromValue(v string) (azureArtifactsSource, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return azureArtifactsSource{}, false
+	}
+	u, err := helpers.ParseURLLax(v)
+	if err != nil {
+		return azureArtifactsSource{}, false
+	}
+	host, ok := normalizeHostname(u.Hostname())
+	if !ok {
+		return azureArtifactsSource{}, false
+	}
+	switch {
+	case host == azureDevOpsPackagesHost:
+		org, ok := azureDevOpsOrganization(u.EscapedPath())
+		if !ok {
+			return azureArtifactsSource{}, false
+		}
+		return azureArtifactsSource{host: host, org: org}, true
+	case isSingleLabelSubdomain(host, visualStudioPackagesDomain):
+		return azureArtifactsSource{host: host}, true
+	}
+	return azureArtifactsSource{}, false
+}
+
+func normalizeHostname(host string) (string, bool) {
+	for i := 0; i < len(host); i++ {
+		if host[i] >= utf8.RuneSelf {
+			asciiHost, err := idna.New(idna.MapForLookup()).ToASCII(host)
+			if err != nil {
+				return "", false
+			}
+			return strings.TrimSuffix(strings.ToLower(asciiHost), "."), true
+		}
+	}
+	return strings.TrimSuffix(strings.ToLower(host), "."), true
+}
+
+func (h *EgressAllowlistHandler) isAzureArtifactsRedirectSource(host, requestPath string) bool {
+	for _, source := range h.azureArtifactsSources {
+		if !helpers.AreHostnamesEqual(host, source.host) {
+			continue
+		}
+		if source.org == "" {
+			// Legacy Azure Artifacts feeds encode the organization in the host.
+			// Match them by host even for root or rejected paths so their redirect
+			// destinations still receive the Azure storage restriction.
+			return true
+		}
+		org, ok := azureDevOpsOrganization(requestPath)
+		if !ok {
+			return false
+		}
+		// Azure DevOps organization names are case-insensitive.
+		if strings.EqualFold(org, source.org) {
+			return true
+		}
+	}
+	return false
+}
+
+func azureDevOpsOrganization(escapedPath string) (string, bool) {
+	canonicalPath, ok := helpers.CanonicalPath(escapedPath)
+	if !ok {
+		return "", false
+	}
+	segment := firstPathSegment(canonicalPath)
+	if segment == "" {
+		return "", false
+	}
+	org, err := url.PathUnescape(segment)
+	if err != nil || org == "" {
+		return "", false
+	}
+	return org, true
+}
+
+const (
+	azureDevOpsPackagesHost    = "pkgs.dev.azure.com"
+	visualStudioPackagesDomain = "pkgs.visualstudio.com"
+)
+
+// azureArtifactsStorageDomains are where Azure Artifacts redirects package
+// downloads. The account label rotates, so only one exact host is learned per
+// redirect rather than allowing the shared domain.
+var azureArtifactsStorageDomains = []string{
+	"blob.core.windows.net",
+	"vsblob.vsassets.io",
+}
+
+func isAzureArtifactsStorageHost(host string) bool {
+	for _, domain := range azureArtifactsStorageDomains {
+		if isSingleLabelSubdomain(host, domain) {
+			return true
+		}
+	}
+	return false
+}
+
+// isSingleLabelSubdomain reports whether host is exactly "<label>.<domain>".
+func isSingleLabelSubdomain(host, domain string) bool {
+	label, ok := strings.CutSuffix(strings.ToLower(host), "."+domain)
+	return ok && label != "" && !strings.Contains(label, ".")
+}
+
 func (h *EgressAllowlistHandler) isStaticallyAllowed(host string) bool {
 	for _, entry := range h.allowed {
 		if hostMatchesAllowlistEntry(host, entry) {
@@ -220,10 +372,13 @@ func (h *EgressAllowlistHandler) isStaticallyAllowed(host string) bool {
 }
 
 func (h *EgressAllowlistHandler) isAllowed(host string) bool {
-	// Normalize an absolute DNS name (trailing dot) so exact matches treat
-	// "registry.npmjs.org." as equivalent to "registry.npmjs.org", consistent
-	// with HostMatchesDomain's boundary handling for the suffix form.
-	host = strings.TrimSuffix(host, ".")
+	// Use the same hostname normalization for lookups as when redirect targets
+	// are learned, so Unicode and ASCII forms of a hostname match consistently.
+	var ok bool
+	host, ok = normalizeHostname(host)
+	if !ok {
+		return false
+	}
 	if h.isStaticallyAllowed(host) {
 		return true
 	}
@@ -231,12 +386,13 @@ func (h *EgressAllowlistHandler) isAllowed(host string) bool {
 	// subdomain suffixes), so an untrusted credential value cannot widen the
 	// allowlist beyond the exact host the job was configured to reach.
 	for _, entry := range h.dynamicHosts {
-		if helpers.AreHostnamesEqual(host, entry) {
+		normalizedEntry, ok := normalizeHostname(entry)
+		if ok && host == normalizedEntry {
 			return true
 		}
 	}
 	h.redirectMu.RLock()
-	_, learned := h.redirectTargets[strings.ToLower(host)]
+	_, learned := h.redirectTargets[host]
 	h.redirectMu.RUnlock()
 	return learned
 }
