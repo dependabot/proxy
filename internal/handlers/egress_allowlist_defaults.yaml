@@ -458,6 +458,9 @@ ecosystem_default_domains:
     - ghcr.io
     - mcr.microsoft.com
     - mcr.azure.cn
+    # Microsoft Artifact Registry's China data endpoint, used for blob delivery.
+    # Microsoft's endpoint guidance documents this as a Microsoft-managed CDN.
+    - "*.data.mcr.azure.cn"
     # Leading-dot: Quay tenancy is path-based (quay.io/<org>/<repo>), so every
     # subdomain is Red Hat-operated and none is user-creatable.
     - .quay.io
@@ -643,6 +646,8 @@ ecosystem_default_domains:
     - production.cloudfront.docker.com
     - ghcr.io
     - mcr.microsoft.com
+    - mcr.azure.cn
+    - "*.data.mcr.azure.cn"
     # Leading-dot for the same reason as the docker list: Quay tenancy is
     # path-based, so its cdnNN blob hosts are provider-controlled.
     - .quay.io

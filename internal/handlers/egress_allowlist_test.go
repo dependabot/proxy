@@ -619,12 +619,25 @@ func TestEgressAllowlist_PublicRegistriesAllowed(t *testing.T) {
 }
 
 func TestEgressAllowlist_MicrosoftChinaRegistryForDockerAndHelm(t *testing.T) {
-	for pkgManager, target := range map[string]string{
-		"docker": "https://mcr.azure.cn/v2/dotnet/runtime/manifests/10.0",
-		"helm":   "https://mcr.azure.cn/v2/mcr/helmchart/mcrhelloworld/manifests/0.1.1",
+	for pkgManager, targets := range map[string][2]string{
+		"docker": {
+			"https://mcr.azure.cn/v2/dotnet/runtime/manifests/10.0",
+			"https://chinaeast3.data.mcr.azure.cn/v2/dotnet/runtime/blobs/sha256:abc",
+		},
+		"helm": {
+			"https://mcr.azure.cn/v2/mcr/helmchart/mcrhelloworld/manifests/0.1.1",
+			"https://chinaeast3.data.mcr.azure.cn/v2/mcr/helmchart/mcrhelloworld/blobs/sha256:abc",
+		},
 	} {
 		h := newEgressHandler(false, true, pkgManager)
-		assert.Nilf(t, egressResult(t, h, target), "Microsoft China registry should be allowed for %s", pkgManager)
+		assert.Nilf(t, egressResult(t, h, targets[0]), "Microsoft China registry should be allowed for %s", pkgManager)
+		redirectFrom(t, h, targets[0], http.StatusTemporaryRedirect, targets[1])
+		assert.Nilf(t, egressResult(t, h, targets[1]), "Microsoft China blob redirect should be allowed for %s", pkgManager)
+	}
+
+	for _, ecosystem := range []string{"docker", "helm"} {
+		assert.Contains(t, ecosystemDefaultDomains[ecosystem], "mcr.azure.cn")
+		assert.Contains(t, ecosystemDefaultDomains[ecosystem], "*.data.mcr.azure.cn")
 	}
 }
 
