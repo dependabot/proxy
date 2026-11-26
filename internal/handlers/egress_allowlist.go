@@ -253,10 +253,7 @@ func azureArtifactsSourceFromValue(v string) (azureArtifactsSource, bool) {
 	if v == "" {
 		return azureArtifactsSource{}, false
 	}
-	if !strings.Contains(v, "://") {
-		v = "//" + v
-	}
-	u, err := url.Parse(v)
+	u, err := helpers.ParseURLLax(v)
 	if err != nil {
 		return azureArtifactsSource{}, false
 	}
@@ -275,16 +272,22 @@ func azureArtifactsSourceFromValue(v string) (azureArtifactsSource, bool) {
 }
 
 func (h *EgressAllowlistHandler) isAzureArtifactsRedirectSource(host, requestPath string) bool {
-	org, ok := azureDevOpsOrganization(requestPath)
-	if !ok {
-		return false
-	}
 	for _, source := range h.azureArtifactsSources {
 		if !helpers.AreHostnamesEqual(host, source.host) {
 			continue
 		}
+		if source.org == "" {
+			// Legacy Azure Artifacts feeds encode the organization in the host.
+			// Match them by host even for root or rejected paths so their redirect
+			// destinations still receive the Azure storage restriction.
+			return true
+		}
+		org, ok := azureDevOpsOrganization(requestPath)
+		if !ok {
+			return false
+		}
 		// Azure DevOps organization names are case-insensitive.
-		if source.org == "" || strings.EqualFold(org, source.org) {
+		if strings.EqualFold(org, source.org) {
 			return true
 		}
 	}

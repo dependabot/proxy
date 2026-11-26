@@ -1792,6 +1792,14 @@ func TestEgressAllowlist_AzureArtifactsRedirectTargetAllowed(t *testing.T) {
 	} {
 		assert.NotNil(t, egressResult(t, h, blocked), "only the exact redirect target is learned: "+blocked)
 	}
+
+	// Scheme-relative credential URLs are accepted by the registry parsers too.
+	schemeRelative := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "//pkgs.dev.azure.com/MyOrg/MyProject/_packaging/feed/pypi/simple/"},
+	})
+	redirectFrom(t, schemeRelative, "https://pkgs.dev.azure.com/MyOrg/guid/_packaging/guid/pypi/download/x.whl",
+		http.StatusSeeOther, "https://"+blob+"/x.whl?sig=s")
+	assert.Nil(t, egressResult(t, schemeRelative, "https://"+blob+"/x.whl?sig=s"))
 }
 
 func TestEgressAllowlist_LegacyAzureArtifactsRedirectTargetRestricted(t *testing.T) {
@@ -1805,9 +1813,13 @@ func TestEgressAllowlist_LegacyAzureArtifactsRedirectTargetRestricted(t *testing
 	assert.Nil(t, egressResult(t, h, "https://"+blob+"/package.whl?sig=s"))
 
 	attacker := "https://attacker.example.net/package.whl"
-	redirectFrom(t, h, "https://myorg.pkgs.visualstudio.com/_packaging/feed/pypi/download/other.whl",
-		http.StatusSeeOther, attacker)
-	assert.NotNil(t, egressResult(t, h, attacker), "legacy Azure Artifacts hosts must use the storage target restriction")
+	for _, source := range []string{
+		"https://myorg.pkgs.visualstudio.com/",
+		"https://myorg.pkgs.visualstudio.com/_packaging/../other.whl",
+	} {
+		redirectFrom(t, h, source, http.StatusSeeOther, attacker)
+		assert.NotNil(t, egressResult(t, h, attacker), "legacy Azure Artifacts hosts must use the storage target restriction")
+	}
 }
 
 func TestEgressAllowlist_AzureArtifactsRedirectTargetNotLearned(t *testing.T) {
