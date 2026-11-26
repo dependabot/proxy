@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/elazarl/goproxy"
+	"golang.org/x/net/idna"
 
 	"github.com/dependabot/proxy/internal/config"
 	"github.com/dependabot/proxy/internal/helpers"
@@ -257,7 +258,11 @@ func azureArtifactsSourceFromValue(v string) (azureArtifactsSource, bool) {
 	if err != nil {
 		return azureArtifactsSource{}, false
 	}
-	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	host, err := idna.New(idna.MapForLookup()).ToASCII(u.Hostname())
+	if err != nil {
+		return azureArtifactsSource{}, false
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	switch {
 	case host == azureDevOpsPackagesHost:
 		org, ok := azureDevOpsOrganization(u.EscapedPath())

@@ -1822,6 +1822,31 @@ func TestEgressAllowlist_LegacyAzureArtifactsRedirectTargetRestricted(t *testing
 	}
 }
 
+func TestEgressAllowlist_LegacyAzureArtifactsSchemeRelativeCredential(t *testing.T) {
+	const blob = "abcvsblobeus1d0s01.blob.core.windows.net"
+	const feedHost = "myorg.pkgs.visualstudio.com"
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "//" + feedHost + "/_packaging/feed/pypi/simple/"},
+	})
+
+	require.Nil(t, egressResult(t, h, "https://"+feedHost+"/_packaging/feed/pypi/simple/"))
+	redirectFrom(t, h, "https://"+feedHost+"/_packaging/feed/pypi/download/package.whl",
+		http.StatusSeeOther, "https://"+blob+"/package.whl?sig=s")
+	assert.Nil(t, egressResult(t, h, "https://"+blob+"/package.whl?sig=s"))
+}
+
+func TestEgressAllowlist_AzureArtifactsUnicodeDotHostRestricted(t *testing.T) {
+	const feedHost = "myorg.pkgs.visualstudio\u3002com"
+	const attacker = "https://attacker.example.net/package.whl"
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "https://" + feedHost + "/_packaging/feed/pypi/simple/"},
+	})
+
+	redirectFrom(t, h, "https://"+feedHost+"/_packaging/feed/pypi/download/package.whl",
+		http.StatusSeeOther, attacker)
+	assert.NotNil(t, egressResult(t, h, attacker), "Unicode-dot Azure hosts must retain the storage target restriction")
+}
+
 func TestEgressAllowlist_AzureArtifactsRedirectTargetNotLearned(t *testing.T) {
 	const feed = "https://pkgs.dev.azure.com/MyOrg/MyProject/_packaging/feed/pypi/simple/"
 	const download = "https://pkgs.dev.azure.com/MyOrg/guid/_packaging/guid/pypi/download/x.whl"
