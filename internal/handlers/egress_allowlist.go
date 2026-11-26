@@ -96,8 +96,8 @@ func NewEgressAllowlistHandler(cfg *config.Config, env config.ProxyEnvSettings, 
 	// serve user-published content, so they are not trusted to vouch for an
 	// arbitrary destination.
 	for _, host := range credentialHosts(cfg.Credentials) {
-		host = strings.TrimSuffix(host, ".")
-		if host != "" && !h.isStaticallyAllowed(host) {
+		host, ok := normalizeHostname(host)
+		if ok && host != "" && !h.isStaticallyAllowed(host) {
 			h.redirectSources = append(h.redirectSources, host)
 		}
 	}
@@ -177,8 +177,11 @@ func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *go
 	if !strings.EqualFold(proxyCtx.Req.URL.Scheme, "https") {
 		return rsp
 	}
-	source := strings.TrimSuffix(helpers.GetHost(proxyCtx.Req), ".")
-	privateRegistry := h.isRedirectSource(source)
+	source, ok := normalizeHostname(helpers.GetHost(proxyCtx.Req))
+	if !ok {
+		return rsp
+	}
+	privateRegistry := h.isRedirectSource(source) && !h.isStaticallyAllowed(source)
 	azureArtifacts := h.isAzureArtifactsRedirectSource(source, proxyCtx.Req.URL.EscapedPath())
 	if !privateRegistry && !azureArtifacts {
 		return rsp
@@ -258,11 +261,10 @@ func azureArtifactsSourceFromValue(v string) (azureArtifactsSource, bool) {
 	if err != nil {
 		return azureArtifactsSource{}, false
 	}
-	host, err := idna.New(idna.MapForLookup()).ToASCII(u.Hostname())
-	if err != nil {
+	host, ok := normalizeHostname(u.Hostname())
+	if !ok {
 		return azureArtifactsSource{}, false
 	}
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	switch {
 	case host == azureDevOpsPackagesHost:
 		org, ok := azureDevOpsOrganization(u.EscapedPath())
@@ -274,6 +276,14 @@ func azureArtifactsSourceFromValue(v string) (azureArtifactsSource, bool) {
 		return azureArtifactsSource{host: host}, true
 	}
 	return azureArtifactsSource{}, false
+}
+
+func normalizeHostname(host string) (string, bool) {
+	asciiHost, err := idna.New(idna.MapForLookup()).ToASCII(host)
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSuffix(strings.ToLower(asciiHost), "."), true
 }
 
 func (h *EgressAllowlistHandler) isAzureArtifactsRedirectSource(host, requestPath string) bool {
