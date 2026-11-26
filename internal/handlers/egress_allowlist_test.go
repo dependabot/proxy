@@ -1794,6 +1794,22 @@ func TestEgressAllowlist_AzureArtifactsRedirectTargetAllowed(t *testing.T) {
 	}
 }
 
+func TestEgressAllowlist_LegacyAzureArtifactsRedirectTargetRestricted(t *testing.T) {
+	const blob = "abcvsblobeus1d0s01.blob.core.windows.net"
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "https://myorg.pkgs.visualstudio.com/_packaging/feed/pypi/simple/"},
+	})
+
+	redirectFrom(t, h, "https://myorg.pkgs.visualstudio.com/_packaging/feed/pypi/download/package.whl",
+		http.StatusSeeOther, "https://"+blob+"/package.whl?sig=s")
+	assert.Nil(t, egressResult(t, h, "https://"+blob+"/package.whl?sig=s"))
+
+	attacker := "https://attacker.example.net/package.whl"
+	redirectFrom(t, h, "https://myorg.pkgs.visualstudio.com/_packaging/feed/pypi/download/other.whl",
+		http.StatusSeeOther, attacker)
+	assert.NotNil(t, egressResult(t, h, attacker), "legacy Azure Artifacts hosts must use the storage target restriction")
+}
+
 func TestEgressAllowlist_AzureArtifactsRedirectTargetNotLearned(t *testing.T) {
 	const feed = "https://pkgs.dev.azure.com/MyOrg/MyProject/_packaging/feed/pypi/simple/"
 	const download = "https://pkgs.dev.azure.com/MyOrg/guid/_packaging/guid/pypi/download/x.whl"
@@ -1809,8 +1825,14 @@ func TestEgressAllowlist_AzureArtifactsRedirectTargetNotLearned(t *testing.T) {
 			download, blobTarget, blobTarget},
 		{"another Azure DevOps organization", config.Credentials{{"type": "python_index", "index-url": feed}},
 			"https://pkgs.dev.azure.com/OtherOrg/guid/_packaging/guid/pypi/download/x.whl", blobTarget, blobTarget},
+		{"literal dot-segment organization traversal", config.Credentials{{"type": "python_index", "index-url": feed}},
+			"https://pkgs.dev.azure.com/MyOrg/../OtherOrg/guid/_packaging/guid/pypi/download/x.whl", blobTarget, blobTarget},
+		{"encoded dot-segment organization traversal", config.Credentials{{"type": "python_index", "index-url": feed}},
+			"https://pkgs.dev.azure.com/MyOrg/%2e%2e/OtherOrg/guid/_packaging/guid/pypi/download/x.whl", blobTarget, blobTarget},
 		{"credential without an organization", config.Credentials{{"type": "python_index", "index-url": "https://pkgs.dev.azure.com"}},
 			download, blobTarget, blobTarget},
+		{"credential with dot-segment organization", config.Credentials{{"type": "python_index", "index-url": "https://pkgs.dev.azure.com/MyOrg/%2e%2e/OtherOrg/feed"}},
+			"https://pkgs.dev.azure.com/OtherOrg/guid/_packaging/guid/pypi/download/x.whl", blobTarget, blobTarget},
 		{"target outside Azure storage", config.Credentials{{"type": "python_index", "index-url": feed}},
 			download, "https://attacker.example.net/x", "https://attacker.example.net/x"},
 		{"nested storage subdomain", config.Credentials{{"type": "python_index", "index-url": feed}},

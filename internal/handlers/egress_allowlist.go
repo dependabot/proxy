@@ -178,7 +178,7 @@ func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *go
 	}
 	source := strings.TrimSuffix(helpers.GetHost(proxyCtx.Req), ".")
 	privateRegistry := h.isRedirectSource(source)
-	azureArtifacts := !privateRegistry && h.isAzureArtifactsRedirectSource(source, proxyCtx.Req.URL.Path)
+	azureArtifacts := h.isAzureArtifactsRedirectSource(source, proxyCtx.Req.URL.EscapedPath())
 	if !privateRegistry && !azureArtifacts {
 		return rsp
 	}
@@ -263,8 +263,8 @@ func azureArtifactsSourceFromValue(v string) (azureArtifactsSource, bool) {
 	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 	switch {
 	case host == azureDevOpsPackagesHost:
-		org := firstPathSegment(u.Path)
-		if org == "" {
+		org, ok := azureDevOpsOrganization(u.EscapedPath())
+		if !ok {
 			return azureArtifactsSource{}, false
 		}
 		return azureArtifactsSource{host: host, org: org}, true
@@ -275,16 +275,36 @@ func azureArtifactsSourceFromValue(v string) (azureArtifactsSource, bool) {
 }
 
 func (h *EgressAllowlistHandler) isAzureArtifactsRedirectSource(host, requestPath string) bool {
+	org, ok := azureDevOpsOrganization(requestPath)
+	if !ok {
+		return false
+	}
 	for _, source := range h.azureArtifactsSources {
 		if !helpers.AreHostnamesEqual(host, source.host) {
 			continue
 		}
 		// Azure DevOps organization names are case-insensitive.
-		if source.org == "" || strings.EqualFold(firstPathSegment(requestPath), source.org) {
+		if source.org == "" || strings.EqualFold(org, source.org) {
 			return true
 		}
 	}
 	return false
+}
+
+func azureDevOpsOrganization(escapedPath string) (string, bool) {
+	canonicalPath, ok := helpers.CanonicalPath(escapedPath)
+	if !ok {
+		return "", false
+	}
+	segment := firstPathSegment(canonicalPath)
+	if segment == "" {
+		return "", false
+	}
+	org, err := url.PathUnescape(segment)
+	if err != nil || org == "" {
+		return "", false
+	}
+	return org, true
 }
 
 const (
