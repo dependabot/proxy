@@ -196,6 +196,15 @@ registry_redirect_derivations:
   - credential_host: .myget.org
     derived:
       - mgcdn-main2.azureedge.net
+  # Azure Artifacts (pkgs.dev.azure.com) redirects package downloads to
+  # pre-signed URLs on Microsoft-owned "vsblob" storage accounts. These are the
+  # accounts observed so far; Azure rotates them, so a new account needs a new
+  # entry. Never widen to blob.core.windows.net: its accounts are user-creatable.
+  - credential_host: pkgs.dev.azure.com
+    derived:
+      - mwxvsblobcin1d0s65.blob.core.windows.net
+      - 8o8vsblobcin1d0s84.blob.core.windows.net
+      - 5uzvsblobcin1d0s59.blob.core.windows.net
 
 # ecosystem_default_domains lists the public registry and CDN hosts each
 # Dependabot ecosystem needs. The map is kept keyed by ecosystem for provenance

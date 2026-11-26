@@ -265,6 +265,45 @@ func TestRegistryRedirectHosts_TelerikDownloadCDNDerived(t *testing.T) {
 	}
 }
 
+func TestRegistryRedirectHosts_AzureArtifactsBlobStorageDerived(t *testing.T) {
+	// Azure Artifacts 302-redirects package downloads to pre-signed URLs on
+	// Microsoft-owned vsblob storage accounts, which appear in no credential field.
+	creds := config.Credentials{
+		{"type": "python_index", "index-url": "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/", "token": "x"},
+	}
+	h := newEgressHandlerWithCreds(creds)
+
+	for _, host := range []string{
+		"mwxvsblobcin1d0s65.blob.core.windows.net",
+		"8o8vsblobcin1d0s84.blob.core.windows.net",
+		"5uzvsblobcin1d0s59.blob.core.windows.net",
+	} {
+		assert.Nil(t, egressResult(t, h, "https://"+host+"/b-0123456789abcdef/ABCDEF.blob?sv=2019-07-07&sig=redacted"),
+			"Azure Artifacts blob storage must be allowed for a job with an Azure Artifacts credential: "+host)
+	}
+
+	for _, blocked := range []string{
+		// Dynamic hosts are matched exactly, so no child or lookalike widens it.
+		"https://evil.mwxvsblobcin1d0s65.blob.core.windows.net/loot",
+		"https://mwxvsblobcin1d0s65x.blob.core.windows.net/loot",
+		"https://mwxvsblobcin1d0s65.blob.core.windows.net.attacker.com/loot",
+		// Other accounts on the shared Blob namespace stay closed.
+		"https://attacker.blob.core.windows.net/loot",
+	} {
+		assert.NotNil(t, egressResult(t, h, blocked), "must remain blocked: "+blocked)
+	}
+}
+
+func TestRegistryRedirectHosts_AzureArtifactsBlobStorageNotAllowedWithoutCredential(t *testing.T) {
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "https://nexus.internal.example.com/repository/pypi/simple/"},
+	})
+	assert.NotNil(t, egressResult(t, h, "https://mwxvsblobcin1d0s65.blob.core.windows.net/loot"),
+		"blob storage must not be allowed for a job with no Azure Artifacts credential")
+	assert.Empty(t, registryRedirectHosts([]string{"evil.pkgs.dev.azure.com"}),
+		"only pkgs.dev.azure.com itself derives the blob storage hosts")
+}
+
 func TestRegistryRedirectHosts_TelerikMatchedExactly(t *testing.T) {
 	// Only nuget.telerik.com itself opens the CDN, not a lookalike.
 	assert.Equal(t,
