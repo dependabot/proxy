@@ -605,6 +605,7 @@ func TestEgressAllowlist_PublicRegistriesAllowed(t *testing.T) {
 		"https://mirrors.aliyun.com/pypi/simple",
 		"https://www.nuget.org/api/v2/package",
 		"https://hub.docker.com/v2/repositories/library/nginx",
+		"https://mcr.azure.cn/v2/dotnet/runtime/manifests/10.0",
 		"https://lscr.io/v2/linuxserver/image",
 		"https://wpackagist.org/packages.json",
 		"https://go.googlesource.com/tools",
@@ -614,6 +615,16 @@ func TestEgressAllowlist_PublicRegistriesAllowed(t *testing.T) {
 		"https://adsbynimbus-public.s3.amazonaws.com/android/sdks",
 	} {
 		assert.Nil(t, egressResult(t, h, allowed), "public registry host allowed: "+allowed)
+	}
+}
+
+func TestEgressAllowlist_MicrosoftChinaRegistryForDockerAndHelm(t *testing.T) {
+	for pkgManager, target := range map[string]string{
+		"docker": "https://mcr.azure.cn/v2/dotnet/runtime/manifests/10.0",
+		"helm":   "https://mcr.azure.cn/v2/mcr/helmchart/mcrhelloworld/manifests/0.1.1",
+	} {
+		h := newEgressHandler(false, true, pkgManager)
+		assert.Nilf(t, egressResult(t, h, target), "Microsoft China registry should be allowed for %s", pkgManager)
 	}
 }
 
@@ -726,6 +737,7 @@ func TestEgressAllowlist_NewEntriesDoNotWidenBeyondExactHosts(t *testing.T) {
 	// moment its entry is changed to a leading-dot suffix, so this is the probe
 	// set that actually pins exact-host semantics.
 	childProbes := []string{
+		"https://evil.mcr.azure.cn/payload",
 		"https://evil.dl.bitdrift.io/payload",
 		"https://evil.rust-registry.proton.me/payload",
 		"https://evil.docker.redpanda.com/payload",

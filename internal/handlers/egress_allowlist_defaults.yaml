@@ -457,6 +457,7 @@ ecosystem_default_domains:
     - production.cloudfront.docker.com
     - ghcr.io
     - mcr.microsoft.com
+    - mcr.azure.cn
     # Leading-dot: Quay tenancy is path-based (quay.io/<org>/<repo>), so every
     # subdomain is Red Hat-operated and none is user-creatable.
     - .quay.io
