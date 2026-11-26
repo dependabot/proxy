@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/elazarl/goproxy"
 	"golang.org/x/net/idna"
@@ -59,9 +60,9 @@ type EgressAllowlistHandler struct {
 	// the static allowlist, i.e. the customer's own private registries. Only
 	// redirects issued by these hosts teach the allowlist a new target.
 	redirectSources []string
-	// azureArtifactsSources are the job's Azure Artifacts feeds. Their hosts are
-	// statically allowed, so they are not in redirectSources, but their package
-	// downloads redirect to rotating Azure Blob hosts that cannot be listed.
+	// azureArtifactsSources are the job's Azure Artifacts feeds. Redirects from
+	// these feeds are subject to the Azure storage target restriction, whether
+	// or not their hosts are also generic redirect sources.
 	azureArtifactsSources []azureArtifactsSource
 	// redirectTargets are the exact hosts learned from redirects issued by a
 	// redirectSource, such as the per-instance S3 bucket a self-hosted
@@ -162,9 +163,9 @@ func (h *EgressAllowlistHandler) recordHost(host string, allowed, blockEnforced 
 // from the registry host. The registry is configured in the job's credentials,
 // so the destination it chooses is trusted for the remainder of the job.
 //
-// Azure Artifacts feeds are statically allowed, so they are handled separately:
-// a redirect from the job's own Azure DevOps organization teaches only the exact
-// Azure Blob or vsblob host that package downloads are sent to.
+// Azure Artifacts feeds are handled separately as well: a redirect from a
+// configured feed teaches only the exact Azure Blob or vsblob host that package
+// downloads are sent to.
 func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if !h.observe && !h.enforce {
 		return rsp
@@ -194,14 +195,17 @@ func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *go
 	if err != nil || !strings.EqualFold(target.Scheme, "https") {
 		return rsp
 	}
-	host := strings.TrimSuffix(strings.ToLower(target.Hostname()), ".")
+	host, ok := normalizeHostname(target.Hostname())
+	if !ok {
+		return rsp
+	}
 	// IP literals are never learned: a redirect must not open a path to
 	// internal or link-local addresses.
 	if host == "" || net.ParseIP(host) != nil || h.isAllowed(host) {
 		return rsp
 	}
-	// Azure Artifacts is a shared, statically allowed host, so only its known
-	// download storage backends are learned from it.
+	// Redirects from Azure Artifacts feeds are restricted to known download
+	// storage backends, even when their hosts are generic redirect sources.
 	if azureArtifacts && !isAzureArtifactsStorageHost(host) {
 		return rsp
 	}
@@ -279,11 +283,16 @@ func azureArtifactsSourceFromValue(v string) (azureArtifactsSource, bool) {
 }
 
 func normalizeHostname(host string) (string, bool) {
-	asciiHost, err := idna.New(idna.MapForLookup()).ToASCII(host)
-	if err != nil {
-		return "", false
+	for i := 0; i < len(host); i++ {
+		if host[i] >= utf8.RuneSelf {
+			asciiHost, err := idna.New(idna.MapForLookup()).ToASCII(host)
+			if err != nil {
+				return "", false
+			}
+			return strings.TrimSuffix(strings.ToLower(asciiHost), "."), true
+		}
 	}
-	return strings.TrimSuffix(strings.ToLower(asciiHost), "."), true
+	return strings.TrimSuffix(strings.ToLower(host), "."), true
 }
 
 func (h *EgressAllowlistHandler) isAzureArtifactsRedirectSource(host, requestPath string) bool {

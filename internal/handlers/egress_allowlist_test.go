@@ -1740,6 +1740,17 @@ func TestEgressAllowlist_PrivateRegistryRedirectTargetAllowed(t *testing.T) {
 	}
 }
 
+func TestEgressAllowlist_UnderscorePrivateRegistryRedirectTargetAllowed(t *testing.T) {
+	const source = "artifactory_prod.corp.example"
+	const target = "downloads.example.net"
+	h := newEgressHandlerWithCreds(config.Credentials{
+		{"type": "python_index", "index-url": "https://" + source + "/simple"},
+	})
+
+	redirectFrom(t, h, "https://"+source+"/packages/file.whl", http.StatusFound, "https://"+target+"/file.whl")
+	assert.Nil(t, egressResult(t, h, "https://"+target+"/file.whl"))
+}
+
 func TestEgressAllowlist_RedirectTargetNotLearned(t *testing.T) {
 	const target = "https://attacker.example.net/file"
 	tests := []struct {
@@ -1908,6 +1919,8 @@ func TestEgressAllowlist_AzureArtifactsRedirectTargetNotLearned(t *testing.T) {
 			download, "https://attacker.example.net/x", "https://attacker.example.net/x"},
 		{"nested storage subdomain", config.Credentials{{"type": "python_index", "index-url": feed}},
 			download, "https://a.b.blob.core.windows.net/x", "https://a.b.blob.core.windows.net/x"},
+		{"Unicode separator creates nested storage subdomain", config.Credentials{{"type": "python_index", "index-url": feed}},
+			download, "https://a\u3002b.blob.core.windows.net/x", "https://a\u3002b.blob.core.windows.net/x"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
