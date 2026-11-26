@@ -1116,6 +1116,11 @@ func TestEgressDefaults_RegistryRedirectDerivationsLoadedFromYAML(t *testing.T) 
 		registryRedirectHosts([]string{"nuget.telerik.com"}))
 	assert.Equal(t, []string{"mgcdn-main2.azureedge.net"},
 		registryRedirectHosts([]string{"www.myget.org"}))
+	assert.Equal(t, []string{
+		"mwxvsblobcin1d0s65.blob.core.windows.net",
+		"8o8vsblobcin1d0s84.blob.core.windows.net",
+		"5uzvsblobcin1d0s59.blob.core.windows.net",
+	}, registryRedirectHosts([]string{"pkgs.dev.azure.com"}))
 }
 
 func TestValidateRegistryRedirectDerivations_RejectsUnmatchableEntries(t *testing.T) {

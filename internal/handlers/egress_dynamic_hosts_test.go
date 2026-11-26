@@ -294,6 +294,51 @@ func TestRegistryRedirectHosts_TelerikCDNNotAllowedWithoutCredential(t *testing.
 		"download CDN must not be allowed for a job with no Telerik feed credential")
 }
 
+func TestRegistryRedirectHosts_AzureArtifactsBlobStorageDerived(t *testing.T) {
+	hosts := []string{
+		"mwxvsblobcin1d0s65.blob.core.windows.net",
+		"8o8vsblobcin1d0s84.blob.core.windows.net",
+		"5uzvsblobcin1d0s59.blob.core.windows.net",
+	}
+	creds := config.Credentials{
+		{"type": "python_index", "index-url": "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/", "token": "x"},
+	}
+	h := newEgressHandlerWithCreds(creds)
+
+	for _, host := range hosts {
+		assert.Nil(t, egressResult(t, h, "https://"+host+"/package.whl"),
+			"Azure Artifacts download host must be allowed for a job with its feed credential: "+host)
+	}
+
+	for _, blocked := range []string{
+		"https://evil.mwxvsblobcin1d0s65.blob.core.windows.net/loot",
+		"https://mwxvsblobcin1d0s65.blob.core.windows.net.attacker.com/loot",
+		"https://attacker.blob.core.windows.net/loot",
+	} {
+		assert.NotNil(t, egressResult(t, h, blocked), "must remain blocked: "+blocked)
+	}
+
+	for _, credentialHost := range []string{
+		"evil.pkgs.dev.azure.com",
+		"pkgs.dev.azure.com.attacker.com",
+		"notpkgs.dev.azure.com",
+	} {
+		withoutMatchingCredential := newEgressHandlerWithCreds(config.Credentials{
+			{"type": "python_index", "index-url": "https://" + credentialHost + "/org/_packaging/feed/pypi/simple/", "token": "x"},
+		})
+		for _, host := range hosts {
+			assert.NotNil(t, egressResult(t, withoutMatchingCredential, "https://"+host+"/package.whl"),
+				"credential host %q must not allow download host %q", credentialHost, host)
+		}
+	}
+
+	withoutCredential := newEgressHandlerWithCreds(nil)
+	for _, host := range hosts {
+		assert.NotNil(t, egressResult(t, withoutCredential, "https://"+host+"/package.whl"),
+			"download host must be blocked without an Azure Artifacts credential: "+host)
+	}
+}
+
 func TestRegistryRedirectHosts_OnlyGemfuryHosts(t *testing.T) {
 	gemfuryStorage := []string{
 		"gemfury.s3-accelerate.dualstack.amazonaws.com",
