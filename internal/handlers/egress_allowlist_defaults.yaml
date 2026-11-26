@@ -196,13 +196,12 @@ registry_redirect_derivations:
   - credential_host: .myget.org
     derived:
       - mgcdn-main2.azureedge.net
-  # Observed directly as Azure Artifacts package-download redirect targets. At
-  # review time, each resolved via Azure Traffic Manager and returned the
-  # Microsoft-HTTPAPI/2.0 server header. Azure rotates these storage accounts,
-  # so this covers only observed hosts. Remove an entry when it is no longer
-  # observed or this ownership evidence cannot be verified. Keep hosts
-  # exact: never widen to *.blob.core.windows.net, where anyone can create an
-  # account.
+  # These exact hosts were reported as Azure Artifacts package-download
+  # redirect targets. DNS and HTTP responses confirm Azure Blob hosting only;
+  # they do not prove Azure Artifacts ownership or continued use. Re-verify
+  # against a trusted live Azure Artifacts download before retaining these
+  # entries, and remove any host no longer observed. Keep hosts exact: never
+  # widen to *.blob.core.windows.net, where anyone can create an account.
   - credential_host: pkgs.dev.azure.com
     derived:
       - mwxvsblobcin1d0s65.blob.core.windows.net
