@@ -386,7 +386,8 @@ func (h *EgressAllowlistHandler) isAllowed(host string) bool {
 	// subdomain suffixes), so an untrusted credential value cannot widen the
 	// allowlist beyond the exact host the job was configured to reach.
 	for _, entry := range h.dynamicHosts {
-		if helpers.AreHostnamesEqual(host, entry) {
+		normalizedEntry, ok := normalizeHostname(entry)
+		if ok && host == normalizedEntry {
 			return true
 		}
 	}

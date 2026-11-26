@@ -1895,6 +1895,7 @@ func TestEgressAllowlist_AzureArtifactsUnicodeTrailingDotHostRestricted(t *testi
 				{"type": "python_index", "index-url": tt.feed},
 			})
 
+			assert.Nil(t, egressResult(t, h, tt.feed), "configured feed host should be allowlisted before redirect")
 			redirectFrom(t, h, tt.redirect, http.StatusSeeOther, "https://"+blob+"/package.whl?sig=s")
 			assert.Nil(t, egressResult(t, h, "https://"+blob+"/package.whl?sig=s"))
 
