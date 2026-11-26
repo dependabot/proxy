@@ -3,6 +3,7 @@ package handlers
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -57,6 +58,10 @@ type EgressAllowlistHandler struct {
 	// the static allowlist, i.e. the customer's own private registries. Only
 	// redirects issued by these hosts teach the allowlist a new target.
 	redirectSources []string
+	// azureArtifactsSources are the job's Azure Artifacts feeds. Their hosts are
+	// statically allowed, so they are not in redirectSources, but their package
+	// downloads redirect to rotating Azure Blob hosts that cannot be listed.
+	azureArtifactsSources []azureArtifactsSource
 	// redirectTargets are the exact hosts learned from redirects issued by a
 	// redirectSource, such as the per-instance S3 bucket a self-hosted
 	// Artifactory sends presigned downloads to. Guarded by redirectMu because
@@ -95,6 +100,7 @@ func NewEgressAllowlistHandler(cfg *config.Config, env config.ProxyEnvSettings, 
 			h.redirectSources = append(h.redirectSources, host)
 		}
 	}
+	h.azureArtifactsSources = azureArtifactsSources(cfg.Credentials)
 	return h
 }
 
@@ -154,6 +160,10 @@ func (h *EgressAllowlistHandler) recordHost(host string, allowed, blockEnforced 
 // URL on the customer's own object-storage bucket, whose name cannot be derived
 // from the registry host. The registry is configured in the job's credentials,
 // so the destination it chooses is trusted for the remainder of the job.
+//
+// Azure Artifacts feeds are statically allowed, so they are handled separately:
+// a redirect from the job's own Azure DevOps organization teaches only the exact
+// Azure Blob or vsblob host that package downloads are sent to.
 func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *goproxy.ProxyCtx) *http.Response {
 	if !h.observe && !h.enforce {
 		return rsp
@@ -167,7 +177,9 @@ func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *go
 		return rsp
 	}
 	source := strings.TrimSuffix(helpers.GetHost(proxyCtx.Req), ".")
-	if !h.isRedirectSource(source) {
+	privateRegistry := h.isRedirectSource(source)
+	azureArtifacts := !privateRegistry && h.isAzureArtifactsRedirectSource(source, proxyCtx.Req.URL.Path)
+	if !privateRegistry && !azureArtifacts {
 		return rsp
 	}
 	location := rsp.Header.Get("Location")
@@ -182,6 +194,11 @@ func (h *EgressAllowlistHandler) HandleResponse(rsp *http.Response, proxyCtx *go
 	// IP literals are never learned: a redirect must not open a path to
 	// internal or link-local addresses.
 	if host == "" || net.ParseIP(host) != nil || h.isAllowed(host) {
+		return rsp
+	}
+	// Azure Artifacts is a shared, statically allowed host, so only its known
+	// download storage backends are learned from it.
+	if azureArtifacts && !isAzureArtifactsStorageHost(host) {
 		return rsp
 	}
 
@@ -208,6 +225,94 @@ func (h *EgressAllowlistHandler) isRedirectSource(host string) bool {
 		}
 	}
 	return false
+}
+
+// azureArtifactsSource is an Azure Artifacts feed configured for the job.
+// pkgs.dev.azure.com is shared by every Azure DevOps organization, so org is
+// the first path segment that a request must match. For
+// <org>.pkgs.visualstudio.com the organization is in the host and org is empty.
+type azureArtifactsSource struct {
+	host string
+	org  string
+}
+
+func azureArtifactsSources(creds config.Credentials) []azureArtifactsSource {
+	var sources []azureArtifactsSource
+	for _, c := range creds {
+		for _, key := range credentialHostKeys {
+			if source, ok := azureArtifactsSourceFromValue(c.GetString(key)); ok {
+				sources = append(sources, source)
+			}
+		}
+	}
+	return sources
+}
+
+func azureArtifactsSourceFromValue(v string) (azureArtifactsSource, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return azureArtifactsSource{}, false
+	}
+	if !strings.Contains(v, "://") {
+		v = "//" + v
+	}
+	u, err := url.Parse(v)
+	if err != nil {
+		return azureArtifactsSource{}, false
+	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	switch {
+	case host == azureDevOpsPackagesHost:
+		org := firstPathSegment(u.Path)
+		if org == "" {
+			return azureArtifactsSource{}, false
+		}
+		return azureArtifactsSource{host: host, org: org}, true
+	case isSingleLabelSubdomain(host, visualStudioPackagesDomain):
+		return azureArtifactsSource{host: host}, true
+	}
+	return azureArtifactsSource{}, false
+}
+
+func (h *EgressAllowlistHandler) isAzureArtifactsRedirectSource(host, requestPath string) bool {
+	for _, source := range h.azureArtifactsSources {
+		if !helpers.AreHostnamesEqual(host, source.host) {
+			continue
+		}
+		// Azure DevOps organization names are case-insensitive.
+		if source.org == "" || strings.EqualFold(firstPathSegment(requestPath), source.org) {
+			return true
+		}
+	}
+	return false
+}
+
+const (
+	azureDevOpsPackagesHost    = "pkgs.dev.azure.com"
+	visualStudioPackagesDomain = "pkgs.visualstudio.com"
+)
+
+// azureArtifactsStorageDomains are where Azure Artifacts redirects package
+// downloads. The account label rotates, so only one exact host is learned per
+// redirect rather than allowing the shared domain.
+var azureArtifactsStorageDomains = []string{
+	"blob.core.windows.net",
+	"vsblob.vsassets.io",
+}
+
+func isAzureArtifactsStorageHost(host string) bool {
+	for _, domain := range azureArtifactsStorageDomains {
+		if isSingleLabelSubdomain(host, domain) {
+			return true
+		}
+	}
+	return false
+}
+
+// isSingleLabelSubdomain reports whether host is exactly "<label>.<domain>".
+func isSingleLabelSubdomain(host, domain string) bool {
+	label, ok := strings.CutSuffix(strings.ToLower(host), "."+domain)
+	return ok && label != "" && !strings.Contains(label, ".")
 }
 
 func (h *EgressAllowlistHandler) isStaticallyAllowed(host string) bool {
