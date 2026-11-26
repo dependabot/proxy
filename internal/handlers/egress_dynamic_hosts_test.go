@@ -15,6 +15,7 @@ func TestHostFromValue(t *testing.T) {
 		"registry.example.com":               "registry.example.com",
 		"registry.example.com:8080":          "registry.example.com",
 		"registry.example.com/foo/bar":       "registry.example.com",
+		"//registry.example.com/path":        "registry.example.com",
 		"https://user:pass@host.example.com": "host.example.com",
 		"HTTPS://Registry.Example.COM":       "registry.example.com",
 		"":                                   "",
@@ -300,22 +301,35 @@ func TestRegistryRedirectHosts_AzureArtifactsBlobStorageDerived(t *testing.T) {
 		"8o8vsblobcin1d0s84.blob.core.windows.net",
 		"5uzvsblobcin1d0s59.blob.core.windows.net",
 	}
-	creds := config.Credentials{
+	credentialedHandler := newEgressHandlerWithCreds(config.Credentials{
 		{"type": "python_index", "index-url": "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/", "token": "x"},
+	})
+	for _, indexURL := range []string{
+		"https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+		"//pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
+	} {
+		h := newEgressHandlerWithCreds(config.Credentials{
+			{"type": "python_index", "index-url": indexURL, "token": "x"},
+		})
+		for _, host := range hosts {
+			assert.Nil(t, egressResult(t, h, "https://"+host+"/package.whl"),
+				"Azure Artifacts download host must be allowed with feed URL %q: %s", indexURL, host)
+		}
 	}
-	h := newEgressHandlerWithCreds(creds)
 
 	for _, host := range hosts {
-		assert.Nil(t, egressResult(t, h, "https://"+host+"/package.whl"),
-			"Azure Artifacts download host must be allowed for a job with its feed credential: "+host)
+		for _, blocked := range []string{
+			"https://evil." + host + "/loot",
+			"https://" + host + ".attacker.com/loot",
+		} {
+			assert.NotNil(t, egressResult(t, credentialedHandler, blocked), "must remain blocked: "+blocked)
+		}
 	}
 
 	for _, blocked := range []string{
-		"https://evil.mwxvsblobcin1d0s65.blob.core.windows.net/loot",
-		"https://mwxvsblobcin1d0s65.blob.core.windows.net.attacker.com/loot",
 		"https://attacker.blob.core.windows.net/loot",
 	} {
-		assert.NotNil(t, egressResult(t, h, blocked), "must remain blocked: "+blocked)
+		assert.NotNil(t, egressResult(t, credentialedHandler, blocked), "must remain blocked: "+blocked)
 	}
 
 	for _, credentialHost := range []string{
