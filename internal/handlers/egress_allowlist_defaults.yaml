@@ -253,6 +253,10 @@ ecosystem_default_domains:
     # Backstage's published version manifests, read by the Backstage CLI during
     # upgrades. Anonymous, no redirects.
     - versions.backstage.io
+    # Socket's package-verdict API, queried by Bun's native install security
+    # scanner (@socketsecurity/bun-security-scanner) in anonymous free mode.
+    # Exact only; sibling Socket hosts stay blocked.
+    - firewall-api.socket.dev
   bun: *npm_registries
   pip: &python_registries
     - pypi.org
